@@ -1,0 +1,329 @@
+Budget App/
+├── .env                                 # SECRET - master key lives here. Gitignored.
+├── .env.example                         # Template, safe to commit
+├── .gitignore
+├── .gitattributes                       # the committed build is never re-line-ended
+├── README.md
+├── alembic.ini
+├── pytest.ini                           # markers: db (skipped by default), security, slow
+├── requirements.txt
+├── web.config                           # IIS, /ZBDGT, 1 worker, shared FAST-PYTHON venv
+│
+├── misc/
+│   ├── ARCHITECTURE.md                  # The detailed map. §5 is the encryption design.
+│   ├── ARCHITECTURE_OVERVIEW.md         # Diagrams + the end-to-end flows
+│   ├── FEATURES.md                      # Feature catalogue + scope decisions (start here)
+│   ├── phases.txt                       # Build log, 9 phases + standing defect list
+│   ├── file_tree.txt                    # This file
+│   └── how-to-run.txt
+│
+├── alembic/
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/
+│       └── 20260914_0001_baseline_budget_schema.py
+│
+├── app/
+│   ├── main.py                          # lifespan, middleware, /health
+│   │
+│   ├── api/
+│   │   └── v1/
+│   │       ├── router.py
+│   │       ├── endpoints/
+│   │       │   ├── health.py            # db reachable + key loaded, nothing more
+│   │       │   ├── auth.py
+│   │       │   ├── accounts.py
+│   │       │   ├── categories.py
+│   │       │   ├── transactions.py
+│   │       │   ├── budgets.py
+│   │       │   ├── calendar.py
+│   │       │   ├── stats.py
+│   │       │   ├── recurring.py
+│   │       │   ├── subscriptions.py
+│   │       │   ├── goals.py
+│   │       │   ├── settings.py
+│   │       │   ├── admin.py             # account management only
+│   │       │   ├── backup.py            # export / restore / verify
+│   │       │   └── data.py              # CSV import / export
+│   │       └── schemas/
+│   │           ├── auth.py
+│   │           ├── account.py
+│   │           ├── category.py
+│   │           ├── transaction.py       # also defines the encrypted payload shape
+│   │           ├── budget.py
+│   │           ├── stats.py
+│   │           ├── recurring.py
+│   │           ├── subscription.py
+│   │           ├── goal.py
+│   │           └── settings.py
+│   │
+│   ├── core/
+│   │   ├── config.py                    # HARD FAILS without a valid master key
+│   │   ├── deps.py                      # get_current_user, get_dek, get_working_set
+│   │   ├── exceptions.py                # DecryptionError never leaks detail
+│   │   ├── logging_config.py            # redaction filter, installed first
+│   │   │
+│   │   ├── crypto/                      # ★ NOTHING OUTSIDE HERE TOUCHES A KEY ★
+│   │   │   ├── keyring.py               # master key load, HKDF, retired keys
+│   │   │   ├── envelope.py              # AES-256-GCM, fmt|ver|nonce|ct|tag
+│   │   │   ├── dek.py                   # per-user DEK wrap / unwrap
+│   │   │   ├── blind_index.py           # HMAC email lookup (the one exception)
+│   │   │   ├── recovery.py              # ★ BIP-39 phrase -> 2nd DEK wrap (SEC-14)
+│   │   │   ├── provisioning.py          # a new user's DEK + phrase, made together
+│   │   │   ├── user_cipher.py           # ★ the facade: seals/opens one user's rows,
+│   │   │   │                            #   never gives its key back
+│   │   │   ├── session_keys.py          # in-memory DEK store, zeroed on lock
+│   │   │   ├── self_test.py             # round-trip at startup or refuse to start
+│   │   │   ├── errors.py                # DecryptionError & co - no FastAPI import
+│   │   │   └── working_set.py           # decrypted cache, TTL + LRU (Phase 4)
+│   │   │
+│   │   ├── middleware/
+│   │   │   ├── security_headers.py      # CSP nonce, nosniff, DENY - no HSTS (shared host)
+│   │   │   ├── rate_limit.py
+│   │   │   ├── logging_middleware.py
+│   │   │   └── auth_middleware.py       # attaches identity, does not block
+│   │   │
+│   │   └── utils/
+│   │       ├── date_utils.py            # period resolution - custom start days
+│   │       ├── money.py                 # Decimal only. Never float.
+│   │       └── csv_utils.py
+│   │
+│   ├── db/
+│   │   ├── base.py
+│   │   ├── connection.py
+│   │   ├── session.py
+│   │   ├── types.py                     # EncryptedPayload TypeDecorator
+│   │   │
+│   │   ├── models/                      # 15 tables, schema ZBDGT
+│   │   │   ├── encrypted_row.py         # the Shape B mixin every data table uses
+│   │   │   ├── user.py                  # A: email_bidx, profile_enc, password_hash,
+│   │   │   │                            #    pin_hash, dek_wrapped + dek_wrapped_recovery
+│   │   │   ├── refresh_token.py         # A: hashed, family_id, parent_id
+│   │   │   ├── login_attempt.py         # A: email_bidx, hashed IP
+│   │   │   ├── audit_log.py             # A: plaintext verb, encrypted detail
+│   │   │   ├── account.py               # B: encrypted payload (no currency)
+│   │   │   ├── category.py              # B
+│   │   │   ├── budget.py                # B
+│   │   │   ├── budget_allocation.py     # B
+│   │   │   ├── transaction.py           # B: payload carries a `splits` array
+│   │   │   ├── recurring_rule.py        # B: the ONLY thing that expands;
+│   │   │   │                            #    kind + installment terms
+│   │   │   ├── subscription.py          # B: metadata only, no schedule
+│   │   │   ├── savings_goal.py          # B
+│   │   │   ├── tag.py                   # B
+│   │   │   ├── attachment.py            # B - file encrypted on disk too
+│   │   │   └── user_preference.py       # B
+│   │   │
+│   │   └── repositories/                # ★ THE ONLY LAYER THAT SEES CIPHERTEXT ★
+│   │       ├── encrypted_repository.py  # ★ two-step insert + user scoping, for
+│   │       │                            #   all 11 data tables
+│   │       ├── preferences_repository.py
+│   │       ├── user_repository.py
+│   │       ├── account_repository.py
+│   │       ├── category_repository.py
+│   │       ├── transaction_repository.py   # subclasses EncryptedRepository
+│   │       ├── budget_repository.py
+│   │       ├── recurring_repository.py
+│   │       ├── subscription_repository.py
+│   │       ├── goal_repository.py
+│   │       ├── backup_repository.py     # bulk read/write for export & import
+│   │       └── audit_repository.py
+│   │
+│   ├── services/                        # ALL business logic. Plaintext only.
+│   │   ├── auth_service/
+│   │   │   ├── auth_service.py
+│   │   │   ├── passwords.py             # bcrypt direct (passlib breaks on bcrypt 5)
+│   │   │   ├── pin_service.py
+│   │   │   ├── recovery_service.py      # phrase -> unwrap DEK + reset password
+│   │   │   ├── registration_service.py   # create_account (Phase 1); code gate +
+│   │   │   │                             #   rate limit join in Phase 2
+│   │   │   └── rotation_service.py       # SEC-22 re-wrap · SEC-23 new DEK
+│   │   ├── budget_service/
+│   │   │   ├── budget_service.py
+│   │   │   ├── allowance.py             # ★ the daily allowance calculation
+│   │   │   ├── carry_over.py            # symmetric surplus/deficit roll-forward
+│   │   │   └── alerts.py                # over / approaching / pace (in-app only)
+│   │   ├── account_service.py
+│   │   ├── category_service.py
+│   │   ├── transaction_service.py
+│   │   ├── recurring_service.py         # the ONE engine: standard |
+│   │   │                                 # subscription | installment
+│   │   ├── subscription_service.py      # view over recurring_rules,
+│   │   │                                 # NOT a second expansion engine
+│   │   ├── stats_service.py             # every aggregation SQL cannot do
+│   │   ├── calendar_service.py
+│   │   ├── goal_service.py
+│   │   ├── import_export_service.py     # CSV in/out (the one warned opening)
+│   │   ├── backup_service/              # ★ full encrypted .budgetbak
+│   │   │   ├── exporter.py              #   copies rows as stored - needs no key
+│   │   │   ├── importer.py              #   decrypt -> INSERT -> re-encrypt
+│   │   │   └── id_remap.py              #   ★ highest-risk code in the project
+│   │   ├── admin_service.py             # create/disable accounts. NEVER decrypt.
+│   │   └── audit_service.py
+│   │
+│   └── web/
+│       ├── router.py                    # SPA shell, manifest, fallback
+│       ├── templates/
+│       │   └── index.html               # the ONLY server-rendered file
+│       └── static/
+│           ├── dist/                    # ★ COMMITTED ON PURPOSE ★
+│           │   │                        #   Vite output. The server has no npm.
+│           │   ├── index-[hash].js
+│           │   ├── index-[hash].css
+│           │   ├── manifest.webmanifest
+│           │   ├── sw.js
+│           │   └── .vite/manifest.json  # read at startup for the hashed names
+│           └── icons/
+│               ├── icon-192.png
+│               ├── icon-512.png
+│               └── apple-touch-icon.png
+│
+├── frontend/                            # React source. BUILT LOCALLY ONLY.
+│   ├── package.json                     #   node_modules/ never deployed
+│   ├── vite.config.ts                   #   outDir -> ../app/web/static/dist (Vite 6)
+│   ├── tailwind.config.js               #   mobile-first, 390px baseline
+│   ├── postcss.config.js
+│   ├── tsconfig.json
+│   ├── index.html
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       │
+│       ├── lib/
+│       │   ├── api.ts                   # single fetch wrapper, 401 -> refresh
+│       │   ├── config.ts                # BASE_URL / API_PREFIX from the shell's meta tags
+│       │   ├── money.ts                 # PHP formatting by string arithmetic - no floats
+│       │   └── dates.ts
+│       │
+│       ├── stores/                      # zustand - never holds the DEK
+│       │   ├── uiStore.ts
+│       │   ├── authStore.ts
+│       │   ├── budgetStore.ts
+│       │   └── txnStore.ts
+│       │
+│       ├── components/
+│       │   ├── BottomTabBar.tsx         # Home · Calendar · [+] · Stats · More
+│       │   ├── Icons.tsx                # inline SVG - nothing for the CSP to allow
+│       │   ├── ScreenHeader.tsx
+│       │   ├── TransactionSheet.tsx     # ★ two taps and a number
+│       │   ├── SplitEditor.tsx          # revealed on tap, never in the way
+│       │   ├── BudgetAlertBanner.tsx    # over / approaching / pace
+│       │   ├── CategoryChips.tsx
+│       │   ├── TransactionRow.tsx
+│       │   ├── CalendarGrid.tsx
+│       │   └── ui/                      # Button, Sheet, Card, ListRow,
+│       │                                #   Ring (progress ring), NumPad (no OS keyboard)
+│       │
+│       ├── screens/
+│       │   ├── Login.tsx
+│       │   ├── Register.tsx
+│       │   ├── RecoveryPhraseSetup.tsx  # ★ 12 words, shown once + confirm 3
+│       │   ├── RecoveryPhraseEnter.tsx  # ★ recover access + reset password
+│       │   ├── PinLock.tsx
+│       │   ├── Home.tsx                 # the ring + daily allowance
+│       │   ├── Calendar.tsx
+│       │   ├── Stats.tsx
+│       │   ├── Transactions.tsx
+│       │   ├── Accounts.tsx
+│       │   ├── Budgets.tsx
+│       │   ├── Categories.tsx
+│       │   ├── Recurring.tsx
+│       │   ├── Subscriptions.tsx
+│       │   ├── Installments.tsx         # progress cards + total still owed
+│       │   ├── Goals.tsx
+│       │   ├── ImportExport.tsx
+│       │   ├── BackupRestore.tsx        # ★ download / restore / verify
+│       │   ├── Admin.tsx                # accounts only - no financial data
+│       │   ├── RecoveryPhraseRotate.tsx # regenerate vs rotate - explain both
+│       │   ├── Settings.tsx
+│       │   └── AboutEncryption.tsx      # what is protected, what is not
+│       │
+│       └── styles/
+│           ├── index.css
+│           └── theme.css                # light/dark tokens
+│
+├── scripts/
+│   ├── generate_keys.py                 # every secret in one run; --fill never overwrites
+│   ├── generate_int_tables.py           # int_tables.sql FROM the migrations
+│   ├── benchmark_fetch.py               # READ-ONLY cold-load estimate; run on the server
+│   ├── backup.py                        # ★ full encrypted export
+│   ├── restore.py                       # ★ fresh | merge | verify
+│   ├── verify_backup.py                 # round-trip fidelity check (DAT-14)
+│   ├── int_tables.sql                   # raw DDL, 15 tables - generated, do not edit
+│   ├── bootstrap_user.py                # first account + its DEK
+│   ├── seed_categories.py
+│   ├── rotate_keys.py                   # ★ master key - resumable, dry-run
+│   ├── rotate_dek.py                    # ★ SEC-23 new DEK, re-encrypts all
+│   ├── verify_integrity.py              # catches what FKs cannot
+│   ├── decrypt_query.py                 # the only window into the data
+│   └── add_bucket_columns.py            # §5.7 escape hatch: written, unrun
+│
+├── tests/
+│   ├── conftest.py
+│   ├── test_crypto.py                   # ★ NEVER SKIPPED IN CI
+│   ├── test_crypto_performance.py       # ★ produces the real benchmark number
+│   ├── test_blind_index.py
+│   ├── test_recovery.py                 # ★ wipe the master key, recover by phrase
+│   ├── test_session_keys.py             # empty keyring = locked; auto-lock
+│   ├── test_repository.py               # two-step insert, DB-level tampering
+│   ├── test_config.py                   # refuses to start on a bad key
+│   ├── test_logging_redaction.py        # no amount in logs at DEBUG
+│   ├── test_app.py                      # /health, headers, CSP nonce, no detail
+│   ├── test_migration.py                # migration == models, column by column
+│   ├── test_scripts.py
+│   ├── test_db_mssql.py                 # SQL Server only; skipped by default
+│   ├── test_key_rotation.py             #   ...and prove rotation keeps the phrase
+│   ├── test_dek_rotation.py             # ★ old DEK dead, all rows readable
+│   ├── test_registration_code.py        # wrong code rejected + rate limited
+│   ├── test_auth.py
+│   ├── test_budget_periods.py           # custom start days, year boundaries
+│   ├── test_allowance.py
+│   ├── test_carry_over.py               # symmetric, incl. compounding deficits
+│   ├── test_splits.py                   # amount == sum(splits), Decimal-exact
+│   ├── test_backup_roundtrip.py         # ★ export -> wipe -> import -> export
+│   ├── test_id_remap.py                 # every cross-reference survives
+│   ├── test_multi_user_isolation.py     # ★ Bob must never see Alice's rows
+│   ├── test_recurring.py                # idempotent catch-up
+│   ├── test_installments.py             # remaining hits 0, never a 37th
+│   ├── test_transactions.py
+│   └── test_api_integration.py
+│
+├── logs/                                # gitignored
+├── uploads/                             # encrypted receipts, gitignored
+│   └── <user_id>/                       # per-user, so receipts cannot collide
+│       └── <attachment_id>.enc
+├── temp_uploads/                        # gitignored
+└── backups/                             # encrypted, gitignored - as sensitive as the DB
+
+
+═══════════════════════════════════════════════════════════════════════════
+NOTES
+═══════════════════════════════════════════════════════════════════════════
+
+Table shapes (see ARCHITECTURE.md §4):
+  A = operational. Ordinary indexed columns, no financial data.
+  B = data. id + user_id + key_version plaintext; everything else is one
+      encrypted VARBINARY(MAX) payload.
+
+Three rules this tree encodes:
+
+  1. app/core/crypto/ and app/db/repositories/ are the ONLY places that see a
+     key or a ciphertext. Services receive decrypted domain objects. A service
+     author should never have to remember to encrypt anything.
+
+  2. app/web/static/dist/ IS COMMITTED. It is Vite output built on your PC.
+     The server has no Node and no npm, permanently. Deploy = git pull +
+     restart. .gitignore excludes frontend/node_modules/ but explicitly
+     keeps dist/.
+
+  3. There are TWO keys to the data, and you need one of them:
+     .env (BUDGET_MASTER_KEY) and your 12-word recovery phrase on paper.
+     Each independently unwraps the same DEK. Back up both, in different
+     places - keeping them together defeats the point of having two.
+     Lose both and every row above is permanently unreadable by anyone,
+     including you.
+
+  4. Every transaction payload carries a `splits` array, even single-
+     category ones. category_id therefore lives one level deeper inside
+     the ciphertext, and category delete, verify_integrity.py and every
+     stats aggregation must walk it. No FK can catch a mistake here.

@@ -1,0 +1,105 @@
+# ============================================
+# DEPLOYMENT NOTE - SHARED VIRTUAL ENVIRONMENT
+# ============================================
+# Production runs in C:\inetpub\wwwroot\FAST-PYTHON\.venv, the same venv
+# QUOT uses (see web.config). Installing this file there changes packages
+# QUOT also depends on, so wherever the two files overlap the minimum
+# versions below match QUOT's floors: nothing here should force an
+# upgrade QUOT did not ask for. Preview before installing on the server:
+#     pip install -r requirements.txt --dry-run
+# Packages this app adds: argon2-cffi, mnemonic, pillow (+ hypothesis,
+# ruff for development). cryptography is already there via python-jose.
+
+# ============================================
+# CORE WEB FRAMEWORK
+# ============================================
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
+
+# ============================================
+# DATABASE - company SQL Server, schema ZBDGT
+# ============================================
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+pyodbc>=5.0.0
+
+# ============================================
+# ENCRYPTION - the heart of this application
+# ============================================
+# `cryptography` provides AES-256-GCM (AESGCM), the authenticated
+# cipher every row goes through, plus HKDF for key derivation and
+# constant-time comparison for the blind index.
+cryptography>=41.0.0
+
+# argon2 is available as a stronger alternative to bcrypt for the
+# login password if you ever want it; bcrypt is the default because
+# it needs no tuning to be safe.
+argon2-cffi>=23.1.0
+
+# BIP-39 mnemonics for the 12-word recovery phrase (SEC-14). Gives us
+# the standard wordlist and, importantly, the checksum - so a mistyped
+# word fails with a clear error instead of a cryptic decrypt failure.
+mnemonic>=0.21
+
+# ============================================
+# AUTHENTICATION
+# ============================================
+python-jose[cryptography]>=3.3.0
+# bcrypt is used directly, NOT through passlib: passlib 1.7's self-test
+# breaks on bcrypt 5 (app/services/auth_service/passwords.py). QUOT keeps
+# its own passlib in the shared venv; this app does not need it.
+bcrypt>=4.1.0
+pydantic[email]>=2.0.0
+pydantic-settings>=2.0.0
+
+# WebAuthn / passkeys - optional, Phase 9. Uncomment to enable
+# BIOMETRIC_WEBAUTHN_ENABLED and unlock with Face ID / Windows Hello.
+# webauthn>=2.2.0
+
+# ============================================
+# TEMPLATING - only the SPA shell + PWA manifest.
+# Every real screen is React; Jinja renders one HTML file.
+# ============================================
+jinja2>=3.1.0
+
+# ============================================
+# DATA / REPORTING
+# ============================================
+# Because dates and amounts are encrypted, SQL cannot aggregate.
+# Every total, average and chart series is computed here instead.
+python-dateutil>=2.8.0
+
+# CSV import/export (the iOS app's Export & Import feature).
+# pandas is heavier than needed for a personal dataset - the stdlib
+# csv module handles it. Uncomment only if you outgrow that.
+# pandas>=2.2.0
+
+# Receipt images
+pillow>=10.4.0
+
+# ============================================
+# UTILITIES
+# ============================================
+aiofiles>=23.2.0
+typing-extensions>=4.8.0
+# Logging is stdlib `logging`, as in QUOT - uvicorn and SQLAlchemy log
+# through it, so one redaction filter per handler sees every line.
+httpx>=0.25.0
+orjson>=3.9.0
+
+# ============================================
+# DEVELOPMENT & TESTING
+# ============================================
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.11.0
+mypy>=1.7.0
+ruff>=0.6.0
+
+# Property-based tests for the crypto layer - encrypt/decrypt
+# round-trips across random inputs, which is where subtle
+# nonce and padding bugs actually surface.
+hypothesis>=6.112.0

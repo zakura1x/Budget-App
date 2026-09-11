@@ -1,0 +1,11 @@
+{
+  "index.html": {
+    "file": "assets/index-Dr4GaKU1.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "css": [
+      "assets/index-Chg256Cu.css"
+    ]
+  }
+}

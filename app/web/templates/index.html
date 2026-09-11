@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f5f6f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#101311" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="app-base" content="{{ base_url }}" />
+    <meta name="app-api" content="{{ api_prefix }}" />
+    <!-- No request for /favicon.ico until the real icons arrive with the PWA (Phase 8b) -->
+    <link rel="icon" href="data:," />
+    <title>{{ app_name }}</title>
+    {% if entry %}
+      {% for css in entry.css %}
+    <link rel="stylesheet" href="{{ dist_url }}/{{ css }}" />
+      {% endfor %}
+    <script type="module" nonce="{{ nonce }}" src="{{ dist_url }}/{{ entry.js }}"></script>
+    {% endif %}
+  </head>
+  <body>
+    <div id="root">
+      {% if not entry %}
+      <main>
+        <h1>{{ app_name }}</h1>
+        <p>The frontend has not been built yet.</p>
+        <p>On your PC: <code>cd frontend</code>, then <code>npm run build</code>.
+           It writes into app/web/static/dist/.</p>
+      </main>
+      {% endif %}
+    </div>
+  </body>
+</html>

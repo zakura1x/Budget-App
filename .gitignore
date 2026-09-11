@@ -1,0 +1,93 @@
+# ============================================
+# SECRETS - losing control of these loses the data
+# ============================================
+.env
+.env.local
+.env*.local
+*.key
+*.pem
+backups/
+
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+htmlcov/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# ============================================
+# Frontend - source is committed, node_modules is not.
+# NOTE: app/web/static/dist/ IS committed on purpose. It is the
+# build output the server serves, and the server has no npm.
+# See misc/ARCHITECTURE.md S3.
+# ============================================
+node_modules/
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ============================================
+# Application data
+# ============================================
+logs/
+uploads/
+temp_uploads/
+*.log
+*.db
+*.sqlite3
+
+# ============================================
+# IDE / OS
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.code-workspace
+
+# ============================================
+# Temporary
+# ============================================
+*.tmp
+*.temp
+*.bak
+.ipynb_checkpoints/

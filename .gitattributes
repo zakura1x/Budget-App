@@ -1,0 +1,10 @@
+# Normalise source files; let each machine choose its checkout line endings.
+* text=auto
+
+# The committed frontend build is served byte-for-byte by FastAPI on the
+# server. Git must never rewrite its line endings (misc/ARCHITECTURE.md S7).
+app/web/static/dist/** -text
+
+*.png binary
+*.ico binary
+*.woff2 binary

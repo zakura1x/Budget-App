@@ -1,0 +1,173 @@
+═══════════════════════════════════════════════════════════════════
+BUDGET APP - HOW TO RUN
+═══════════════════════════════════════════════════════════════════
+
+FIRST TIME
+──────────
+1. Back up .env somewhere off this machine and off the company network.
+   Password manager or encrypted USB. Do this BEFORE the first insert.
+
+   You will ALSO be shown a 12-word recovery phrase when you create your
+   account (step 4). Write it on paper and keep it somewhere DIFFERENT
+   from the .env backup. Either one opens your data; keeping them
+   together defeats the point of having two.
+
+2. python -m venv .venv
+   .venv\Scripts\activate
+   pip install -r requirements.txt
+
+3. .env is already filled in: the DB settings come from QUOT's .env and
+   every key is generated. Nothing to do - just do not lose it (step 1).
+
+4. alembic upgrade head                 # DONE 2026-09-11 - schema ZBDGT exists
+   python scripts/bootstrap_user.py     # your account + recovery phrase
+   python scripts/seed_categories.py    # (Phase 3) default categories
+
+
+RUN THE BACKEND
+───────────────
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+  App     http://localhost:8000/ZBDGT
+  Health  http://localhost:8000/ZBDGT/api/v1/health
+  Docs    http://localhost:8000/ZBDGT/api/v1/docs   (only with DEBUG=True)
+
+
+RUN THE FRONTEND (development, with hot reload)
+───────────────────────────────────────────────
+cd frontend
+npm install          # first time only
+npm run dev          # http://localhost:5173/ZBDGT/  - proxies /ZBDGT/api to :8000
+
+Develop against :5173. It has hot reload; :8000 serves the last build.
+Keep uvicorn running alongside it, or every API call fails.
+
+
+BUILD THE FRONTEND (before committing or deploying)
+───────────────────────────────────────────────────
+cd frontend
+npm run build        # type-checks, then writes into ../app/web/static/dist/
+
+Then COMMIT app/web/static/dist/. It is deliberately not gitignored.
+The server has no Node and no npm - it only serves these bytes.
+Deploy is: git pull + restart. Nothing is built on the server, ever.
+uvicorn picks up a new build without a restart (it re-reads the manifest).
+
+
+TEST ON YOUR PHONE
+──────────────────
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+Browse to http://<your-pc-ip>:8000/ZBDGT on the phone, then
+Share -> Add to Home Screen for the standalone PWA (Phase 8b).
+
+
+TESTS
+─────
+pytest                                      # everything, ~30 s
+pytest -m "not slow"                        # the quick ones, ~12 s
+pytest tests/test_crypto.py -v              # never skip these
+pytest tests/test_crypto_performance.py -s  # prints the benchmark number
+
+The tests use throwaway keys and an in-memory SQLite database. They never
+read your real keys and never touch the company database - except the
+ones marked `db`, which are skipped unless you ask for them:
+
+set ZBDGT_DB_TESTS=1
+pytest tests/test_db_mssql.py tests/test_crypto_performance.py -s
+
+Those create a throwaway inactive user and delete everything they made.
+
+
+BACKUP  (Phase 8a - so the company DB is not your only copy)
+────────────────────────────────────────────────────────────
+python scripts/backup.py                  # full encrypted .budgetbak
+python scripts/restore.py --verify FILE   # restore to a scratch schema + diff
+python scripts/restore.py --fresh FILE    # restore into an empty database
+python scripts/restore.py --merge FILE    # add to existing, skip duplicates
+python scripts/verify_backup.py           # round-trip fidelity check
+
+The .budgetbak file is encrypted end to end, so it is safe on a USB
+stick or in cloud storage. It carries both wrapped DEKs, which means
+a new server + an empty database + either your .env OR your 12 words
+is enough to bring everything back.
+
+Run --verify occasionally. A backup you have never restored is not a
+backup, and here the cost of finding out is everything.
+
+
+USEFUL SCRIPTS
+──────────────
+python scripts/decrypt_query.py --user-id 1 --table transactions
+                                     # read your own data - needs the master key
+python scripts/decrypt_query.py --user-id 1 --profile
+python scripts/benchmark_fetch.py        # READ-ONLY cold-load estimate from THIS
+                                         # machine. Run it on the server: that
+                                         # number decides ARCHITECTURE 5.7
+python scripts/generate_int_tables.py    # regenerate int_tables.sql from the
+                                         # migrations (connects to nothing)
+python scripts/generate_keys.py          # new secrets (NOT for an existing install)
+python scripts/generate_keys.py --fill   # fill EMPTY keys in .env; never overwrites
+python scripts/verify_integrity.py       # (Phase 9) orphaned refs, unreadable rows
+python scripts/rotate_keys.py --dry-run  # (Phase 9) ALWAYS dry-run first
+
+
+ADDING ANOTHER USER
+───────────────────
+Registration is never open. Anyone signing up needs the code in
+REGISTRATION_CODE (.env), and MAX_USERS caps the total. Change the code
+to cancel every invitation you have handed out. (The signup screen
+arrives in Phase 2; until then, python scripts/bootstrap_user.py.)
+The first account created becomes the admin.
+
+Each user gets their own encryption key and their own recovery phrase.
+Nobody can read anyone else's data - including you, as admin. That is
+cryptographic, not a permission setting. Make sure anyone you add
+understands that losing BOTH their password and their phrase means
+their data is unrecoverable by any person.
+
+
+═══════════════════════════════════════════════════════════════════
+IF YOU LOSE .env
+═══════════════════════════════════════════════════════════════════
+You are fine, IF you still have the 12-word recovery phrase.
+
+  1. Restore .env from backup, or create a fresh one with new keys:
+       copy .env.example .env
+       python scripts/generate_keys.py --fill
+     and put the DB settings back (they are in QUOT's .env).
+  2. Open the app and choose "Recover with phrase" (Phase 2)
+  3. Enter the 12 words and set a new password
+
+You do not need to type your email: the phrase itself finds your
+account. It unwraps your DEK, re-wraps it under the new master key,
+and rebuilds your login under the new keys. Your data comes back
+intact. (Proven by tests/test_recovery.py - the headline test.)
+
+IF YOU LOSE BOTH .env AND THE PHRASE
+────────────────────────────────────
+The data is gone. Permanently. No reset, no support ticket. The DBA
+cannot help - that is the entire point of the design.
+═══════════════════════════════════════════════════════════════════
+
+
+═══════════════════════════════════════════════════════════════════
+DEPLOY TO THE SERVER  (IIS, same host as QUOT)
+═══════════════════════════════════════════════════════════════════
+1. On your PC:  cd frontend  then  npm run build
+   and commit app/web/static/dist/ - the server has no npm.
+2. On the server, put the code in  C:\inetpub\wwwroot\ZBDGT
+3. Copy .env into that folder BY HAND. It is not in git, and it holds
+   the master key and the database password.
+4. Preview what installing would change in the venv QUOT also uses:
+     C:\inetpub\wwwroot\FAST-PYTHON\.venv\Scripts\pip install -r requirements.txt --dry-run
+   Install for real once the preview looks safe.
+5. In IIS Manager, add an application named ZBDGT pointing at that
+   folder. web.config is already there: one worker, /ZBDGT, no secrets.
+6. Open  https://delca.noahapplication.com/ZBDGT/api/v1/health
+   It should report the database reachable and the master key loaded.
+7. On the server, in the app folder, once:
+     C:\inetpub\wwwroot\FAST-PYTHON\.venv\Scripts\python scripts\benchmark_fetch.py
+   Read-only. Under 1500 ms and the encryption design stands as it is.
+   (From your PC it reads ~2.3 s - that is your internet link, not the app.)
+
+The app itself:  https://delca.noahapplication.com/ZBDGT
