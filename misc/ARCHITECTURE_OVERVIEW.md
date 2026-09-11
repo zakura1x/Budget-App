@@ -544,10 +544,11 @@ sketch if you ever want it.
 
 ## 13. Current state, honestly
 
-Phase 1 is built (2026-09-11): the crypto core, the recovery phrase, the
-database layer and migration, and the frontend shell, with 164 passing tests.
-Schema ZBDGT and its fifteen tables exist on P8_NOAH_AI. Everything from
-Phase 2 on is still a decision, not an observation.
+Phases 1 and 2 are built (2026-09-11): the crypto core, the recovery phrase,
+the database layer and migration, the frontend shell, and the whole sign-in /
+lock / recovery flow, with 212 passing tests. Schema ZBDGT and its fifteen
+tables exist on P8_NOAH_AI. Everything from Phase 3 on is still a decision, not
+an observation.
 
 The three things most likely to change:
 
@@ -565,4 +566,4 @@ The three things most likely to change:
 
 Start with [phases.txt](phases.txt) — its Phase 1 section says what was built,
 what was built differently from the plan, and what is left: your first
-account, and the benchmark run on the server.
+account (the sign-up screen), and the benchmark run on the server.

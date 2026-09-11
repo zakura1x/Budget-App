@@ -20,7 +20,7 @@ changes every index, and every login stops finding its user.
 import hashlib
 import hmac
 import unicodedata
-from functools import lru_cache
+from typing import Optional
 
 BIDX_HEX_LENGTH = 64
 
@@ -49,9 +49,22 @@ class BlindIndexer:
         if len(pepper) < 32:
             raise ValueError("blind index pepper must be at least 32 bytes")
         self._pepper = bytes(pepper)
+        # A separate subkey for IP addresses, so an IP hash and an email index
+        # can never be compared with each other.
+        from app.core.crypto.keyring import hkdf_sha256
+
+        self._ip_key = hkdf_sha256(self._pepper, "budget:ip-hash")
 
     def email(self, email: str) -> str:
         return compute(email, self._pepper)
+
+    def ip(self, address: str) -> str:
+        """
+        Keyed hash of a client IP for login_attempts and audit_log. Keyed,
+        because an unkeyed hash of an IPv4 address is reversed by trying all
+        four billion of them.
+        """
+        return hmac.new(self._ip_key, (address or "").strip().encode("utf-8"), hashlib.sha256).hexdigest()
 
     def matches(self, email: str, stored_index: str) -> bool:
         return matches(email, stored_index, self._pepper)
@@ -60,8 +73,19 @@ class BlindIndexer:
         return "BlindIndexer(pepper=**********)"
 
 
-@lru_cache(maxsize=1)
-def get_blind_indexer() -> BlindIndexer:
-    from app.core.config import settings
+_process_indexer: Optional[BlindIndexer] = None
 
-    return BlindIndexer(settings.blind_index_pepper_bytes)
+
+def get_blind_indexer() -> BlindIndexer:
+    global _process_indexer
+    if _process_indexer is None:
+        from app.core.config import settings
+
+        _process_indexer = BlindIndexer(settings.blind_index_pepper_bytes)
+    return _process_indexer
+
+
+def set_blind_indexer(indexer: Optional[BlindIndexer]) -> None:
+    """Replace the process indexer - tests simulating a new .env."""
+    global _process_indexer
+    _process_indexer = indexer

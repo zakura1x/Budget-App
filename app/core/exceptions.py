@@ -96,6 +96,19 @@ class InvalidCredentialsException(AuthenticationException):
     code = "INVALID_CREDENTIALS"
 
 
+class TokenExpiredException(AuthenticationException):
+    """The access token ran out - the client refreshes and retries."""
+
+    code = "TOKEN_EXPIRED"
+
+
+class SessionRevokedException(AuthenticationException):
+    """Signed out elsewhere, a replayed refresh token, or too many wrong PINs."""
+
+    code = "SESSION_REVOKED"
+    title = "Signed Out"
+
+
 class SessionLockedException(AuthenticationException):
     """
     Logged in, but the keys are not in memory - auto-lock, PIN lock, or a

@@ -15,8 +15,8 @@ Startup order is the design, not an accident (ARCHITECTURE.md section 2):
      refused to start would only turn "database down" into "502 from IIS".
   5. Static files, the API router and the SPA shell are mounted.
 
-Middleware, outermost first: CORS (development only) -> SecurityHeaders.
-RateLimit, Logging and Auth join in Phase 2.
+Middleware, outermost first: CORS (development only) -> SecurityHeaders ->
+RateLimit -> Logging -> Auth.
 """
 
 import logging
@@ -36,6 +36,9 @@ from app.api.v1.router import api_router  # noqa: E402
 from app.core.crypto.keyring import get_master_keyring  # noqa: E402
 from app.core.crypto.self_test import run_self_test  # noqa: E402
 from app.core.exceptions import setup_exception_handlers  # noqa: E402
+from app.core.middleware.auth_middleware import AuthMiddleware  # noqa: E402
+from app.core.middleware.logging_middleware import LoggingMiddleware  # noqa: E402
+from app.core.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
 from app.core.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
 from app.db.connection import check_database, dispose_engine  # noqa: E402
 from app.web.router import STATIC_DIR, router as web_router  # noqa: E402
@@ -82,6 +85,12 @@ app = FastAPI(
 )
 
 # Added innermost-first: Starlette makes the LAST added middleware the outermost.
+# Resulting order, outermost first: CORS -> SecurityHeaders -> RateLimit ->
+# Logging -> Auth. SecurityHeaders sits outside RateLimit so a 429 still
+# carries the headers.
+app.add_middleware(AuthMiddleware, api_prefix=settings.API_PREFIX)
+app.add_middleware(LoggingMiddleware, api_prefix=settings.API_PREFIX)
+app.add_middleware(RateLimitMiddleware, api_prefix=settings.API_PREFIX)
 app.add_middleware(
     SecurityHeadersMiddleware,
     api_prefix=settings.API_PREFIX,

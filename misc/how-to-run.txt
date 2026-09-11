@@ -20,7 +20,12 @@ FIRST TIME
    every key is generated. Nothing to do - just do not lose it (step 1).
 
 4. alembic upgrade head                 # DONE 2026-09-11 - schema ZBDGT exists
-   python scripts/bootstrap_user.py     # your account + recovery phrase
+   Create your account on the sign-up screen: open the app, "Create an
+   account", and enter the code from REGISTRATION_CODE in .env. The FIRST
+   account becomes admin - make it yours. Write the 12 words on paper when
+   they appear; you will not see them again.
+   python scripts/bootstrap_user.py     # OPTIONAL fallback: same account,
+                                        # from the command line
    python scripts/seed_categories.py    # (Phase 3) default categories
 
 
@@ -115,9 +120,8 @@ ADDING ANOTHER USER
 ───────────────────
 Registration is never open. Anyone signing up needs the code in
 REGISTRATION_CODE (.env), and MAX_USERS caps the total. Change the code
-to cancel every invitation you have handed out. (The signup screen
-arrives in Phase 2; until then, python scripts/bootstrap_user.py.)
-The first account created becomes the admin.
+to cancel every invitation you have handed out. They sign up at
+/ZBDGT/register. The first account created becomes the admin.
 
 Each user gets their own encryption key and their own recovery phrase.
 Nobody can read anyone else's data - including you, as admin. That is
@@ -135,8 +139,8 @@ You are fine, IF you still have the 12-word recovery phrase.
        copy .env.example .env
        python scripts/generate_keys.py --fill
      and put the DB settings back (they are in QUOT's .env).
-  2. Open the app and choose "Recover with phrase" (Phase 2)
-  3. Enter the 12 words and set a new password
+  2. Open the app: "Forgot your password? Use your 12 words"
+  3. Enter the 12 words and set a new password, then choose a new PIN
 
 You do not need to type your email: the phrase itself finds your
 account. It unwraps your DEK, re-wraps it under the new master key,

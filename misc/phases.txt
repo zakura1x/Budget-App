@@ -125,9 +125,9 @@ Local machine:
 > exists and is tested: 164 local tests pass, and the SQL Server tests pass
 > against P8_NOAH_AI. Schema ZBDGT and its 15 tables were created by
 > `alembic upgrade head` on 2026-09-11 (QUOT's login is db_owner there).
-> Open: your first account (`bootstrap_user.py` - yours to run, it asks for
-> your password and shows your phrase) and the benchmark taken ON THE SERVER
-> (see the benchmark block below).
+> Open: the benchmark taken ON THE SERVER (see the benchmark block below).
+> Your account is created through the signup screen in Phase 2 - the script
+> is optional (decided 2026-09-11).
 
 ### Backend Tasks
 
@@ -194,8 +194,9 @@ App shell + proof:
   ✅ app/core/exceptions.py - hierarchy + RFC 7807 problem+json
   ✅ DecryptionError never returns detail (row id to the log, a ref to the client)
   ✅ scripts/bootstrap_user.py - written, tested through its service
-  ☐ ...and RUN by you: it asks for your email and password and shows your
-     recovery phrase once, so it is not something to run on your behalf
+     OPTIONAL: your account is created through the Phase 2 signup screen
+     (same create_account underneath). The script stays as the server-side
+     fallback - signup screen broken, or registration code lost
   ✅ scripts/decrypt_query.py - written (useful once your account exists)
   ✅ scripts/benchmark_fetch.py - the READ-ONLY go/no-go benchmark, to run on
      the app server (see below)
@@ -374,9 +375,11 @@ Operational:
 DONE  alembic upgrade head                  # schema ZBDGT + 15 tables, 2026-09-11
 DONE  SQL Server tests                      # 3 passed; benchmark recorded above
 
-YOU   back up .env OFF this machine FIRST
-YOU   python scripts/bootstrap_user.py      # your account + recovery phrase
-      python scripts/decrypt_query.py --user-id 1 --profile   # see it decrypt
+LATER your account - via the Phase 2 signup screen (bootstrap_user.py is
+      the optional fallback). Back up .env OFF this machine before it.
+      ★ Your REAL account must be the first one created: the first account
+      becomes admin. Test accounts made while building Phase 2 are deleted
+      before you sign up.
 
 SERVER  python scripts/benchmark_fetch.py   # when the code first reaches IIS
 ```
@@ -387,124 +390,157 @@ SERVER  python scripts/benchmark_fetch.py   # when the code first reaches IIS
 
 ### 🎯 Objective: Login that unlocks the data, and a lock screen that re-hides it
 
+> **Status 2026-09-11: BUILT, ahead of schedule.** 212 local tests pass; the
+> whole flow (sign-up → PIN → lock → wrong/right PIN → refresh → replay →
+> recovery) also passes against SQL Server, and cleaned up after itself - the
+> ZBDGT tables are empty again, so **your real sign-up will be the first
+> account, and therefore the admin.** Clicked through in a real browser at
+> 390x844, including a server restart mid-session.
+
 ### Backend Tasks
 
 ```yaml
-Days 1-3:
-  Auth core:
-    ☐ app/services/auth_service/auth_service.py
-    ✅ Register core exists: registration_service.create_account() - bcrypt
-       cost 12, DEK + phrase wrapped together, MAX_USERS, first user admin,
-       encrypted preferences row (built in Phase 1 for bootstrap_user.py)
-    ☐ Register endpoint wraps it: code gate, rate limit, audit (below)
-    ☐ ★ REGISTRATION CODE GATE (SEC-19): signup requires the code from
-       REGISTRATION_CODE in .env. No code, no account. You change the
-       code to invalidate every outstanding invitation at once.
-       - constant-time comparison (it is a secret, treat it like one)
-       - 5 attempts/hour per IP (SEC-25) - it is the ONLY signup gate
-       - every failure audited
-       - MAX_USERS enforced too (SEC-26), so a leaked code cannot
-         create unlimited accounts
-    ☐ recovery_service.py - the SEC-15 flow:
-        phrase -> unwrap DEK -> re-wrap under the CURRENT master key
-                             -> authorise a password reset
-      (recovering the key without a password reset would be an ornament -
-       you would hold the key and still have no way to log in)
-    ☐ Rate-limit recovery attempts hard - it bypasses the password
+Auth core:
+  ✅ auth_service.py - login, lock, unlock by PIN or password, set PIN, profile
+  ✅ Register - bcrypt cost 12 (pre-hashed, no 72-byte limit), DEK generated
+     and wrapped under the master key AND the phrase, in one step (Phase 1)
+  ✅ ★ REGISTRATION CODE GATE (SEC-19): registration_service.register()
+     - constant-time comparison
+     - 5 failed codes per IP per hour (SEC-25), counted in login_attempts so
+       the limit survives a restart
+     - every failure audited (REGISTER_REJECTED, hashed IP)
+     - MAX_USERS enforced (SEC-26); empty REGISTRATION_CODE = sign-up closed
+  ✅ recovery_service.py - the SEC-15 flow:
+       phrase -> finds the account (no email needed) -> unwraps the DEK
+       -> re-wraps it under the CURRENT master key -> rebuilds the email
+       index under the CURRENT pepper -> new password, PIN cleared
+       -> every other session ended -> this browser signed in
+  ✅ Recovery limited hard: 3 wrong phrases per IP per hour. A TYPO (unknown
+     word, bad checksum) is rejected first and costs no attempt.
+  ✅ A disabled account stays disabled - recovery is not a way around it
 
-  ★ MULTI-USER (SEC-17) - nearly free, because the schema was always
-    user-scoped. Do it now rather than retrofitting later:
-    ☐ SINGLE_USER_MODE=False supported end to end
-    ☐ EVERY query filters by user_id. No exceptions. Audit this
-      deliberately - one missing filter leaks another user's rows.
-    ☐ Registration is NEVER open: gated by REGISTRATION_CODE in .env
-      (SEC-19). First account becomes admin.
-    ☐ Each user gets their OWN DEK and their OWN recovery phrase
-    ☐ ★ There is NO admin who can read another user's data (SEC-18).
-      Admin manages accounts; admin cannot decrypt one. Do not add a
-      "support" path later - it would need a key that opens everything,
-      which would defeat the whole design.
-    ☐ Rate limiting keyed per account, not per IP
-    ☐ Working-set cache is per-user; CACHE_MAX_USERS bounds memory
-    ☐ Login - blind index lookup -> bcrypt verify -> unwrap DEK
-    ☐ Close registration once one account exists (SINGLE_USER_MODE)
-    ☐ Account lockout: 5 attempts / 15 min, recorded in login_attempts
-    ☐ Hash the IP in login_attempts - do not store it raw
+★ MULTI-USER (SEC-17):
+  ✅ SINGLE_USER_MODE=False end to end; True closes sign-up after one account
+  ✅ Every data query filters by user_id - structurally: repositories take
+     the user from the UserCipher, there is no parameter to get wrong
+  ✅ Registration never open; first account becomes admin
+  ✅ Own DEK and own recovery phrase per user
+  ✅ ★ No admin can read another user's data (SEC-18) - tested: the admin's
+     key fails to open another user's row, and the repository will not fetch it
+  ✅ General rate limit keyed per ACCOUNT when signed in, per IP otherwise
+  ☐ Working-set cache per user / CACHE_MAX_USERS - Phase 4 (no cache yet)
+  ✅ Login - blind index -> bcrypt -> unwrap DEK -> session keyring
+  ✅ Lockout: 5 failures / 15 min, computed FROM login_attempts - so it
+     applies to emails with no account too, and reveals nothing
+  ✅ IP stored only as a keyed hash (HKDF subkey of the pepper)
 
-  Tokens:
-    ☐ JWT HS256, 30 min access, HttpOnly + SameSite=Lax cookie
-    ☐ Refresh tokens hashed at rest, with family_id and parent_id
-    ☐ ROTATION: each refresh issues new, invalidates old
-    ☐ REUSE DETECTION: replayed token revokes the entire family
+Tokens:
+  ✅ JWT HS256, 30 min, HttpOnly + SameSite=Lax cookie zbdgt_session
+  ✅ Refresh tokens SHA-256 at rest, family_id + parent_id; cookie
+     zbdgt_refresh is narrower still: Path=/ZBDGT/api/v1/auth
+  ✅ ROTATION: each refresh issues a new token and marks the old one used
+  ✅ REUSE DETECTION: a used token presented again revokes the whole family
+  ✅ Every request checks its family is still alive - a 30-minute access
+     token cannot outlive a sign-out or a revocation
 
-Days 4-5:
-  Session & lock:
-    ☐ DEK held in session keyring, dropped on logout / expiry / lock
-    ☐ PIN: 6 digits, bcrypt + PIN_PEPPER, 5 attempts
-    ☐ PIN guards the SESSION only - it must never derive the DEK
-    ☐ Auto-lock after PIN_AUTO_LOCK_MINUTES drops keys AND cache
-    ☐ ★ Process restart = auto-lock (SEC-27). An empty keyring means
-       LOCKED, never an error. IIS idle-stops the app after 20 min,
-       recycles it, and restarts it on deploy; each time the next
-       request must get 'locked' -> PIN -> re-unwrap -> re-warm.
-       Test it by restarting uvicorn in the middle of a session.
-    ☐ ★ Cookies scoped to this app (SEC-28): Path=/ZBDGT, names zbdgt_*.
-       The host is shared with QUOT and others: an unscoped cookie goes
-       to all of them, and a shared name could overwrite QUOT's.
-    ✅ Middleware: SecurityHeaders (CSP nonce) - built in Phase 1
-    ☐ Middleware: RateLimit, Logging, Auth
-    ☐ audit_service - plaintext verb/entity, encrypted detail blob
+Session & lock:
+  ✅ DEK in the session keyring (keyed by family id), zeroed on logout / lock
+  ✅ PIN: 6 digits, bcrypt(HMAC(PIN_PEPPER, pin)), 5 attempts, runs and
+     repeated digits refused
+  ✅ PIN guards the SESSION only - it never derives or wraps a key; unlocking
+     makes the server unwrap the DEK again with the master key
+  ✅ Five wrong PINs end the session; only the password starts a new one
+  ✅ Password unlock too - for users with no PIN, or who prefer it
+  ✅ Auto-lock enforced server-side (keyring idle timeout = PIN_AUTO_LOCK_MINUTES)
+  ✅ ★ Process restart = auto-lock (SEC-27) - tested in the API tests AND in a
+     real browser: server stopped and restarted mid-session -> "Budget is
+     locked" -> PIN -> "Hi, Noah". Nobody signed out.
+  ✅ ★ Cookies scoped (SEC-28): Path=/ZBDGT, names zbdgt_*, no Domain
+  ✅ Middleware: SecurityHeaders -> RateLimit -> Logging -> Auth
+  ✅ CSRF guard: every POST/PUT/PATCH/DELETE to the API needs
+     X-Requested-With: fetch (SameSite=Lax does not cover the other
+     *.noahapplication.com apps - they count as same-site)
+  ✅ audit_service - plaintext verb, detail sealed under the user's DEK
+  ✅ Request log: method, path WITHOUT query, status, elapsed_ms, user id
 ```
 
 ### Frontend Tasks
 
 ```yaml
-Days 1-3:
-  Auth screens:
-    ☐ Login - large touch targets, email + password
-    ☐ Register - live password strength meter against the 12-char policy
-    ☐ ★ Recovery phrase screen, shown once at registration:
-        - the 12 words, large and legible, in numbered order
-        - "Write these on paper. Store them away from this machine
-           and away from your .env backup. Anyone holding them can
-           read all of your data."
-        - explicit acknowledge checkbox before continuing
-        - a confirm step: re-enter 3 randomly chosen words
-    ☐ Recovery screen - enter 12 words, then set a new password (SEC-15)
-    ☐ Per-word inputs with BIP-39 autocomplete, so typos surface immediately
-    ☐ authStore (zustand) - session state, never the DEK
+Auth screens:
+  ✅ Login - email + password, links to sign-up and recovery
+  ✅ Register - invitation code, live checklist against the server's policy
+  ✅ ★ Recovery phrase screen, shown once:
+      ✅ 12 words, large, numbered, 2 columns
+      ✅ the warning (paper, away from this machine and the .env backup)
+      ✅ acknowledge checkbox before Continue
+      ✅ re-enter 3 randomly chosen words (crypto.getRandomValues)
+  ✅ PIN setup after sign-up and after recovery - skippable
+  ✅ Recovery screen - 12 boxes, BIP-39 suggestions as you type, typos
+     flagged before submitting, paste the whole phrase into any box
+  ✅ The 2,048-word list is its own 6 KB chunk, loaded by that screen only
+  ✅ authStore (zustand) - session state only, never a key or token,
+     nothing persisted; the phrase is dropped the moment it is confirmed
 
-Days 4-5:
-  Lock & routing:
-    ☐ PIN entry screen - 6 dots, custom numpad, haptic-style feedback
-    ☐ Auto-lock timer on blur / 5 min idle
-    ☐ Protected route wrapper -> redirect to lock or login
-    ☐ 401 interceptor -> silent refresh -> retry, else bounce to login
-    ☐ Loading skeleton for the cold decrypt (~0.5s) so login never feels hung
+Lock & routing:
+  ✅ Lock screen - 6 dots, round numpad, shake on a wrong PIN, attempts left,
+     "Use password", "Sign out"
+  ✅ Auto-lock: 5 min idle, or away (hidden) for over a minute
+  ✅ Four worlds - loading / signed out / locked / unlocked. Locked UNMOUNTS
+     the app screens, so nothing decrypted stays in the page
+  ✅ 401 -> ONE shared refresh -> retry; else back to sign-in
+  ✅ Loading skeleton shaped like the home screen
+  ✅ More tab: Lock now, Sign out; Home greets you by name
 ```
 
 ### 🔗 Integration Points
 
 ```yaml
-Contract:
-  POST /api/v1/auth/register  -> 201, sets cookies, returns key-backup warning
-  POST /api/v1/auth/login     -> 200, sets cookies, warms cache
-  POST /api/v1/auth/refresh   -> 200, rotates
-  POST /api/v1/auth/logout    -> 204, zeroes DEK + cache
-  POST /api/v1/auth/pin/verify-> 200, restores session
-  GET  /api/v1/auth/me        -> current user + preferences
-  POST /api/v1/auth/recover   -> phrase + new password, returns a session
+Contract (all under /ZBDGT/api/v1):
+  GET  /auth/config      -> public: sign-up open?, PIN length, password policy
+  POST /auth/register    -> 201, cookies, the 12 words ONCE
+  POST /auth/login       -> 200, cookies
+  POST /auth/refresh     -> 200, rotates (a failed refresh clears the cookies)
+  POST /auth/logout      -> 204, key zeroed, family revoked, cookies cleared
+  POST /auth/lock        -> 204
+  POST /auth/pin         -> set / change the PIN (change needs the password)
+  POST /auth/pin/verify  -> 200, unlocked
+  POST /auth/unlock      -> 200, unlocked by password
+  GET  /auth/me          -> who, locked?, PIN set? (email only while unlocked)
+  POST /auth/recover     -> phrase + new password, returns a session
+  GET  /settings/preferences -> the first endpoint that needs an unlocked session
 
 Verify:
-  ☐ Login warms the cache before returning - home screen paints instantly
-  ☐ Replaying a used refresh token kills every session (test it deliberately)
-  ☐ Locking drops keys: subsequent data call 401s until PIN
-  ☐ ★ END-TO-END RECOVERY REHEARSAL: write data, destroy the master key in
-     .env, recover using only the 12 words, read the data back. Do this
-     before Phase 3, while there is little to lose if it goes wrong.
+  ☐ Login warms the cache before returning - Phase 4 (there is no cache yet)
+  ✅ Replaying a used refresh token kills every session - tested, twice:
+     SQLite and SQL Server
+  ✅ Locking drops keys: the data call answers SESSION_LOCKED until the PIN
+  ✅ ★ END-TO-END RECOVERY REHEARSAL - tests/test_auth_recovery.py: data
+     written, master key AND pepper replaced, recovered with only the 12
+     words, data read back, signed in with the new password
+```
+
+### 🔀 Built differently from the plan, and why
+
+```yaml
+- Lockout counts come from login_attempts, not from counters on users, so an
+  email with no account locks exactly like one with an account.
+- Password unlock (/auth/unlock) exists alongside the PIN - skipping the PIN
+  must leave a way to unlock that is not a full sign-in.
+- Recovery clears the PIN: its hash is peppered with PIN_PEPPER from .env,
+  so after a .env loss the old PIN could never verify again.
+- /auth/me while LOCKED returns no email or name - they live in profile_enc
+  under the DEK, which is not in memory. The lock screen shows no identity.
+- A CSRF header check was added (not in the plan).
+- The refresh cookie's path is /ZBDGT/api/v1/auth, narrower than /ZBDGT.
+- Auto-lock on "blur" became "hidden for more than a minute", so glancing
+  at a notification does not cost a PIN entry.
+- The keyring and email indexer became replaceable (set_master_keyring /
+  set_blind_indexer) - the recovery rehearsal needs it, and so will Phase 9.
 ```
 
 ---
+
 
 ## 📦 PHASE 3: Accounts & Categories (Oct 4 – Oct 12 · 9 days)
 
@@ -1150,7 +1186,7 @@ scripts/
 | Phase | Backend | Frontend | Ships |
 |---|---|---|---|
 | 1 | Crypto core, DB, config | Toolchain, design system, shell | Nothing user-visible. Everything depends on it. |
-| 2 | Auth, JWT, DEK, PIN | Login, register, lock screen | You can log in and the DEK unwraps |
+| 2 | Auth, JWT, DEK, PIN | Login, register, lock screen | You can log in and the DEK unwraps — **built 2026-09-11** |
 | 3 | Accounts, categories | Account + category managers | First real encrypted CRUD |
 | 4 | Transactions, cache | Numpad sheet, ledger | **You can actually track spending** |
 | 5 | Budgets, daily allowance | Home ring | **The app becomes useful** |
@@ -1174,15 +1210,16 @@ scripts/
   server-side run pending - scripts/benchmark_fetch.py**
 - ✅ Vite building into app/web/static/dist/, first bundle committed
 
-### Phase 2 · Sep 24 – Oct 3 · 10 days: Auth
-- ☐ Registration gated by REGISTRATION_CODE, rate limited
-- ☐ Register/login working, DEK unwraps at login
-- ☐ Recovery phrase shown once, confirmed (3 words), acknowledged
-- ☐ Refresh rotation + family revocation on reuse
-- ☐ PIN lock and auto-lock drop keys and cache
-- ☐ Restarting uvicorn mid-session shows the PIN screen, not an error
-- ☐ Cookies scoped to /ZBDGT
-- ☐ **End-to-end recovery rehearsal: destroy the master key, recover by phrase**
+### Phase 2 · Sep 24 – Oct 3 · 10 days: Auth — built 2026-09-11
+- ✅ Registration gated by REGISTRATION_CODE, rate limited
+- ✅ Register/login working, DEK unwraps at login
+- ✅ Recovery phrase shown once, confirmed (3 words), acknowledged
+- ✅ Refresh rotation + family revocation on reuse
+- ✅ PIN lock and auto-lock drop keys (the cache arrives in Phase 4)
+- ✅ Restarting uvicorn mid-session shows the PIN screen, not an error
+- ✅ Cookies scoped to /ZBDGT
+- ✅ **End-to-end recovery rehearsal: destroy the master key, recover by phrase**
+- ☐ **Your account - via the sign-up screen; the first account becomes admin**
 
 ### Phase 3 · Oct 4 – Oct 12 · 9 days: Accounts & Categories
 - ☐ CRUD for both, fully encrypted, unreadable in SSMS
@@ -1305,6 +1342,20 @@ Found while building Phase 1 (2026-09-11):
   - Seeding through the two-step insert costs 2-3 round trips per row: ~62 ms
     per row from the dev PC. Invisible for one entry; it matters for bulk
     paths (CSV import, backup restore - Phase 8a), which should batch.
+
+Found while building Phase 2 (2026-09-11):
+  - Two tabs refreshing at the same instant with the same refresh token look
+    like a replay, and the session ends. One tab shares a single refresh
+    (lib/api.ts), but tabs do not coordinate. Rare on a phone PWA; the fix
+    if it ever bites is a BroadcastChannel lock or a few seconds' grace.
+  - Every authenticated request makes one indexed query to check its session
+    has not been revoked. Negligible at this scale, and it is what lets
+    sign-out end a 30-minute access token immediately.
+  - The in-process rate limiter forgets on restart. The limits that matter
+    (wrong passwords, codes, phrases) are in login_attempts and survive.
+  - The 12 words travel once, in the /auth/register response over TLS. There
+    is no way to show them without sending them; they are never logged
+    (redaction covers phrases) and never stored.
 
 To revisit after Phase 1's benchmark:
   - If cold load > 1500ms, adopt bucket columns (ARCHITECTURE.md §5.7) and

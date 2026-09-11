@@ -619,6 +619,20 @@ and after the PIN the server unwraps the DEK again with the master key and
 re-warms the cache. Auto-lock fires after 5 minutes and idle shutdown after
 20, so in practice the user was already locked (SEC-27).
 
+**As built (Phase 2).** The session id *is* the refresh-token family id, and
+the keyring is keyed by it. The access JWT sits in `zbdgt_session`
+(`Path=/ZBDGT`); the refresh token in `zbdgt_refresh`, whose path is narrower
+still (`/ZBDGT/api/v1/auth`), so no ordinary request carries it. Every request
+checks its family is still alive, so a sign-out ends a 30-minute access token
+at once. Locked is a first-class state: `/auth/me` answers `locked: true` and
+omits the email, which lives under the DEK. Unlock is by PIN or by password,
+and both make the server unwrap the DEK with the master key. Five wrong PINs
+end the session. Lockouts are counted from `login_attempts`, so an email with
+no account locks exactly like one with an account and reveals nothing. Every
+state-changing API request must carry `X-Requested-With: fetch`: `SameSite=Lax`
+does not protect against the other `*.noahapplication.com` apps, which count as
+same-site.
+
 ---
 
 ## 7. The frontend, and how React gets built without npm on the server
@@ -1047,10 +1061,11 @@ un-seen.
 
 ## 14. Known state
 
-Phase 1 is built (2026-09-11): the crypto core, the database layer, the
-migration and the frontend shell, with 164 passing tests. Schema `ZBDGT` and
-its fifteen tables exist on P8_NOAH_AI, and the SQL Server tests pass there.
-Everything from Phase 2 on is still design. The things most likely to need revision:
+Phases 1 and 2 are built (2026-09-11): the crypto core, the database layer,
+the migration, the frontend shell, and sign-up / sign-in / lock / recovery,
+with 212 passing tests. Schema `ZBDGT` and its fifteen tables exist on
+P8_NOAH_AI, the SQL Server tests pass there, and the tables are empty. Everything
+from Phase 3 on is still design. The things most likely to need revision:
 
 - **§5.6 is measured except where it matters most.** CPU: 123-140 ms for
   10,000 rows. From the dev PC the fetch is network-bound (2.3 s total). The

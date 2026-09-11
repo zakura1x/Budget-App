@@ -5,7 +5,8 @@
  */
 import { useEffect, useState } from 'react';
 import { getHealth, type HealthStatus } from '../lib/api';
-import { GearIcon, RepeatIcon, ServerIcon, ShieldIcon, TagIcon, WalletIcon } from '../components/Icons';
+import { GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, TagIcon, WalletIcon } from '../components/Icons';
+import { useAuthStore } from '../stores/authStore';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SectionTitle } from '../components/ui/Card';
 import { ListGroup, ListRow } from '../components/ui/ListRow';
@@ -29,10 +30,21 @@ export function More() {
 
   const loading = !health && !error;
   const soon = <span className="text-footnote text-ink-3">soon</span>;
+  const session = useAuthStore((s) => s.session);
+  const lock = useAuthStore((s) => s.lock);
+  const logout = useAuthStore((s) => s.logout);
 
   return (
     <>
-      <ScreenHeader title="More" />
+      <ScreenHeader title="More" subtitle={session?.user.email ?? undefined} />
+
+      <SectionTitle>Session</SectionTitle>
+      <ListGroup>
+        <ListRow icon={<LockIcon size={20} />} title="Lock now"
+          subtitle={session?.pin_set ? 'Unlock with your PIN' : 'Unlock with your password'} onClick={() => void lock()} />
+        <ListRow icon={<LogoutIcon size={20} />} iconTone="bg-danger/10 text-danger" title="Sign out"
+          onClick={() => void logout()} />
+      </ListGroup>
 
       <SectionTitle>Money</SectionTitle>
       <ListGroup>

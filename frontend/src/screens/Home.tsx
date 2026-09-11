@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { PhaseNote, ScreenHeader } from '../components/ScreenHeader';
 import { Card } from '../components/ui/Card';
 import { Ring } from '../components/ui/Ring';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * The home screen. In Phase 5 the ring shows the real period, and the hero
@@ -11,9 +12,13 @@ import { Ring } from '../components/ui/Ring';
  */
 export function Home() {
   const today = new Date();
+  const name = useAuthStore((s) => s.session?.user.display_name);
   return (
     <>
-      <ScreenHeader title="Budget" subtitle={format(today, 'EEEE, d MMMM')} />
+      <ScreenHeader
+        title={name ? `Hi, ${name}` : 'Budget'}
+        subtitle={format(today, 'EEEE, d MMMM')}
+      />
 
       <Card className="flex flex-col items-center py-7">
         <Ring progress={0} label="No budget yet">

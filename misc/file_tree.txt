@@ -59,7 +59,7 @@ Budget App/
 │   │
 │   ├── core/
 │   │   ├── config.py                    # HARD FAILS without a valid master key
-│   │   ├── deps.py                      # get_current_user, get_dek, get_working_set
+│   │   ├── deps.py                      # get_session_context, get_unlocked_context
 │   │   ├── exceptions.py                # DecryptionError never leaks detail
 │   │   ├── logging_config.py            # redaction filter, installed first
 │   │   │
@@ -79,9 +79,11 @@ Budget App/
 │   │   │
 │   │   ├── middleware/
 │   │   │   ├── security_headers.py      # CSP nonce, nosniff, DENY - no HSTS (shared host)
-│   │   │   ├── rate_limit.py
-│   │   │   ├── logging_middleware.py
-│   │   │   └── auth_middleware.py       # attaches identity, does not block
+│   │   │   ├── rate_limit.py            # per IP on credentials, per account otherwise
+│   │   │   ├── logging_middleware.py    # one line per request, no query string
+│   │   │   ├── identity.py              # decode the access cookie once per request
+│   │   │   └── auth_middleware.py       # attaches identity, does not block;
+│   │   │                                #   refuses unsafe requests without the fetch header
 │   │   │
 │   │   └── utils/
 │   │       ├── date_utils.py            # period resolution - custom start days
@@ -127,16 +129,20 @@ Budget App/
 │   │       ├── subscription_repository.py
 │   │       ├── goal_repository.py
 │   │       ├── backup_repository.py     # bulk read/write for export & import
-│   │       └── audit_repository.py
+│   │       ├── token_repository.py      # refresh-token families, revocation
+│   │       ├── attempt_repository.py    # the lockout / signup / recovery ledger
+│   │       └── audit_repository.py      # detail sealed under the user's DEK
 │   │
 │   ├── services/                        # ALL business logic. Plaintext only.
 │   │   ├── auth_service/
 │   │   │   ├── auth_service.py
 │   │   │   ├── passwords.py             # bcrypt direct (passlib breaks on bcrypt 5)
+│   │   │   ├── tokens.py                # access JWT, refresh token + hash
+│   │   │   ├── session_service.py       # start / rotate / end - keyring and DB together
 │   │   │   ├── pin_service.py
 │   │   │   ├── recovery_service.py      # phrase -> unwrap DEK + reset password
-│   │   │   ├── registration_service.py   # create_account (Phase 1); code gate +
-│   │   │   │                             #   rate limit join in Phase 2
+│   │   │   ├── registration_service.py   # create_account + the code gate,
+│   │   │   │                             #   rate limit, MAX_USERS
 │   │   │   └── rotation_service.py       # SEC-22 re-wrap · SEC-23 new DEK
 │   │   ├── budget_service/
 │   │   │   ├── budget_service.py
@@ -189,8 +195,13 @@ Budget App/
 │       ├── main.tsx
 │       ├── App.tsx
 │       │
+│       ├── hooks/
+│       │   └── useAutoLock.ts           # idle 5 min, or hidden > 1 min
+│       │
 │       ├── lib/
 │       │   ├── api.ts                   # single fetch wrapper, 401 -> refresh
+│       │   ├── auth.ts                  # the /auth endpoints, typed
+│       │   ├── bip39.ts                 # the 2,048 words - its own lazy chunk
 │       │   ├── config.ts                # BASE_URL / API_PREFIX from the shell's meta tags
 │       │   ├── money.ts                 # PHP formatting by string arithmetic - no floats
 │       │   └── dates.ts
@@ -204,6 +215,10 @@ Budget App/
 │       ├── components/
 │       │   ├── BottomTabBar.tsx         # Home · Calendar · [+] · Stats · More
 │       │   ├── Icons.tsx                # inline SVG - nothing for the CSP to allow
+│       │   ├── AuthLayout.tsx           # the frame for signed-out screens
+│       │   ├── PasswordStrength.tsx     # live checklist against the server's policy
+│       │   ├── PinPad.tsx               # dots + round numpad, auto-submit, shake
+│       │   ├── Splash.tsx               # loading skeleton
 │       │   ├── ScreenHeader.tsx
 │       │   ├── TransactionSheet.tsx     # ★ two taps and a number
 │       │   ├── SplitEditor.tsx          # revealed on tap, never in the way
@@ -211,7 +226,7 @@ Budget App/
 │       │   ├── CategoryChips.tsx
 │       │   ├── TransactionRow.tsx
 │       │   ├── CalendarGrid.tsx
-│       │   └── ui/                      # Button, Sheet, Card, ListRow,
+│       │   └── ui/                      # Button, Sheet, Card, ListRow, TextField,
 │       │                                #   Ring (progress ring), NumPad (no OS keyboard)
 │       │
 │       ├── screens/
@@ -219,7 +234,8 @@ Budget App/
 │       │   ├── Register.tsx
 │       │   ├── RecoveryPhraseSetup.tsx  # ★ 12 words, shown once + confirm 3
 │       │   ├── RecoveryPhraseEnter.tsx  # ★ recover access + reset password
-│       │   ├── PinLock.tsx
+│       │   ├── PinLock.tsx              # PIN or password; after a restart too
+│       │   ├── PinSetup.tsx             # after sign-up and recovery, skippable
 │       │   ├── Home.tsx                 # the ring + daily allowance
 │       │   ├── Calendar.tsx
 │       │   ├── Stats.tsx
@@ -275,7 +291,10 @@ Budget App/
 │   ├── test_key_rotation.py             #   ...and prove rotation keeps the phrase
 │   ├── test_dek_rotation.py             # ★ old DEK dead, all rows readable
 │   ├── test_registration_code.py        # wrong code rejected + rate limited
-│   ├── test_auth.py
+│   ├── test_auth.py                     # tokens, replay, lock, PIN, restart = lock
+│   ├── test_auth_recovery.py            # ★ new .env, recover by phrase, via the API
+│   ├── test_middleware.py               # rate limits, request log, CSRF header
+│   ├── test_db_mssql_auth.py            # the whole auth flow on SQL Server
 │   ├── test_budget_periods.py           # custom start days, year boundaries
 │   ├── test_allowance.py
 │   ├── test_carry_over.py               # symmetric, incl. compounding deficits

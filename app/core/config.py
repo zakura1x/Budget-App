@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_REUSE_REVOKES_FAMILY: bool = True
 
     SESSION_COOKIE_NAME: str = "zbdgt_session"
+    # The refresh token's cookie is narrower still: it is only ever sent to
+    # {API_PREFIX}/auth, so no other request carries the long-lived token.
+    REFRESH_COOKIE_NAME: str = "zbdgt_refresh"
     SESSION_COOKIE_PATH: str = "/ZBDGT"
     SESSION_COOKIE_SECURE: bool = False
     SESSION_COOKIE_SAMESITE: str = "lax"
@@ -346,8 +349,42 @@ class Settings(BaseSettings):
             raise ValueError("must start with '/'")
         return v.rstrip("/") or "/"
 
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def _jwt_secret_is_strong(cls, v: SecretStr) -> SecretStr:
+        if len(v.get_secret_value().strip()) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set (32+ characters). Generate one with scripts/generate_keys.py"
+            )
+        return v
+
+    @field_validator("SESSION_COOKIE_NAME", "REFRESH_COOKIE_NAME")
+    @classmethod
+    def _cookie_is_app_scoped(cls, v: str) -> str:
+        # SEC-28: the host is shared with QUOT; a generic name could overwrite
+        # another app's cookie.
+        if not v.startswith("zbdgt_"):
+            raise ValueError("session cookie names must start with 'zbdgt_' (SEC-28)")
+        return v
+
+    @field_validator("SESSION_COOKIE_SAMESITE")
+    @classmethod
+    def _samesite_is_known(cls, v: str) -> str:
+        v = v.lower()
+        if v not in ("lax", "strict"):
+            raise ValueError("SESSION_COOKIE_SAMESITE must be lax or strict")
+        return v
+
     @model_validator(mode="after")
     def _cross_checks(self) -> "Settings":
+        if not (self.SESSION_COOKIE_PATH == self.BASE_URL or self.SESSION_COOKIE_PATH.startswith(self.BASE_URL + "/")):
+            raise ValueError("SESSION_COOKIE_PATH must be BASE_URL or under it (SEC-28)")
+        if self.PIN_ENABLED:
+            pepper = self.PIN_PEPPER.get_secret_value().strip()
+            if not pepper or len(_decode_key(pepper, "PIN_PEPPER")) < 32:
+                raise ValueError("PIN_PEPPER must be set (base64, 32+ bytes) while PIN_ENABLED is true")
+        if self.PIN_LENGTH < 4 or self.PIN_LENGTH > 12:
+            raise ValueError("PIN_LENGTH must be between 4 and 12")
         # Parse eagerly so a malformed retired-key list fails at startup, not
         # in the middle of a rotation.
         retired = self.retired_master_keys
@@ -371,6 +408,15 @@ class Settings(BaseSettings):
         return _decode_key(
             self.BUDGET_BLIND_INDEX_PEPPER.get_secret_value(), "BUDGET_BLIND_INDEX_PEPPER"
         )
+
+    @cached_property
+    def pin_pepper_bytes(self) -> bytes:
+        return _decode_key(self.PIN_PEPPER.get_secret_value(), "PIN_PEPPER")
+
+    @property
+    def registration_open(self) -> bool:
+        """Signup needs a code (SEC-19); no code configured means closed."""
+        return self.REGISTRATION_MODE == "code" and bool(self.REGISTRATION_CODE.get_secret_value().strip())
 
     @cached_property
     def retired_master_keys(self) -> Dict[int, bytes]:

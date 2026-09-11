@@ -101,3 +101,73 @@ def create_account(
     finally:
         keys.wipe()
     return CreatedAccount(user_id=user.id, is_admin=is_admin, recovery_phrase=phrase)
+
+
+# ======================================================================
+# Signup through the API - the registration-code gate (SEC-19/25/26)
+# ======================================================================
+
+
+def register(
+    db: Session,
+    *,
+    email: str,
+    password: str,
+    registration_code: str,
+    display_name: Optional[str] = None,
+    ip_hash: Optional[str] = None,
+):
+    """
+    Create an account from the signup screen and sign it in.
+
+    The registration code is the ONLY gate on signup, so it is treated like a
+    secret: compared in constant time, limited to REGISTRATION_MAX_ATTEMPTS
+    failures per IP per window, and every failure audited. MAX_USERS still
+    caps the total, so a leaked code cannot create unlimited accounts.
+
+    Returns (CreatedAccount, IssuedSession). The caller sets the cookies and
+    shows the phrase - once.
+    """
+    import hmac
+
+    from app.db.repositories.attempt_repository import AttemptRepository, seconds_until_free
+    from app.core.exceptions import PermissionDeniedException, RateLimitException
+    from app.services import audit_service
+    from app.services.auth_service import session_service
+
+    if not settings.registration_open:
+        raise PermissionDeniedException("Sign-up is closed on this server", extra={"reason": "REGISTRATION_CLOSED"})
+    if settings.SINGLE_USER_MODE and UserRepository(db).count() >= 1:
+        raise PermissionDeniedException("Sign-up is closed on this server", extra={"reason": "REGISTRATION_CLOSED"})
+
+    attempts = AttemptRepository(db)
+    window = settings.REGISTRATION_ATTEMPT_WINDOW_MINUTES
+    failures = attempts.recent_failures(kinds=("register",), window_minutes=window, ip_hash=ip_hash)
+    if len(failures) >= settings.REGISTRATION_MAX_ATTEMPTS:
+        wait = seconds_until_free(failures, window)
+        raise RateLimitException(
+            f"Too many sign-up attempts. Try again in {max(1, round(wait / 60))} minute(s).",
+            extra={"retry_after_seconds": wait},
+        )
+
+    expected = settings.REGISTRATION_CODE.get_secret_value().strip().encode("utf-8")
+    given = (registration_code or "").strip().encode("utf-8")
+    if not hmac.compare_digest(given, expected):
+        attempts.record(kind="register", success=False, ip_hash=ip_hash)
+        audit_service.record(db, audit_service.REGISTER_REJECTED, ip_hash=ip_hash)
+        db.commit()
+        raise PermissionDeniedException("That registration code is not valid", extra={"reason": "INVALID_CODE"})
+
+    account = create_account(db, email=email, password=password, display_name=display_name)
+    attempts.record(kind="register", success=True, user_id=account.user_id, ip_hash=ip_hash)
+
+    users = UserRepository(db)
+    user = users.get(account.user_id)
+    keyring = get_master_keyring()
+    dek = users.unwrap_dek(user, keyring)
+    audit_service.record(db, audit_service.REGISTER, user_id=user.id, ip_hash=ip_hash,
+                         cipher=UserCipher(user.id, dek, keyring.current_version),
+                         detail={"admin": account.is_admin})
+    issued = session_service.start_session(db, user, dek, keyring)
+    db.commit()
+    return account, issued

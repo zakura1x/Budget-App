@@ -11,7 +11,6 @@ version 1 stays readable while version 2 is current, until rotate_keys.py has
 moved every one of them.
 """
 
-from functools import lru_cache
 from typing import Dict, Iterable, Optional
 
 from cryptography.hazmat.primitives import hashes
@@ -99,9 +98,20 @@ class MasterKeyring:
         return f"MasterKeyring(current_version={self._current_version}, versions={list(self.versions)})"
 
 
-@lru_cache(maxsize=1)
+_process_keyring: Optional[MasterKeyring] = None
+
+
 def get_master_keyring() -> MasterKeyring:
     """The process-wide keyring, built from settings on first use."""
-    from app.core.config import settings
+    global _process_keyring
+    if _process_keyring is None:
+        from app.core.config import settings
 
-    return MasterKeyring.from_settings(settings)
+        _process_keyring = MasterKeyring.from_settings(settings)
+    return _process_keyring
+
+
+def set_master_keyring(keyring: Optional[MasterKeyring]) -> None:
+    """Replace the process keyring - tests simulating a new .env; rotation (Phase 9)."""
+    global _process_keyring
+    _process_keyring = keyring

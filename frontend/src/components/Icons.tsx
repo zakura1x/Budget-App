@@ -113,6 +113,20 @@ export const RepeatIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const LockIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="5" y="10.5" width="14" height="10" rx="2.25" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+  </Icon>
+);
+
+export const LogoutIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M14 4.5H6.75c-.69 0-1.25.56-1.25 1.25v12.5c0 .69.56 1.25 1.25 1.25H14" />
+    <path d="M10.5 12h10M17 8.5l3.5 3.5-3.5 3.5" />
+  </Icon>
+);
+
 export const GearIcon = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="3" />

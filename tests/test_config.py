@@ -88,9 +88,9 @@ def test_retired_keys_parse():
 
 
 def test_secrets_never_appear_in_repr():
-    s = build(DB_PASSWORD="db-pass-123", JWT_SECRET_KEY="jwt-secret-456")
+    s = build(DB_PASSWORD="db-pass-123", JWT_SECRET_KEY="jwt-secret-456-" + "x" * 32)
     text = repr(s)
-    for secret in (GOOD_KEY, GOOD_PEPPER, "db-pass-123", "jwt-secret-456"):
+    for secret in (GOOD_KEY, GOOD_PEPPER, "db-pass-123", "jwt-secret-456-"):
         assert secret not in text
 
 

@@ -298,7 +298,12 @@ def setup_logging(log_dir: Optional[str] = None, console: bool = True) -> None:
         for handler in logger.handlers[:]:
             logger.removeHandler(handler)
         logger.propagate = True
-    logging.getLogger("uvicorn.access").addFilter(access_filter)
+    access = logging.getLogger("uvicorn.access")
+    access.addFilter(access_filter)
+    # app.core.middleware.logging_middleware writes one line per request, with
+    # the user id and without the query string. uvicorn's copy would be a
+    # duplicate, so it is kept for warnings only.
+    access.setLevel(logging.WARNING)
 
     # SQL echo would print parameters - which for this app are ciphertexts and
     # blind indexes. Keep the engine quiet regardless of DEBUG.
