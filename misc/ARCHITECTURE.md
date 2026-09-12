@@ -2,7 +2,7 @@
 
 > **Looking for the diagrams and the end-to-end flow?**
 > [ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md) is the visual tour of this
-> same system. **Looking for what to build, in order?** [phases.txt](phases.txt).
+> same system. **Looking for what to build, in order?** [phases.md](phases.md).
 > **Looking for what it does, feature by feature?** [FEATURES.md](FEATURES.md) —
 > and if you change a scope decision there, §14 of that file says what has to
 > move in here.
@@ -12,7 +12,7 @@ FastAPI · SQL Server (schema `ZBDGT`) · React 19 + Vite · AES-256-GCM at rest
 
 This document is the map. Phase 1 (the crypto core, the database layer and the
 frontend shell) was built on 2026-09-11, and the sections it touches describe
-the code as it exists; everything later is still design. `misc/phases.txt` is
+the code as it exists; everything later is still design. `misc/phases.md` is
 the build log and is where defects and debt get tracked.
 
 ---

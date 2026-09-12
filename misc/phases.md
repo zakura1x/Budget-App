@@ -1,17 +1,19 @@
 # 🔄 Budget App — Frontend & Backend Simultaneous Development Plan
 
 ## 📋 Project Overview
-**Project**: Personal Budget & Spending Tracker (encrypted, mobile-first)
-**Model**: Budget App — Spending Tracker (iOS, id1525179720)
-**Duration**: 13-15 Weeks (re-estimated 2026-09-11; was 9-11 when v1 had ~100
-features — it now has 161)  
-**Planned**: Sep 14 – Dec 10, 2026 (88 days), plus ~2 weeks of buffer  
-**Usable**: after Phase 5 (~Oct 30). Backups start in Phase 8a (~Nov 23); until
-then the company database is your only copy
-**Team**: 1 Solo Developer
-**Strategy**: Backend and Frontend developed simultaneously per feature
-**Storage**: Company SQL Server, schema `ZBDGT`, every data field encrypted
-**Frontend**: React 19 + Vite, built locally, bundle committed — no npm on server
+- **Project**: Personal Budget & Spending Tracker (encrypted, mobile-first)
+- **Model**: Budget App — Spending Tracker (iOS, id1525179720)
+- **Duration**: 13–15 weeks (re-estimated 2026-09-11; was 9–11 when v1 had
+  ~100 features — it now has 161)
+- **Planned**: Sep 14 – Dec 10, 2026 (88 days), plus ~2 weeks of buffer
+- **Built so far**: Phases 1 and 2, both on 2026-09-11 — crypto core, database,
+  schema `ZBDGT` created, sign-in / lock / recovery. 212 tests
+- **Usable**: after Phase 5 (~Oct 30). Backups start in Phase 8a (~Nov 23);
+  until then the company database is your only copy
+- **Team**: 1 solo developer
+- **Strategy**: backend and frontend developed simultaneously, per feature
+- **Storage**: company SQL Server, schema `ZBDGT`, every data field encrypted
+- **Frontend**: React 19 + Vite, built locally, bundle committed — no npm on server
 
 > **Scope per phase comes from [FEATURES.md](FEATURES.md).** Feature IDs there
 > (TXN-01, BUD-06, …) map onto the tasks below. All scope decisions are settled;

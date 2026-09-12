@@ -13,7 +13,7 @@ Budget App/
 │   ├── ARCHITECTURE.md                  # The detailed map. §5 is the encryption design.
 │   ├── ARCHITECTURE_OVERVIEW.md         # Diagrams + the end-to-end flows
 │   ├── FEATURES.md                      # Feature catalogue + scope decisions (start here)
-│   ├── phases.txt                       # Build log, 9 phases + standing defect list
+│   ├── phases.md                        # Build log, 9 phases + standing defect list
 │   ├── file_tree.txt                    # This file
 │   └── how-to-run.txt
 │

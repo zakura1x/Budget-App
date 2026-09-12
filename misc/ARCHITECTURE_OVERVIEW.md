@@ -1,7 +1,7 @@
 # BUDGET APP — Architecture at a Glance
 
 > The visual tour. [ARCHITECTURE.md](ARCHITECTURE.md) is the same system in
-> detail; [phases.txt](phases.txt) is the order it gets built in;
+> detail; [phases.md](phases.md) is the order it gets built in;
 > [FEATURES.md](FEATURES.md) is the feature-by-feature scope list.
 
 **Personal Budget & Spending Tracker**
@@ -564,6 +564,6 @@ The three things most likely to change:
    offline edits into an encrypted store is genuinely hard. Do not let the PWA
    shell imply a capability that is not there.
 
-Start with [phases.txt](phases.txt) — its Phase 1 section says what was built,
+Start with [phases.md](phases.md) — its Phase 1 section says what was built,
 what was built differently from the plan, and what is left: your first
 account (the sign-up screen), and the benchmark run on the server.
