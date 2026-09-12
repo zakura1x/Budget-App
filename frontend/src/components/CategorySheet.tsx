@@ -104,7 +104,8 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       <div className="space-y-5 pb-2">
-        <div className="flex items-center gap-3">
+        {/* the tile lines up with the input, not with the label above it */}
+        <div className="flex items-end gap-3">
           <GlyphTile icon={icon} colour={colour} size={48} />
           <TextField
             className="flex-1"

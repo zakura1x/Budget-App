@@ -39,10 +39,16 @@ const COUNTS_BY_DEFAULT: Record<AccountType, boolean> = {
   cash: true, debit: true, savings: true, credit: true, investment: false,
 };
 
-/** Keep only what an amount can contain, and only one decimal point. */
+/**
+ * Keep only what an amount can contain: one leading minus, one decimal point,
+ * two places. The minus matters — a card you already owe on opens negative,
+ * and stripping it would silently turn a debt into credit.
+ */
 function clean(input: string): string {
+  const negative = input.trimStart().startsWith('-');
   const [whole = '', ...rest] = input.replace(/[^\d.]/g, '').split('.');
-  return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole;
+  const body = rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole;
+  return negative ? `-${body}` : body;
 }
 
 export interface AccountSheetProps {
@@ -209,7 +215,9 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
           hint={
             type === 'investment'
               ? 'What it was worth when you started tracking it.'
-              : 'What was in it before you started tracking.'
+              : type === 'credit'
+                ? 'What you already owe on it, as a minus — −8,420.00.'
+                : 'What was in it before you started tracking.'
           }
         />
 
