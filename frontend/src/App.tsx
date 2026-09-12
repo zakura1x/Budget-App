@@ -19,7 +19,9 @@ import { TransactionSheet } from './components/TransactionSheet';
 import { useAutoLock } from './hooks/useAutoLock';
 import { LOCKED_EVENT, SIGNED_OUT_EVENT } from './lib/api';
 import { BASE_URL } from './lib/config';
+import { Accounts } from './screens/Accounts';
 import { Calendar } from './screens/Calendar';
+import { Categories } from './screens/Categories';
 import { Home } from './screens/Home';
 import { Login } from './screens/Login';
 import { More } from './screens/More';
@@ -55,6 +57,8 @@ function AppTabs() {
             <Route path="/calendar" element={<Calendar />} />
             <Route path="/stats" element={<Stats />} />
             <Route path="/more" element={<More />} />
+            <Route path="/accounts" element={<Accounts />} />
+            <Route path="/categories" element={<Categories />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

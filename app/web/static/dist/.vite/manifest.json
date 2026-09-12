@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "file": "assets/index-BM6TvpO6.js",
+    "file": "assets/index-BYGqOwp-.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -8,7 +8,7 @@
       "src/lib/bip39.ts"
     ],
     "css": [
-      "assets/index-DY8kEZOh.css"
+      "assets/index-BxOboBni.css"
     ]
   },
   "src/lib/bip39.ts": {

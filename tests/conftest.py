@@ -105,6 +105,27 @@ def engine():
 
 
 @pytest.fixture
+def owner(session):
+    """
+    A real users row and a cipher for it. Service-level tests need both: the
+    cipher to seal with, and the row because user_id carries a real foreign
+    key even on a Shape B table.
+    """
+    from app.core.crypto.envelope import PLACEHOLDER
+    from app.db.models import User
+    from app.db.types import utcnow
+
+    now = utcnow()
+    user = User(
+        email_bidx="o" * 64, password_hash="x", key_version=1,
+        dek_wrapped=PLACEHOLDER, created_at=now, updated_at=now,
+    )
+    session.add(user)
+    session.flush()
+    return UserCipher(user.id, generate_dek(), 1)
+
+
+@pytest.fixture
 def session(engine):
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     with factory() as s:
@@ -129,6 +150,14 @@ class ApiClient:
     def post(self, path, json=None, **kw):
         headers = {**self.headers, **kw.pop("headers", {})}
         return self.client.post(self.prefix + path, json=json, headers=headers, **kw)
+
+    def patch(self, path, json=None, **kw):
+        headers = {**self.headers, **kw.pop("headers", {})}
+        return self.client.patch(self.prefix + path, json=json, headers=headers, **kw)
+
+    def delete(self, path, **kw):
+        headers = {**self.headers, **kw.pop("headers", {})}
+        return self.client.delete(self.prefix + path, headers=headers, **kw)
 
     @property
     def cookies(self):

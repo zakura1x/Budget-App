@@ -546,6 +546,16 @@ Verify:
 
 ## 📦 PHASE 3: Accounts & Categories (Oct 4 – Oct 12 · 9 days)
 
+> **Status 2026-09-13: BUILT, ahead of schedule.** Accounts and categories are
+> the first real encrypted CRUD and they are done end to end - service,
+> repository, endpoints, screens - with 72 new tests (284 pass in total).
+> What is NOT proven yet, because transactions do not exist until Phase 4:
+> the category-delete reassignment is tested directly against transaction
+> rows written by the repository, not through the API, and every balance is
+> still its opening balance because there is nothing posted against it.
+> `scripts/seed_categories.py` exists and runs; it has not been pointed at a
+> real account, since there is no account yet.
+
 ### 🎯 Objective: The things transactions point at — the first real encrypted CRUD
 
 ### Backend Tasks
@@ -553,12 +563,12 @@ Verify:
 ```yaml
 Days 1-3:
   Accounts:
-    ☐ account_service + repository (encrypted payload)
-    ☐ Types: cash, debit, credit, savings, investment
-    ☐ Opening balance, colour, icon, archived flag
-    ☐ NO currency field - PHP only (ACC-11). Formatting constant, not data.
-    ☐ Balance = opening + sum(txns) computed in Python (SQL cannot)
-    ☐ ★ Credit cards (ACC-09): statement closing day + payment due day
+    ✅ account_service + repository (encrypted payload)
+    ✅ Types: cash, debit, credit, savings, investment
+    ✅ Opening balance, colour, icon, archived flag
+    ✅ NO currency field - PHP only (ACC-11). Formatting constant, not data.
+    ✅ Balance = opening + sum(txns) computed in Python (SQL cannot)
+    ✅ ★ Credit cards (ACC-09): statement closing day + payment due day
        - derive the CURRENT statement period and its balance
        - credit limit + available credit (ACC-14)
          available = limit - balance - unpaid installment remainder
@@ -566,31 +576,31 @@ Days 1-3:
        - ★ statement period is INDEPENDENT of the budget period
          (ACC-16). A card closing on the 20th has nothing to do with a
          budget starting on the 1st. Shared date_utils, never shared dates.
-    ☐ ★ Investment accounts (ACC-08): a value you type, not holdings.
+    ✅ ★ Investment accounts (ACC-08): a value you type, not holdings.
        No units, no price feed, no market data.
-    ☐ Dated valuation history (ACC-13): each value you type is
+    ✅ Dated valuation history (ACC-13): each value you type is
        APPENDED with its date, shown on the investment account only.
-    ☐ ★ CASH ON HAND (ACC-17) - the app's headline number. NOT net
+    ✅ ★ CASH ON HAND (ACC-17) - the app's headline number. NOT net
        worth: "only what is in my pockets".
        - sum of balances of accounts with counts_in_cash_on_hand = true
        - defaults (ACC-18): cash/debit/savings ON, credit ON (money
          already spent is subtracted), investment OFF
        - NEVER includes things you own, and NEVER subtracts an
          installment's unpaid remainder (that is future money)
-    ☐ ★ Revaluation is NOT income (ACC-12). ₱100k -> ₱105k records a
+    ✅ ★ Revaluation is NOT income (ACC-12). ₱100k -> ₱105k records a
        valuation change on the account and is EXCLUDED from income and
        spending stats. Otherwise market noise pollutes every report.
-    ☐ Full CRUD endpoints + Pydantic schemas
+    ✅ Full CRUD endpoints + Pydantic schemas
 
 Days 4-5:
   Categories:
-    ☐ category_service + repository
-    ☐ Parent/child - sub-categories, one level deep
-    ☐ Icon, colour, kind (expense/income), sort order
-    ☐ scripts/seed_categories.py - default set, encrypted on write
-    ☐ Guard: deleting a category in use must reassign, not orphan
-    ☐ ★ Enforce parent/child integrity in the service - no FK can help here
-    ☐ ★ Category delete must walk EVERY SPLIT of every transaction, not a
+    ✅ category_service + repository
+    ✅ Parent/child - sub-categories, one level deep
+    ✅ Icon, colour, kind (expense/income), sort order
+    ✅ scripts/seed_categories.py - default set, encrypted on write
+    ✅ Guard: deleting a category in use must reassign, not orphan
+    ✅ ★ Enforce parent/child integrity in the service - no FK can help here
+    ✅ ★ Category delete must walk EVERY SPLIT of every transaction, not a
        top-level field. Splits (TXN-16) put category_id one level deeper
        inside the ciphertext. A miss here is invisible to the database.
 ```
@@ -600,17 +610,17 @@ Days 4-5:
 ```yaml
 Days 1-3:
   Accounts UI:
-    ☐ Account list - cards with balance and type colour
-    ☐ Add/edit sheet
-    ☐ Type picker with icons
-    ☐ Archive (never hard delete - history depends on it)
+    ✅ Account list - cards with balance and type colour
+    ✅ Add/edit sheet
+    ✅ Type picker with icons
+    ✅ Archive (never hard delete - history depends on it)
 
 Days 4-5:
   Categories UI:
-    ☐ Category manager grouped by parent
-    ☐ Icon picker grid, colour swatch picker
-    ☐ Drag-to-reorder (touch-friendly, long-press to lift)
-    ☐ Sub-category nesting UI
+    ✅ Category manager grouped by parent
+    ✅ Icon picker grid, colour swatch picker
+    ✅ Drag-to-reorder (touch-friendly, long-press to lift)
+    ✅ Sub-category nesting UI
 ```
 
 ### 🔗 Integration Points
@@ -620,9 +630,11 @@ Days 4-5:
   GET/POST/PATCH/DELETE /api/v1/categories
 
 Verify:
-  ☐ SSMS SELECT on ZBDGT.accounts shows no readable account name
-  ☐ Deleting a category with transactions prompts for reassignment
-  ☐ Balances match a hand-computed figure exactly (decimal, not float)
+  ◐ SSMS SELECT on ZBDGT.accounts shows no readable account name
+     (proven locally by tests/test_accounts.py; not yet run against the server)
+  ◐ Deleting a category with transactions prompts for reassignment
+     (service-level test walks splits[]; the API path waits on Phase 4)
+  ✅ Balances match a hand-computed figure exactly (decimal, not float)
 ```
 
 ---
@@ -1223,11 +1235,14 @@ scripts/
 - ✅ **End-to-end recovery rehearsal: destroy the master key, recover by phrase**
 - ☐ **Your account - via the sign-up screen; the first account becomes admin**
 
-### Phase 3 · Oct 4 – Oct 12 · 9 days: Accounts & Categories
-- ☐ CRUD for both, fully encrypted, unreadable in SSMS
-- ☐ Credit cards: statement cycle, due date, available credit
-- ☐ Cash on hand total, with the per-account switch
-- ☐ Default categories seeded
+### Phase 3 · Oct 4 – Oct 12 · 9 days: Accounts & Categories — built 2026-09-13
+- ✅ CRUD for both, fully encrypted, unreadable in a plain SELECT
+- ✅ Credit cards: statement cycle, due date, available credit
+- ✅ Cash on hand total, with the per-account switch
+- ✅ Safe category delete - reassignment walks every split (CAT-08)
+- ✅ Drag-to-reorder, icon and colour pickers, sub-category nesting
+- ◐ Default categories seeded - scripts/seed_categories.py is written and its
+  dry run is correct; it needs an account to write to
 
 ### Phase 4 · Oct 13 – Oct 22 · 10 days: Transactions
 - ☐ Two-step insert atomic and tested

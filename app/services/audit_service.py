@@ -30,6 +30,18 @@ REFRESH_REUSE = "REFRESH_REUSE"
 RECOVERY = "RECOVERY"
 RECOVERY_FAILED = "RECOVERY_FAILED"
 
+# Data mutations, from Phase 3 on. The verb and the table stay plaintext so the
+# trail is readable; the name, the amount and anything else identifying goes in
+# `detail`, sealed under the acting user's DEK.
+CREATE = "CREATE"
+UPDATE = "UPDATE"
+DELETE = "DELETE"
+ARCHIVE = "ARCHIVE"
+RESTORE = "RESTORE"
+REVALUE = "REVALUE"  # ACC-12 - a valuation change, deliberately not income
+REASSIGN = "REASSIGN"  # CAT-08 - transactions moved off a deleted category
+REORDER = "REORDER"
+
 
 def record(
     db: Session,

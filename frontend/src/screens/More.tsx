@@ -4,6 +4,7 @@
  * past the CSP, through the Vite proxy in dev and same-origin in production.
  */
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getHealth, type HealthStatus } from '../lib/api';
 import { GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, TagIcon, WalletIcon } from '../components/Icons';
 import { useAuthStore } from '../stores/authStore';
@@ -30,6 +31,7 @@ export function More() {
 
   const loading = !health && !error;
   const soon = <span className="text-footnote text-ink-3">soon</span>;
+  const navigate = useNavigate();
   const session = useAuthStore((s) => s.session);
   const lock = useAuthStore((s) => s.lock);
   const logout = useAuthStore((s) => s.logout);
@@ -48,8 +50,10 @@ export function More() {
 
       <SectionTitle>Money</SectionTitle>
       <ListGroup>
-        <ListRow icon={<WalletIcon size={20} />} title="Accounts" subtitle="Cash, cards, savings" trailing={soon} />
-        <ListRow icon={<TagIcon size={20} />} title="Categories" trailing={soon} />
+        <ListRow icon={<WalletIcon size={20} />} title="Accounts" subtitle="Cash, cards, savings"
+          chevron onClick={() => navigate('/accounts')} />
+        <ListRow icon={<TagIcon size={20} />} title="Categories" subtitle="What your spending is sorted into"
+          chevron onClick={() => navigate('/categories')} />
         <ListRow icon={<RepeatIcon size={20} />} title="Recurring & installments" trailing={soon} />
       </ListGroup>
 

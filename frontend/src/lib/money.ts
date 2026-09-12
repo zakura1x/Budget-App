@@ -34,6 +34,18 @@ export function formatPHP(value: string, { symbol = '₱', places = 2 } = {}): s
 }
 
 /**
+ * Whole centavos as a plain number — for a RATIO or a bar width, never for an
+ * amount. An integer count of centavos is exact in a double well past any
+ * balance this app will hold; a peso figure with a fraction is not, which is
+ * why nothing else here converts.
+ */
+export function centavos(value: string): number {
+  const { negative, int, frac } = splitDecimal(value);
+  const whole = Number(`${int}${frac}`);
+  return negative ? -whole : whole;
+}
+
+/**
  * Apply one numpad key to an amount being typed. The typed amount is a
  * string throughout, so what the user sees is exactly what is sent.
  */

@@ -62,7 +62,8 @@ Scripts that exist today (many more are referenced in `misc/how-to-run.txt` but
 belong to later phases): `bootstrap_user.py` (create the first account from the
 CLI), `decrypt_query.py` (read your own rows; needs the master key),
 `benchmark_fetch.py` (read-only cold-load timing — the number that decides
-ARCHITECTURE §5.7), `generate_keys.py [--fill]`, `generate_int_tables.py`.
+ARCHITECTURE §5.7), `generate_keys.py [--fill]`, `generate_int_tables.py`,
+`seed_categories.py --user-id N [--dry-run]` (the default category set, CAT-07).
 
 Develop against `:5173` (hot reload) with uvicorn running alongside it on
 `:8000`, or every API call fails.
@@ -235,10 +236,19 @@ isolation — must never be skipped or xfailed), `slow`.
 
 ## Current state
 
-Phases 1 and 2 are built (2026-09-11): crypto core, recovery phrase, database
-layer and migration, frontend shell, and the whole sign-in / lock / recovery
-flow, with 212 passing tests across 18 files. Schema `ZBDGT` and its fifteen
-tables exist on the server; only `auth`, `health` and `settings` endpoints are
-mounted so far. Phase 3 (accounts and categories) is next — everything from
-there on is a plan, not an observation, so check `misc/phases.md` before
-assuming a service, endpoint or script exists.
+Phases 1–3 are built: crypto core, recovery phrase, database layer and
+migration, frontend shell, the whole sign-in / lock / recovery flow
+(2026-09-11), and accounts + categories (2026-09-13) — 284 passing tests
+across 21 files. Mounted: `auth`, `health`, `settings`, `accounts`,
+`categories`.
+
+Phase 3 left two things that only Phase 4 can close. `account_service` takes
+its `Posting`s from the caller, so **every balance is currently its opening
+balance** — the working-set cache will hand in the real ones and nothing in
+that file changes. And the category-delete reassignment (CAT-08) walks
+`splits[]` through `TransactionRepository`, tested directly against rows the
+repository writes, because there is no transactions endpoint yet.
+
+Phase 4 (transactions) is next — everything from there on is a plan, not an
+observation, so check `misc/phases.md` before assuming a service, endpoint or
+script exists.
