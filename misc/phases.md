@@ -1233,7 +1233,10 @@ scripts/
 - ✅ Restarting uvicorn mid-session shows the PIN screen, not an error
 - ✅ Cookies scoped to /ZBDGT
 - ✅ **End-to-end recovery rehearsal: destroy the master key, recover by phrase**
-- ☐ **Your account - via the sign-up screen; the first account becomes admin**
+- ✅ Admin slot taken by a placeholder account (2026-09-13, user 11) so that
+  yours is an ordinary user - `scripts/create_admin_account.py`, credentials
+  in the gitignored `admin-account.txt`
+- ☐ **Your account - via the sign-up screen**
 
 ### Phase 3 · Oct 4 – Oct 12 · 9 days: Accounts & Categories — built 2026-09-13
 - ✅ CRUD for both, fully encrypted, unreadable in a plain SELECT
