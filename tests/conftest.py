@@ -104,6 +104,20 @@ def engine():
     engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _fresh_working_set():
+    """
+    The working set is process-wide, and in-memory SQLite hands out user id 1
+    to every test - so a cache left over from one test would be served to the
+    next. Every test starts, and ends, with it empty.
+    """
+    from app.core.crypto.working_set import set_working_set
+
+    set_working_set(None)
+    yield
+    set_working_set(None)
+
+
 @pytest.fixture
 def owner(session):
     """

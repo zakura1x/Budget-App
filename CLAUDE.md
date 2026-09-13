@@ -236,19 +236,24 @@ isolation — must never be skipped or xfailed), `slow`.
 
 ## Current state
 
-Phases 1–3 are built: crypto core, recovery phrase, database layer and
+Phases 1–4 are built: crypto core, recovery phrase, database layer and
 migration, frontend shell, the whole sign-in / lock / recovery flow
-(2026-09-11), and accounts + categories (2026-09-13) — 284 passing tests
-across 21 files. Mounted: `auth`, `health`, `settings`, `accounts`,
-`categories`.
+(2026-09-11), accounts + categories and transactions (2026-09-13) —
+340 passing tests across 26 files. Mounted: `auth`, `health`,
+`settings`, `accounts`, `categories`, `transactions`.
 
-Phase 3 left two things that only Phase 4 can close. `account_service` takes
-its `Posting`s from the caller, so **every balance is currently its opening
-balance** — the working-set cache will hand in the real ones and nothing in
-that file changes. And the category-delete reassignment (CAT-08) walks
-`splits[]` through `TransactionRepository`, tested directly against rows the
-repository writes, because there is no transactions endpoint yet.
+**The working set is live** (`app/core/crypto/working_set.py`). Every read of
+transactions goes through `TransactionRepository.cached()`, and writes reach
+it only after COMMIT — a rollback drops the user's entry instead. The session
+keyring notifies it whenever a DEK is dropped (lock, logout, idle expiry,
+sweep), so decrypted rows never outlive their key. Never mutate a cached
+`Record.data`; build a new dict. Tests start from an empty working set via an
+autouse fixture in `tests/conftest.py`.
 
-Phase 4 (transactions) is next — everything from there on is a plan, not an
-observation, so check `misc/phases.md` before assuming a service, endpoint or
-script exists.
+Two things Phase 4 left open on purpose: tags (TXN-10) are stored as an empty
+`tag_ids` with no management, and the POST response carries account balances
+and cash on hand but not yet the budget status (Phase 5).
+
+Phase 5 (budgets and the daily allowance) is next — everything from there on
+is a plan, not an observation, so check `misc/phases.md` before assuming a
+service, endpoint or script exists.

@@ -8,6 +8,10 @@ session keyring there is nothing to read, and a locked session gets
 The endpoints do HTTP and nothing else. Balances, statement periods and cash
 on hand are account_service's, and the encryption is the repository's - an
 endpoint that touched either would break invariant 1.
+
+Balances include every transaction from Phase 4 on: the postings come from
+transaction_service over the warm working set and are handed to
+account_service, which is unchanged - it always took postings from its caller.
 """
 
 from fastapi import APIRouter, Depends, Query, status
@@ -22,9 +26,17 @@ from app.api.v1.schemas.accounts import (
 )
 from app.core.deps import UnlockedContext, get_unlocked_context
 from app.db.session import get_db
-from app.services import account_service
+from app.services import account_service, transaction_service
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
+
+
+def _current(db: Session, ctx: UnlockedContext, account_id: int) -> AccountOut:
+    """The account as it stands now, with every transaction posted against it."""
+    view = account_service.get_account(
+        db, ctx.cipher, account_id, postings=transaction_service.postings(db, ctx.cipher)
+    )
+    return AccountOut.model_validate(view)
 
 
 @router.get("", response_model=AccountListOut)
@@ -38,7 +50,9 @@ def list_accounts(
     same set in the same request, so the headline number can never disagree
     with the cards it is the sum of.
     """
-    views = account_service.list_accounts(db, ctx.cipher, include_archived=include_archived)
+    views = account_service.list_accounts(
+        db, ctx.cipher, include_archived=include_archived, postings=transaction_service.postings(db, ctx.cipher)
+    )
     return AccountListOut(
         accounts=[AccountOut.model_validate(view) for view in views],
         cash_on_hand=account_service.cash_on_hand(views),
@@ -51,7 +65,7 @@ def get_account(
     ctx: UnlockedContext = Depends(get_unlocked_context),
     db: Session = Depends(get_db),
 ) -> AccountOut:
-    return AccountOut.model_validate(account_service.get_account(db, ctx.cipher, account_id))
+    return _current(db, ctx, account_id)
 
 
 @router.post("", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
@@ -61,7 +75,7 @@ def create_account(
     db: Session = Depends(get_db),
 ) -> AccountOut:
     view = account_service.create_account(db, ctx.cipher, body.model_dump(exclude_unset=True))
-    return AccountOut.model_validate(view)
+    return _current(db, ctx, view.id)
 
 
 @router.patch("/{account_id}", response_model=AccountOut)
@@ -71,8 +85,8 @@ def update_account(
     ctx: UnlockedContext = Depends(get_unlocked_context),
     db: Session = Depends(get_db),
 ) -> AccountOut:
-    view = account_service.update_account(db, ctx.cipher, account_id, body.model_dump(exclude_unset=True))
-    return AccountOut.model_validate(view)
+    account_service.update_account(db, ctx.cipher, account_id, body.model_dump(exclude_unset=True))
+    return _current(db, ctx, account_id)
 
 
 @router.post("/{account_id}/archive", response_model=AccountOut)
@@ -87,8 +101,8 @@ def set_archived(
     points at this row, and those references live inside ciphertext where no
     foreign key can stop the deletion from stranding them.
     """
-    view = account_service.set_archived(db, ctx.cipher, account_id, body.archived)
-    return AccountOut.model_validate(view)
+    account_service.set_archived(db, ctx.cipher, account_id, body.archived)
+    return _current(db, ctx, account_id)
 
 
 @router.post("/{account_id}/valuations", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
@@ -99,7 +113,5 @@ def add_valuation(
     db: Session = Depends(get_db),
 ) -> AccountOut:
     """ACC-12/13 - a valuation change, appended with its date. Not income."""
-    view = account_service.add_valuation(
-        db, ctx.cipher, account_id, body.value, on=body.on, note=body.note
-    )
-    return AccountOut.model_validate(view)
+    account_service.add_valuation(db, ctx.cipher, account_id, body.value, on=body.on, note=body.note)
+    return _current(db, ctx, account_id)

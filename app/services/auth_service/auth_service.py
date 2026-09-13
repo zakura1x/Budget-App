@@ -20,6 +20,7 @@ Unlocking - by PIN or by password - makes the server unwrap the DEK again with
 the master key. Neither secret derives anything.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -42,10 +43,12 @@ from app.db.models import User
 from app.db.repositories.attempt_repository import AttemptRepository, seconds_until_free
 from app.db.repositories.user_repository import UserRepository
 from app.db.types import utcnow
-from app.services import audit_service
+from app.services import audit_service, transaction_service
 from app.services.auth_service import session_service
 from app.services.auth_service.passwords import hash_password, verify_password
 from app.services.auth_service.pin_service import hash_pin, verify_pin
+
+logger = logging.getLogger(__name__)
 
 # Password-checking kinds that share one lockout per email.
 PASSWORD_KINDS = ("login", "unlock")
@@ -111,6 +114,7 @@ def login(db: Session, email: str, password: str, ip_hash: Optional[str] = None)
     keyring = get_master_keyring()
     dek = UserRepository(db).unwrap_dek(user, keyring)
     issued = session_service.start_session(db, user, dek, keyring)
+    _warm(db, issued.session_id)
     user.last_login_at = utcnow()
     user.pin_failed_count = 0
     audit_service.record(db, audit_service.LOGIN, user_id=user.id, ip_hash=ip_hash)
@@ -168,8 +172,26 @@ def _reunlock(db: Session, user: User, session_id: str, ip_hash: Optional[str]) 
     keyring = get_master_keyring()
     dek = UserRepository(db).unwrap_dek(user, keyring)
     session_service.unlock_session(session_id, user, dek, keyring)
+    _warm(db, session_id)
     audit_service.record(db, audit_service.UNLOCK, user_id=user.id, ip_hash=ip_hash)
     db.commit()
+
+
+def _warm(db: Session, session_id: str) -> None:
+    """
+    Decrypt the working set now, while the user is still on the unlock screen,
+    so the first screen after it is a warm read (ARCHITECTURE.md 5.6). Never
+    fatal: a failed warm-up only means the first read loads it instead.
+    """
+    if not settings.CACHE_WARM_ON_LOGIN:
+        return
+    cipher = get_session_keyring().cipher_for(session_id)
+    if cipher is None:
+        return
+    try:
+        transaction_service.warm(db, cipher)
+    except Exception:
+        logger.exception("Working set warm-up failed; the first read will load it")
 
 
 def set_pin(db: Session, user: User, cipher: UserCipher, pin: str, current_password: Optional[str] = None,

@@ -242,7 +242,7 @@ def _usage_counts(db: Session, cipher: UserCipher) -> Dict[int, int]:
     touches, so a two-way split of one purchase counts against both.
     """
     counts: Dict[int, int] = {}
-    for record in TransactionRepository(db, cipher).list():
+    for record in TransactionRepository(db, cipher).cached():
         for cid in _category_ids(record.data):
             counts[cid] = counts.get(cid, 0) + 1
     return counts
@@ -266,7 +266,8 @@ def _reassign(db: Session, cipher: UserCipher, doomed: Set[int], target: int) ->
     """Rewrite every reference to a doomed category. Returns rows touched."""
     repo = TransactionRepository(db, cipher)
     moved = 0
-    for record in repo.list():
+    # Read from the working set; each update is written through to it on commit.
+    for record in repo.cached():
         if not (_category_ids(record.data) & doomed):
             continue
         data = dict(record.data)

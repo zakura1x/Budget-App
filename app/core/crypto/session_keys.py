@@ -17,12 +17,20 @@ Two behaviours matter more than the rest:
     frontend timer is a convenience; this is the guarantee.
 
 One process, one keyring: this is why web.config runs exactly one worker.
+
+Whatever else was decrypted with a key must go when the key goes. Listeners
+added with add_drop_listener() hear the user id of every entry dropped, for
+any reason, AFTER its DEK is zeroed - the working set uses this to forget that
+user's plaintext rows in the same moment (ARCHITECTURE.md 5.5).
 """
 
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Iterable, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from app.core.crypto.dek import zero
 from app.core.crypto.envelope import KEY_BYTES
@@ -47,6 +55,23 @@ class SessionKeyring:
         self._clock = clock
         self._entries: Dict[str, _Entry] = {}
         self._lock = threading.Lock()
+        self._listeners: List[Callable[[int], None]] = []
+
+    def add_drop_listener(self, listener: Callable[[int], None]) -> None:
+        """Hear the user id of every dropped entry. Adding the same one twice is a no-op."""
+        with self._lock:
+            if listener not in self._listeners:
+                self._listeners.append(listener)
+
+    def _dropped(self, user_ids: Iterable[int]) -> None:
+        with self._lock:
+            listeners = list(self._listeners)
+        for user_id in set(user_ids):
+            for listener in listeners:
+                try:
+                    listener(user_id)
+                except Exception:  # a listener must never stop a lock from completing
+                    logger.exception("Keyring drop listener failed")
 
     def unlock(self, session_id: str, user_id: int, dek: bytearray, key_version: int) -> None:
         """
@@ -91,6 +116,7 @@ class SessionKeyring:
                 entry.last_used = now
                 return entry.cipher
         zero(expired.dek)
+        self._dropped([expired.user_id])
         return None
 
     def is_unlocked(self, session_id: str) -> bool:
@@ -110,6 +136,7 @@ class SessionKeyring:
         if entry is None:
             return False
         zero(entry.dek)
+        self._dropped([entry.user_id])
         return True
 
     def lock_user(self, user_id: int) -> int:
@@ -119,6 +146,7 @@ class SessionKeyring:
             entries = [self._entries.pop(sid) for sid in doomed]
         for entry in entries:
             zero(entry.dek)
+        self._dropped(entry.user_id for entry in entries)
         return len(entries)
 
     def lock_all(self) -> int:
@@ -127,6 +155,7 @@ class SessionKeyring:
             self._entries.clear()
         for entry in entries:
             zero(entry.dek)
+        self._dropped(entry.user_id for entry in entries)
         return len(entries)
 
     def sweep(self) -> int:
@@ -137,6 +166,7 @@ class SessionKeyring:
             entries = [self._entries.pop(sid) for sid in doomed]
         for entry in entries:
             zero(entry.dek)
+        self._dropped(entry.user_id for entry in entries)
         return len(entries)
 
     def __len__(self) -> int:

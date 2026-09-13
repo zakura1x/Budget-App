@@ -22,6 +22,7 @@ import { BASE_URL } from './lib/config';
 import { Accounts } from './screens/Accounts';
 import { Calendar } from './screens/Calendar';
 import { Categories } from './screens/Categories';
+import { Ledger } from './screens/Ledger';
 import { Home } from './screens/Home';
 import { Login } from './screens/Login';
 import { More } from './screens/More';
@@ -32,6 +33,7 @@ import { RecoveryPhraseSetup } from './screens/RecoveryPhraseSetup';
 import { Register } from './screens/Register';
 import { Stats } from './screens/Stats';
 import { useAuthStore } from './stores/authStore';
+import { useLedgerStore } from './stores/ledgerStore';
 import { useUiStore } from './stores/uiStore';
 
 function SignedOutRoutes() {
@@ -59,11 +61,12 @@ function AppTabs() {
             <Route path="/more" element={<More />} />
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/categories" element={<Categories />} />
+            <Route path="/transactions" element={<Ledger />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
-      <BottomTabBar onAdd={openAddSheet} />
+      <BottomTabBar onAdd={() => openAddSheet()} />
       <TransactionSheet />
     </>
   );
@@ -87,6 +90,7 @@ export function App() {
   const markSignedOut = useAuthStore((s) => s.markSignedOut);
   const autoLockMinutes = useAuthStore((s) => s.session?.auto_lock_minutes ?? 5);
   const closeAddSheet = useUiStore((s) => s.closeAddSheet);
+  const resetLedger = useLedgerStore((s) => s.reset);
 
   useEffect(() => {
     void init();
@@ -101,10 +105,15 @@ export function App() {
     };
   }, [markLocked, markSignedOut]);
 
-  // Anything open over the app closes when it locks or signs out.
+  // Anything open over the app closes when it locks or signs out - and the
+  // decrypted rows the page was holding go with it, as the server's working
+  // set goes with the key.
   useEffect(() => {
-    if (status !== 'unlocked') closeAddSheet();
-  }, [status, closeAddSheet]);
+    if (status !== 'unlocked') {
+      closeAddSheet();
+      resetLedger();
+    }
+  }, [status, closeAddSheet, resetLedger]);
 
   useAutoLock(status === 'unlocked', autoLockMinutes, () => void lock());
 

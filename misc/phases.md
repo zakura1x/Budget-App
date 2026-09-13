@@ -641,6 +641,22 @@ Verify:
 
 ## 📦 PHASE 4: Transactions (Oct 13 – Oct 22 · 10 days)
 
+> **Status 2026-09-13: BUILT, ahead of schedule.** Transactions, splits,
+> transfers, the working-set cache, the add sheet and the ledger - with
+> 340 tests passing locally, and the atomicity and SSMS checks run against
+> P8_NOAH_AI. Account balances now include every transaction, which closes
+> the gap Phase 3 left open.
+>
+> Deliberately NOT here:
+> - **Tags (TXN-10).** `tag_ids` is kept in the payload shape but always
+>   empty: there is no tag table service yet to validate an id against, and
+>   an unvalidated id inside ciphertext is an integrity hole no FK can close.
+> - **Budget status in the POST response.** The contract is honoured with what
+>   exists - the touched accounts' new balances and cash on hand; Phase 5 adds
+>   the budget status beside them.
+> - **A real touch device.** Swipe, long-press and the numpad were exercised
+>   in headless Edge at 390x844, not on a phone.
+
 ### 🎯 Objective: The write path, the numpad sheet, and the working-set cache
 
 ### Backend Tasks
@@ -648,36 +664,36 @@ Verify:
 ```yaml
 Days 1-3:
   ★ The two-step insert (ARCHITECTURE.md §5.3):
-    ☐ INSERT placeholder -> obtain identity id
-    ☐ encrypt with aad = "ZBDGT.transactions:{id}:{user_id}:v{ver}"
-    ☐ UPDATE payload - all inside ONE db transaction
-    ☐ Confine this awkwardness to transaction_repository.create()
+    ✅ INSERT placeholder -> obtain identity id
+    ✅ encrypt with aad = "ZBDGT.transactions:{id}:{user_id}:v{ver}"
+    ✅ UPDATE payload - all inside ONE db transaction
+    ✅ Confine this awkwardness to transaction_repository.create()
 
   Transactions:
-    ☐ transaction_service + repository
-    ☐ Types: expense, income, transfer
-    ☐ Transfer writes a linked pair, and must never count as spending
-    ☐ Decimal everywhere - never float, not once, not for display
-    ☐ Soft delete only (is_deleted), so the audit trail stays honest
+    ✅ transaction_service + repository
+    ✅ Types: expense, income, transfer
+    ✅ Transfer writes a linked pair, and must never count as spending
+    ✅ Decimal everywhere - never float, not once, not for display
+    ✅ Soft delete only (is_deleted), so the audit trail stays honest
 
   ★ SPLITS (TXN-16) - the payload shape, locked in from day one:
-    ☐ EVERY transaction carries a `splits` array - simple ones have
+    ✅ EVERY transaction carries a `splits` array - simple ones have
       exactly one element. NOT "category_id OR splits" - one shape means
       stats, budgets and category-delete each have ONE code path.
-    ☐ Invariant: amount == sum(splits[].amount), Decimal-exact (TXN-20)
-    ☐ Invariant: splits is never empty
-    ☐ Per-split note (TXN-21)
-    ☐ A one-centavo rounding drift here silently corrupts every report
+    ✅ Invariant: amount == sum(splits[].amount), Decimal-exact (TXN-20)
+    ✅ Invariant: splits is never empty
+    ✅ Per-split note (TXN-21)
+    ✅ A one-centavo rounding drift here silently corrupts every report
       downstream - test the invariant directly, not just via the API
 
 Days 4-5:
   ★ Working-set cache:
-    ☐ app/core/crypto/working_set.py
-    ☐ Per-user, TTL-bounded, LRU across CACHE_MAX_USERS
-    ☐ Warm on login; write-through on every mutation
-    ☐ Invalidate on lock/logout, together with the DEK
-    ☐ Filtering, sorting, pagination all in Python over the cache
-    ☐ Search across merchant/notes - substring, in memory
+    ✅ app/core/crypto/working_set.py
+    ✅ Per-user, TTL-bounded, LRU across CACHE_MAX_USERS
+    ✅ Warm on login; write-through on every mutation
+    ✅ Invalidate on lock/logout, together with the DEK
+    ✅ Filtering, sorting, pagination all in Python over the cache
+    ✅ Search across merchant/notes - substring, in memory
 ```
 
 ### Frontend Tasks
@@ -685,28 +701,28 @@ Days 4-5:
 ```yaml
 Days 1-3:
   ★ Add-transaction sheet - the most important screen in the app:
-    ☐ Bottom sheet, opens with amount focused and numpad UP
-    ☐ Custom numpad - big keys, decimal, backspace, no OS keyboard
-    ☐ Category chips, horizontally scrollable, most-used first
-    ☐ Account picker, date (defaults today), optional note
-    ☐ Expense / Income / Transfer segmented control
-    ☐ TARGET: two taps and a number completes an entry
-    ☐ ★ "Split" affordance that stays OUT OF THE WAY. Splits are the
+    ✅ Bottom sheet, opens with amount focused and numpad UP
+    ✅ Custom numpad - big keys, decimal, backspace, no OS keyboard
+    ✅ Category chips, horizontally scrollable, most-used first
+    ✅ Account picker, date (defaults today), optional note
+    ✅ Expense / Income / Transfer segmented control
+    ✅ TARGET: two taps and a number completes an entry
+    ✅ ★ "Split" affordance that stays OUT OF THE WAY. Splits are the
        exception, not the rule - a simple entry must not get slower
        because splitting exists. One tap to reveal, never on screen by
        default, with a live "₱700 left to allocate" as you type.
 
 Days 4-5:
   Ledger:
-    ☐ Transaction list grouped by day, with day subtotals
-    ☐ Sticky date headers
-    ☐ Swipe-to-delete, swipe-to-edit
-    ☐ ★ Repeat last entry (TXN-17, pulled into v1) - one tap clones
+    ✅ Transaction list grouped by day, with day subtotals
+    ✅ Sticky date headers
+    ✅ Swipe-to-delete, swipe-to-edit
+    ✅ ★ Repeat last entry (TXN-17, pulled into v1) - one tap clones
        your most recent transaction with today's date. Second-most
        used action after quick-add; put it where the thumb already is.
-    ☐ Search + filter sheet (category, account, date range, type)
-    ☐ Infinite scroll over the cached set
-    ☐ Optimistic insert - row appears before the response lands
+    ✅ Search + filter sheet (category, account, date range, type)
+    ✅ Infinite scroll over the cached set
+    ✅ Optimistic insert - row appears before the response lands
 ```
 
 ### 🔗 Integration Points
@@ -723,9 +739,11 @@ Days 4-5:
   makes it feel native rather than like a web page.
 
 Verify:
-  ☐ Two-step insert is atomic - kill the process mid-write, no orphan rows
-  ☐ Tampering with a payload byte in SSMS makes that row fail loudly
-  ☐ Transfers do not appear in spending totals
+  ✅ Two-step insert is atomic - kill the process mid-write, no orphan rows
+     (tests/test_two_step_atomicity.py; on SQL Server, tests/test_db_mssql_transactions.py)
+  ✅ Tampering with a payload byte in SSMS makes that row fail loudly
+     (tests/test_db_mssql.py, since Phase 1)
+  ✅ Transfers do not appear in spending totals
 ```
 
 ---
@@ -1247,11 +1265,12 @@ scripts/
 - ◐ Default categories seeded - scripts/seed_categories.py is written and its
   dry run is correct; it needs an account to write to
 
-### Phase 4 · Oct 13 – Oct 22 · 10 days: Transactions
-- ☐ Two-step insert atomic and tested
-- ☐ Splits: amount == sum of splits, Decimal-exact
-- ☐ Numpad sheet: two taps and a number; repeat last entry
-- ☐ Working-set cache warm and write-through
+### Phase 4 · Oct 13 – Oct 22 · 10 days: Transactions — built 2026-09-13
+- ✅ Two-step insert atomic and tested - locally and on SQL Server
+- ✅ Splits: amount == sum of splits, Decimal-exact
+- ✅ Numpad sheet: two taps and a number; repeat last entry
+- ✅ Working-set cache warm and write-through, dropped with the key
+- ☐ Tags (TXN-10) - payload shape kept, management not built
 
 ### Phase 5 · Oct 23 – Oct 30 · 8 days: Budgets — the app becomes usable
 - ☐ Daily allowance correct in both modes; carry-over toggle

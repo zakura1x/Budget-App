@@ -45,6 +45,26 @@ export function centavos(value: string): number {
   return negative ? -whole : whole;
 }
 
+/** Whole centavos back to the API's decimal string: 70050 -> "700.50". Integer arithmetic only. */
+export function fromCentavos(value: number): string {
+  const negative = value < 0;
+  const whole = Math.abs(Math.trunc(value));
+  const int = Math.floor(whole / 100);
+  const frac = String(whole % 100).padStart(2, '0');
+  return `${negative ? '-' : ''}${int}.${frac}`;
+}
+
+/**
+ * Keep only what a typed amount can contain: digits, one decimal point, two
+ * places - and one leading minus when `allowNegative`.
+ */
+export function sanitizeAmount(input: string, { allowNegative = false } = {}): string {
+  const negative = allowNegative && input.trimStart().startsWith('-');
+  const [whole = '', ...rest] = input.replace(/[^\d.]/g, '').split('.');
+  const body = rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole;
+  return negative ? `-${body}` : body;
+}
+
 /**
  * Apply one numpad key to an amount being typed. The typed amount is a
  * string throughout, so what the user sees is exactly what is sent.
