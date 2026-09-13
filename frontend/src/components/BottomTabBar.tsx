@@ -6,6 +6,7 @@
  * home indicator (safe-area inset).
  */
 import { NavLink } from 'react-router-dom';
+import { useBudgetStore } from '../stores/budgetStore';
 import { CalendarIcon, HomeIcon, MoreIcon, PlusIcon, StatsIcon } from './Icons';
 
 const TABS = [
@@ -17,6 +18,8 @@ const TABS = [
 ] as const;
 
 export function BottomTabBar({ onAdd }: { onAdd: () => void }) {
+  // UX-19: a dot on Home while the current period has an alert (BUD-12).
+  const alerting = useBudgetStore((s) => s.currentAlerts > 0);
   return (
     <nav
       aria-label="Main"
@@ -46,7 +49,12 @@ export function BottomTabBar({ onAdd }: { onAdd: () => void }) {
                   }`
                 }
               >
-                <tab.Icon size={24} />
+                <span className="relative">
+                  <tab.Icon size={24} />
+                  {tab.to === '/' && alerting && (
+                    <span className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full bg-danger ring-2 ring-surface" aria-label="Budget alert" />
+                  )}
+                </span>
                 {tab.label}
               </NavLink>
             </li>

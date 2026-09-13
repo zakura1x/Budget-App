@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getHealth, type HealthStatus } from '../lib/api';
-import { GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, TagIcon, WalletIcon } from '../components/Icons';
+import { GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, WalletIcon } from '../components/Icons';
 import { useAuthStore } from '../stores/authStore';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SectionTitle } from '../components/ui/Card';
@@ -50,6 +50,8 @@ export function More() {
 
       <SectionTitle>Money</SectionTitle>
       <ListGroup>
+        <ListRow icon={<StatsIcon size={20} />} title="Budget" subtitle="Amount, period and categories"
+          chevron onClick={() => navigate('/budget')} />
         <ListRow icon={<WalletIcon size={20} />} title="Accounts" subtitle="Cash, cards, savings"
           chevron onClick={() => navigate('/accounts')} />
         <ListRow icon={<TagIcon size={20} />} title="Categories" subtitle="What your spending is sorted into"
@@ -59,7 +61,8 @@ export function More() {
 
       <SectionTitle>App</SectionTitle>
       <ListGroup>
-        <ListRow icon={<GearIcon size={20} />} title="Settings" trailing={soon} />
+        <ListRow icon={<GearIcon size={20} />} title="Settings" subtitle="Carry-over, daily allowance, alerts"
+          chevron onClick={() => navigate('/settings')} />
         <ListRow icon={<ShieldIcon size={20} />} title="About your encryption" trailing={soon} />
       </ListGroup>
 

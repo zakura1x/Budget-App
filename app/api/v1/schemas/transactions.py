@@ -13,6 +13,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.schemas.accounts import AccountOut, CashOnHandOut
+from app.api.v1.schemas.budgets import StatusOut
 from app.api.v1.schemas.common import Money
 
 TransactionType = Literal["expense", "income", "transfer"]
@@ -83,10 +84,15 @@ class PageOut(BaseModel):
 
 
 class OutcomeOut(BaseModel):
-    """Everything a write changed, so no screen needs a second request."""
+    """
+    Everything a write changed, so no screen needs a second request - the
+    rows, the touched accounts, cash on hand, and the budget status the home
+    ring animates to (null until a budget exists).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     transactions: List[TransactionOut]
     accounts: List[AccountOut]
     cash_on_hand: CashOnHandOut
+    budget_status: Optional[StatusOut] = None

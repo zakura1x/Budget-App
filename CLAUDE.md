@@ -236,11 +236,11 @@ isolation — must never be skipped or xfailed), `slow`.
 
 ## Current state
 
-Phases 1–4 are built: crypto core, recovery phrase, database layer and
+Phases 1–5 are built: crypto core, recovery phrase, database layer and
 migration, frontend shell, the whole sign-in / lock / recovery flow
-(2026-09-11), accounts + categories and transactions (2026-09-13) —
-340 passing tests across 26 files. Mounted: `auth`, `health`,
-`settings`, `accounts`, `categories`, `transactions`.
+(2026-09-11); accounts, categories, transactions and budgets (2026-09-13) —
+406 passing tests across 29 files. Mounted: `auth`, `health`,
+`settings`, `accounts`, `categories`, `transactions`, `budgets`.
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -250,10 +250,18 @@ sweep), so decrypted rows never outlive their key. Never mutate a cached
 `Record.data`; build a new dict. Tests start from an empty working set via an
 autouse fixture in `tests/conftest.py`.
 
-Two things Phase 4 left open on purpose: tags (TXN-10) are stored as an empty
-`tag_ids` with no management, and the POST response carries account balances
-and cash on hand but not yet the budget status (Phase 5).
+**Budgets** (`app/services/budget_service/`): one budget row per user with a
+dated amount history; the pure pieces — `allowance.py`, `carry_over.py`,
+`alerts.py` — take plain inputs and are tested directly. Every endpoint that
+returns budget figures takes the CLIENT's `today` as a query parameter.
+`budget_service` imports `transaction_service`; the reverse import is lazy,
+inside `transaction_service.outcome()`, to avoid a cycle — keep it that way.
 
-Phase 5 (budgets and the daily allowance) is next — everything from there on
-is a plan, not an observation, so check `misc/phases.md` before assuming a
-service, endpoint or script exists.
+Still open on purpose: tags (TXN-10) are stored as an empty `tag_ids` with no
+management, and there is no explicit "copy last period's budget" action
+because allocations persist across periods (see the Phase 5 status in
+`misc/phases.md`).
+
+Phase 6 (calendar and stats) is next — everything from there on is a plan,
+not an observation, so check `misc/phases.md` before assuming a service,
+endpoint or script exists.

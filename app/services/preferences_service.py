@@ -1,0 +1,67 @@
+"""
+preferences_service - the settings a user changes about how the app behaves.
+
+Phase 5 opens the budget-behaviour keys; the rest of Settings (theme, lock
+timing, the period defaults) arrives in Phase 8b. Only the keys named in
+EDITABLE can be written - a preferences row is sealed JSON, and anything
+accepted here would be trusted by every later read of it.
+"""
+
+from typing import Any, Dict, Mapping
+
+from sqlalchemy.orm import Session
+
+from app.core.crypto.user_cipher import UserCipher
+from app.core.exceptions import ValidationException
+from app.db.repositories.preferences_repository import PreferencesRepository
+from app.services import audit_service
+from app.services.auth_service.registration_service import default_preferences
+from app.services.budget_service.allowance import MODES
+
+EDITABLE = ("carry_over", "daily_allowance_mode", "alert_warn_threshold_pct", "alert_pace_enabled")
+
+
+def get_preferences(db: Session, cipher: UserCipher) -> Dict[str, Any]:
+    record = PreferencesRepository(db, cipher).current()
+    return {**default_preferences(), **(record.data if record else {})}
+
+
+def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, Any]) -> Dict[str, Any]:
+    unknown = set(changes) - set(EDITABLE)
+    if unknown:
+        raise ValidationException(f"Not a setting you can change here: {', '.join(sorted(unknown))}")
+
+    cleaned: Dict[str, Any] = {}
+    if "carry_over" in changes:
+        cleaned["carry_over"] = _bool(changes["carry_over"], "carry_over")
+    if "alert_pace_enabled" in changes:
+        cleaned["alert_pace_enabled"] = _bool(changes["alert_pace_enabled"], "alert_pace_enabled")
+    if "daily_allowance_mode" in changes:
+        if changes["daily_allowance_mode"] not in MODES:
+            raise ValidationException(f"daily_allowance_mode must be one of: {', '.join(MODES)}")
+        cleaned["daily_allowance_mode"] = changes["daily_allowance_mode"]
+    if "alert_warn_threshold_pct" in changes:
+        value = changes["alert_warn_threshold_pct"]
+        if isinstance(value, bool) or not isinstance(value, int) or not 50 <= value <= 100:
+            raise ValidationException("alert_warn_threshold_pct must be 50-100")
+        cleaned["alert_warn_threshold_pct"] = value
+
+    repo = PreferencesRepository(db, cipher)
+    record = repo.current()
+    data = {**default_preferences(), **(record.data if record else {}), **cleaned}
+    if record is None:
+        repo.create(data)
+    else:
+        repo.update(record.id, data)
+    audit_service.record(
+        db, audit_service.UPDATE, user_id=cipher.user_id, entity="user_preferences",
+        cipher=cipher, detail={"changed": sorted(cleaned)},
+    )
+    db.commit()
+    return data
+
+
+def _bool(value: Any, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValidationException(f"{name} is true or false")
+    return value

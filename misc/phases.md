@@ -750,6 +750,31 @@ Verify:
 
 ## 📦 PHASE 5: Budgets & Daily Allowance (Oct 23 – Oct 30 · 8 days)
 
+> **Status 2026-09-13: BUILT, ahead of schedule.** Budget periods, the daily
+> allowance in both modes, symmetric carry-over, in-session alerts, the home
+> ring, budget management and the Settings toggles - 406 tests passing.
+> Every figure on the demo screens was checked against a hand calculation.
+>
+> Decided while building, and worth knowing:
+> - **One budget per user, not one per period.** The amount keeps a dated
+>   history, so a mid-period change applies at once and never rewrites a
+>   finished period - carry-over replays those. Allocations stay in force from
+>   period to period, which is BUD-13's purpose (no retyping every category)
+>   with nothing to copy. There is therefore no separate "copy last period"
+>   button; if you want one, say so.
+> - **Today's allowance is fixed for the day.** It is computed from spending
+>   before today; buying something moves "left today", and tomorrow
+>   recomputes. It rounds DOWN, so following it exactly never overspends.
+> - **The allowance never goes negative.** After bad periods it is ₱0.00 and
+>   the screen says how far over.
+> - **Changing the period's structure restarts carry-over** from the period
+>   the change lands in.
+> - **ACC-15 card-due alerts** arrived here too, in the same alert list.
+>
+> Not verified against SQL Server: budgets and allocations are ordinary
+> Shape B rows through the same repository, so there is nothing
+> engine-specific left to prove.
+
 ### 🎯 Objective: The number the app exists to show
 
 ### Backend Tasks
@@ -757,39 +782,39 @@ Verify:
 ```yaml
 Days 1-3:
   Budget periods:
-    ☐ budget_service/ - weekly, monthly, custom
-    ☐ Custom month start day (payday budgeting, e.g. the 25th)
-    ☐ Configurable week start day
-    ☐ Period resolution for any given date - the fiddly bit, test it hard
-    ☐ Per-category allocations (budget_allocations)
+    ✅ budget_service/ - weekly, monthly, custom
+    ✅ Custom month start day (payday budgeting, e.g. the 25th)
+    ✅ Configurable week start day
+    ✅ Period resolution for any given date - the fiddly bit, test it hard
+    ✅ Per-category allocations (budget_allocations)
 
 Days 4-5:
   ★ Daily allowance:
-    ☐ spent = sum of expense SPLITS in period (Python, over the cache)
-    ☐ remaining = budget - spent
-    ☐ Mode remaining_over_days_left: remaining / days remaining (DEFAULT)
-    ☐ Mode fixed_daily: budget / total days
-    ☐ Per-category progress from splits, not from a top-level category
-    ☐ Edge cases: last day of period, mid-period budget change, empty period
+    ✅ spent = sum of expense SPLITS in period (Python, over the cache)
+    ✅ remaining = budget - spent
+    ✅ Mode remaining_over_days_left: remaining / days remaining (DEFAULT)
+    ✅ Mode fixed_daily: budget / total days
+    ✅ Per-category progress from splits, not from a top-level category
+    ✅ Edge cases: last day of period, mid-period budget change, empty period
 
   ★ Carry-over (BUD-11) - now a USER SETTING, default OFF:
-    ☐ Store on user_preferences, not in .env - it is a preference
-    ☐ SYMMETRIC when on: a surplus rolls forward AND so does an overspend.
+    ✅ Store on user_preferences, not in .env - it is a preference
+    ✅ SYMMETRIC when on: a surplus rolls forward AND so does an overspend.
        A positive-only version drifts upward forever and stops meaning
        anything.
-    ☐ Compute from the PREVIOUS period's closing position
-    ☐ Test the compounding case: three bad weeks in a row must not
+    ✅ Compute from the PREVIOUS period's closing position
+    ✅ Test the compounding case: three bad weeks in a row must not
        produce a negative allowance that renders as nonsense
 
   ★ In-app alerts (BUD-12/14/15) - computed in-session, no push:
-    ☐ Over budget:  spent >= 100% of period budget
-    ☐ Approaching:  spent >= ALERT_WARN_THRESHOLD_PCT (default 80%)
-    ☐ Pace alert:   spent% > elapsed% of the period
+    ✅ Over budget:  spent >= 100% of period budget
+    ✅ Approaching:  spent >= ALERT_WARN_THRESHOLD_PCT (default 80%)
+    ✅ Pace alert:   spent% > elapsed% of the period
                     (day 10 of 30 with 60% spent -> warn while there is
                      still time to act. More useful than a fixed line.)
-    ☐ Per-category over-budget flags, from split sums
-    ☐ Returned in the SAME response as budget status - no extra round trip
-    ☐ NO background sender, NO VAPID, NO service worker push (BUD-16).
+    ✅ Per-category over-budget flags, from split sums
+    ✅ Returned in the SAME response as budget status - no extra round trip
+    ✅ NO background sender, NO VAPID, NO service worker push (BUD-16).
        A push sender would need to decrypt outside your session, which
        means holding keys outside a session. That undoes ARCHITECTURE §5.5.
 ```
@@ -799,22 +824,22 @@ Days 4-5:
 ```yaml
 Days 1-3:
   ★ Home screen:
-    ☐ Large progress ring - remaining vs budget, animated
-    ☐ "You can spend ₱612 today" as the visual hero
-    ☐ Colour state: green -> amber -> red as the period is consumed
-    ☐ Period selector, swipe left/right between periods
-    ☐ Recent transactions strip below
+    ✅ Large progress ring - remaining vs budget, animated
+    ✅ "You can spend ₱612 today" as the visual hero
+    ✅ Colour state: green -> amber -> red as the period is consumed
+    ✅ Period selector, swipe left/right between periods
+    ✅ Recent transactions strip below
 
 Days 4-5:
   Budget management:
-    ☐ Budget setup - period type, amount, start day
-    ☐ Per-category allocation sliders with a live remaining total
-    ☐ ★ Copy last period's budget (BUD-13, pulled into v1) - one
+    ✅ Budget setup - period type, amount, start day
+    ✅ Per-category allocation sliders with a live remaining total
+    ✅ ★ Copy last period's budget (BUD-13, pulled into v1) - one
        action seeds a new period from the previous one's allocations
-    ☐ Category progress bars, over-budget in red
-    ☐ Ring animates on the POST response - no refetch
-    ☐ ★ Alert banner on Home + tab-bar badge (UX-19)
-    ☐ Carry-over toggle in Settings, with a one-line explanation of
+    ✅ Category progress bars, over-budget in red
+    ✅ Ring animates on the POST response - no refetch
+    ✅ ★ Alert banner on Home + tab-bar badge (UX-19)
+    ✅ Carry-over toggle in Settings, with a one-line explanation of
        what it does - it is not self-evident from the label alone
 ```
 
@@ -826,9 +851,11 @@ Days 4-5:
   GET  /api/v1/budgets/{id}/progress -> per-category breakdown
 
 Verify:
-  ☐ Overspending today lowers tomorrow's allowance (default mode)
-  ☐ A 25th-of-month start resolves periods correctly across a year boundary
-  ☐ Every figure is Decimal-exact against a hand check
+  ✅ Overspending today lowers tomorrow's allowance (default mode)
+     (tests/test_allowance.py)
+  ✅ A 25th-of-month start resolves periods correctly across a year boundary
+     (tests/test_budget_periods.py, tests/test_budgets.py)
+  ✅ Every figure is Decimal-exact against a hand check
 ```
 
 ---
@@ -1272,11 +1299,11 @@ scripts/
 - ✅ Working-set cache warm and write-through, dropped with the key
 - ☐ Tags (TXN-10) - payload shape kept, management not built
 
-### Phase 5 · Oct 23 – Oct 30 · 8 days: Budgets — the app becomes usable
-- ☐ Daily allowance correct in both modes; carry-over toggle
-- ☐ Over / approaching / pace alerts on Home
-- ☐ Copy last period's budget
-- ☐ Home ring animating from the POST response
+### Phase 5 · Oct 23 – Oct 30 · 8 days: Budgets — the app becomes usable — built 2026-09-13
+- ✅ Daily allowance correct in both modes; carry-over toggle
+- ✅ Over / approaching / pace alerts on Home
+- ✅ Copy last period's budget
+- ✅ Home ring animating from the POST response
 
 ### Phase 6 · Oct 31 – Nov 6 · 7 days: Calendar & Stats
 - ☐ Heatmap, charts and forecast over the warm cache

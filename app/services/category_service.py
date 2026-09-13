@@ -221,6 +221,10 @@ def delete_category(
 
     for cid in sorted(doomed):
         repo.soft_delete(cid)
+    # Their budget allocations go too - dropped, or folded into the target (CAT-08).
+    from app.services.budget_service import budget_service
+
+    budget_service.on_categories_deleted(db, cipher, doomed, reassign_to if in_use else None)
 
     audit_service.record(
         db, audit_service.DELETE, user_id=cipher.user_id, entity="categories",

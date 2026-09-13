@@ -113,6 +113,7 @@ class Outcome:
     transactions: List[TransactionView]
     accounts: List[account_service.AccountView]
     cash_on_hand: account_service.CashOnHand
+    budget_status: Optional[Any] = None  # budget_service.BudgetStatus, or None with no budget
 
 
 # -------------------------------------------------------- the pure invariant
@@ -253,7 +254,9 @@ def list_transactions(
 # ------------------------------------------------------------------ writing
 
 
-def create_transaction(db: Session, cipher: UserCipher, payload: Mapping[str, Any]) -> Outcome:
+def create_transaction(
+    db: Session, cipher: UserCipher, payload: Mapping[str, Any], *, today: Optional[date] = None
+) -> Outcome:
     kind = _type(payload.get("type"))
     repo = TransactionRepository(db, cipher)
 
@@ -273,10 +276,17 @@ def create_transaction(db: Session, cipher: UserCipher, payload: Mapping[str, An
         detail={"type": kind, "amount": records[0].data["amount"], "legs": len(records)},
     )
     db.commit()
-    return outcome(db, cipher, [_view(r) for r in records])
+    return outcome(db, cipher, [_view(r) for r in records], today=today)
 
 
-def update_transaction(db: Session, cipher: UserCipher, transaction_id: int, payload: Mapping[str, Any]) -> Outcome:
+def update_transaction(
+    db: Session,
+    cipher: UserCipher,
+    transaction_id: int,
+    payload: Mapping[str, Any],
+    *,
+    today: Optional[date] = None,
+) -> Outcome:
     repo = TransactionRepository(db, cipher)
     record = _record(db, cipher, transaction_id)
     current = record.data.get("type")
@@ -303,10 +313,10 @@ def update_transaction(db: Session, cipher: UserCipher, transaction_id: int, pay
         entity_id=transaction_id, cipher=cipher, detail={"type": kind, "amount": records[0].data["amount"]},
     )
     db.commit()
-    return outcome(db, cipher, [_view(r) for r in records])
+    return outcome(db, cipher, [_view(r) for r in records], today=today)
 
 
-def delete_transaction(db: Session, cipher: UserCipher, transaction_id: int) -> Outcome:
+def delete_transaction(db: Session, cipher: UserCipher, transaction_id: int, *, today: Optional[date] = None) -> Outcome:
     """TXN-14. Soft, so the audit trail and any earlier backup stay honest. A transfer takes both legs."""
     repo = TransactionRepository(db, cipher)
     record = _record(db, cipher, transaction_id)
@@ -320,10 +330,12 @@ def delete_transaction(db: Session, cipher: UserCipher, transaction_id: int) -> 
         detail={"type": record.data.get("type"), "legs": len(doomed)},
     )
     db.commit()
-    return outcome(db, cipher, [_view(leg) for leg in doomed])
+    return outcome(db, cipher, [_view(leg) for leg in doomed], today=today)
 
 
-def repeat_last(db: Session, cipher: UserCipher, *, on: Optional[date] = None) -> Outcome:
+def repeat_last(
+    db: Session, cipher: UserCipher, *, on: Optional[date] = None, today: Optional[date] = None
+) -> Outcome:
     """
     TXN-17. Clone the most recently ENTERED transaction - by when it was
     written, not its date - onto `on` (today by default). It goes back through
@@ -347,20 +359,27 @@ def repeat_last(db: Session, cipher: UserCipher, *, on: Optional[date] = None) -
         payload = {"type": data["type"], "txn_date": when, "amount": data["amount"],
                    "account_id": data["account_id"], "merchant": data.get("merchant"),
                    "notes": data.get("notes"), "splits": data["splits"]}
-    return create_transaction(db, cipher, payload)
+    return create_transaction(db, cipher, payload, today=today)
 
 
-def outcome(db: Session, cipher: UserCipher, views: List[TransactionView]) -> Outcome:
+def outcome(
+    db: Session, cipher: UserCipher, views: List[TransactionView], *, today: Optional[date] = None
+) -> Outcome:
     touched: Set[int] = set()
     for view in views:
         touched.add(view.account_id)
         if view.counter_account_id is not None:
             touched.add(view.counter_account_id)
     accounts = account_service.list_accounts(db, cipher, postings=postings(db, cipher))
+    # Imported here, not at the top: budget_service reads postings from this
+    # module, so a top-level import would be a cycle.
+    from app.services.budget_service import budget_service
+
     return Outcome(
         transactions=views,
         accounts=[a for a in accounts if a.id in touched],
         cash_on_hand=account_service.cash_on_hand(accounts),
+        budget_status=budget_service.status(db, cipher, today=today),
     )
 
 

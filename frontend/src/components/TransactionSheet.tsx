@@ -270,7 +270,7 @@ export function TransactionSheet() {
     setBusy(true);
     try {
       const outcome = await deleteTransaction(editing.id);
-      ledger.removeIds(outcome.transactions.map((t) => t.id));
+      ledger.removeIds(outcome.transactions.map((t) => t.id), outcome);
       close();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not delete. Try again.');

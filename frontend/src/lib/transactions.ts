@@ -10,6 +10,7 @@
  */
 import { api } from './api';
 import type { Account, CashOnHand } from './accounts';
+import type { BudgetStatus } from './budgets';
 
 export type TransactionType = 'expense' | 'income' | 'transfer';
 
@@ -51,6 +52,8 @@ export interface Outcome {
   transactions: Transaction[];
   accounts: Account[];
   cash_on_hand: CashOnHand;
+  /** The current period, recomputed by this write - null with no budget. */
+  budget_status: BudgetStatus | null;
 }
 
 export interface TransactionDraft {
@@ -88,15 +91,16 @@ export const listTransactions = (filters: Filters, cursor?: string | null, signa
   api<Page>(`/transactions?${query(filters, cursor)}`, { signal });
 
 export const createTransaction = (body: TransactionDraft) =>
-  api<Outcome>('/transactions', { method: 'POST', body });
+  api<Outcome>(`/transactions?today=${localToday()}`, { method: 'POST', body });
 
 export const updateTransaction = (id: number, body: TransactionDraft) =>
-  api<Outcome>(`/transactions/${id}`, { method: 'PATCH', body });
+  api<Outcome>(`/transactions/${id}?today=${localToday()}`, { method: 'PATCH', body });
 
-export const deleteTransaction = (id: number) => api<Outcome>(`/transactions/${id}`, { method: 'DELETE' });
+export const deleteTransaction = (id: number) =>
+  api<Outcome>(`/transactions/${id}?today=${localToday()}`, { method: 'DELETE' });
 
 export const repeatLast = (on: string) =>
-  api<Outcome>('/transactions/repeat-last', { method: 'POST', body: { on } });
+  api<Outcome>(`/transactions/repeat-last?today=${localToday()}`, { method: 'POST', body: { on } });
 
 /** Today in the user's own timezone, as the API's date string. */
 export function localToday(): string {

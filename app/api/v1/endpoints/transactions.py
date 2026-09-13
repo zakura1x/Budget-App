@@ -2,8 +2,9 @@
 /transactions - the write path.
 
 Every write answers with an Outcome: the rows written, the accounts they
-touched with their new balances, and cash on hand - in the same response
-(phases.md, Phase 4 contract note). Phase 5 adds the budget status to it.
+touched with their new balances, cash on hand, and the budget status for the
+client's `today` - all in the same response (phases.md, Phase 4 contract
+note), so the home ring animates without a second round trip.
 
 The list takes its filters as query parameters. That is safe to do with
 figures this sensitive only because the logging middleware records the path
@@ -28,6 +29,8 @@ from app.db.session import get_db
 from app.services import transaction_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+TODAY = Query(default=None, description="the client's date, for the budget status in the response")
 
 
 @router.get("", response_model=PageOut)
@@ -62,32 +65,37 @@ def get_transaction(
 @router.post("", response_model=OutcomeOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(
     body: TransactionIn,
+    today: Optional[date] = TODAY,
     ctx: UnlockedContext = Depends(get_unlocked_context),
     db: Session = Depends(get_db),
 ) -> OutcomeOut:
-    result = transaction_service.create_transaction(db, ctx.cipher, body.model_dump(mode="python", exclude_none=True))
+    result = transaction_service.create_transaction(
+        db, ctx.cipher, body.model_dump(mode="python", exclude_none=True), today=today
+    )
     return OutcomeOut.model_validate(result)
 
 
 @router.post("/repeat-last", response_model=OutcomeOut, status_code=status.HTTP_201_CREATED)
 def repeat_last(
     body: RepeatIn,
+    today: Optional[date] = TODAY,
     ctx: UnlockedContext = Depends(get_unlocked_context),
     db: Session = Depends(get_db),
 ) -> OutcomeOut:
     """TXN-17 - one tap clones the most recently entered transaction onto today."""
-    return OutcomeOut.model_validate(transaction_service.repeat_last(db, ctx.cipher, on=body.on))
+    return OutcomeOut.model_validate(transaction_service.repeat_last(db, ctx.cipher, on=body.on, today=today))
 
 
 @router.patch("/{transaction_id}", response_model=OutcomeOut)
 def update_transaction(
     transaction_id: int,
     body: TransactionIn,
+    today: Optional[date] = TODAY,
     ctx: UnlockedContext = Depends(get_unlocked_context),
     db: Session = Depends(get_db),
 ) -> OutcomeOut:
     result = transaction_service.update_transaction(
-        db, ctx.cipher, transaction_id, body.model_dump(mode="python", exclude_none=True)
+        db, ctx.cipher, transaction_id, body.model_dump(mode="python", exclude_none=True), today=today
     )
     return OutcomeOut.model_validate(result)
 
@@ -95,7 +103,10 @@ def update_transaction(
 @router.delete("/{transaction_id}", response_model=OutcomeOut)
 def delete_transaction(
     transaction_id: int,
+    today: Optional[date] = TODAY,
     ctx: UnlockedContext = Depends(get_unlocked_context),
     db: Session = Depends(get_db),
 ) -> OutcomeOut:
-    return OutcomeOut.model_validate(transaction_service.delete_transaction(db, ctx.cipher, transaction_id))
+    return OutcomeOut.model_validate(
+        transaction_service.delete_transaction(db, ctx.cipher, transaction_id, today=today)
+    )

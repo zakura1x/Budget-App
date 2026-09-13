@@ -13,7 +13,8 @@ passes "today" in, so a test can pass any day it likes.
 
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
+from typing import Optional
 
 
 def days_in_month(year: int, month: int) -> int:
@@ -115,3 +116,71 @@ def _day_after(day: date) -> date:
 
 def _day_before(day: date) -> date:
     return date.fromordinal(day.toordinal() - 1)
+
+
+# ============================================================ budget periods
+#
+# BUD-01..BUD-05. The period a budget measures a day against. Consecutive
+# periods tile the calendar exactly like statement periods do - no gap, no
+# overlap - or a purchase would count against two budgets, or none.
+
+PERIOD_KINDS = ("weekly", "monthly", "custom")
+
+
+@dataclass(frozen=True)
+class BudgetPeriod:
+    start: date
+    end: date
+
+    @property
+    def days(self) -> int:
+        return (self.end - self.start).days + 1
+
+    def covers(self, day: date) -> bool:
+        return self.start <= day <= self.end
+
+
+def budget_period(
+    day: date,
+    kind: str,
+    *,
+    month_start_day: int = 1,
+    week_start_day: int = 1,
+    custom_days: Optional[int] = None,
+    custom_anchor: Optional[date] = None,
+) -> BudgetPeriod:
+    """
+    The budget period `day` falls in.
+
+        monthly   from `month_start_day` to the day before it next month -
+                  payday budgeting (BUD-04): a 25th start runs 25 Dec to
+                  24 Jan across the year boundary. A start day the month does
+                  not have clamps to its last day, like a statement does.
+        weekly    seven days from `week_start_day`, 1 Monday .. 7 Sunday (BUD-05)
+        custom    `custom_days` long, counted from `custom_anchor` in either
+                  direction (BUD-03)
+    """
+    if kind == "monthly":
+        _check_day(month_start_day, "month_start_day")
+        start = clamp_day(day.year, day.month, month_start_day)
+        if day < start:
+            start = clamp_day(*_previous_month(day.year, day.month), month_start_day)
+        following = clamp_day(*_next_month(start.year, start.month), month_start_day)
+        return BudgetPeriod(start, _day_before(following))
+
+    if kind == "weekly":
+        if not isinstance(week_start_day, int) or isinstance(week_start_day, bool) or not 1 <= week_start_day <= 7:
+            raise ValueError("week_start_day must be 1-7 (Monday-Sunday)")
+        start = day - timedelta(days=(day.isoweekday() - week_start_day) % 7)
+        return BudgetPeriod(start, start + timedelta(days=6))
+
+    if kind == "custom":
+        if not isinstance(custom_days, int) or isinstance(custom_days, bool) or not 1 <= custom_days <= 366:
+            raise ValueError("custom_days must be 1-366")
+        if not isinstance(custom_anchor, date):
+            raise ValueError("a custom period needs custom_anchor")
+        index = (day - custom_anchor).days // custom_days  # floor: works before the anchor too
+        start = custom_anchor + timedelta(days=index * custom_days)
+        return BudgetPeriod(start, start + timedelta(days=custom_days - 1))
+
+    raise ValueError(f"period must be one of {PERIOD_KINDS}")

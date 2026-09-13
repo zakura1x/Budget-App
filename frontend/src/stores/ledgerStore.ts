@@ -17,6 +17,7 @@ import {
   type Outcome,
   type Transaction,
 } from '../lib/transactions';
+import { useBudgetStore } from './budgetStore';
 
 const PENDING_BASE = -1;
 
@@ -35,7 +36,7 @@ interface LedgerState {
   load: (filters?: Filters) => Promise<void>;
   loadMore: () => Promise<void>;
   applyOutcome: (outcome: Outcome, replacedId?: number) => void;
-  removeIds: (ids: number[]) => void;
+  removeIds: (ids: number[], outcome?: Outcome) => void;
   addPending: (row: Omit<Transaction, 'id'>) => number;
   failPending: (id: number) => void;
   reset: () => void;
@@ -100,6 +101,7 @@ export const useLedgerStore = create<LedgerState>((set, get) => ({
   },
 
   applyOutcome: (outcome, replacedId) => {
+    useBudgetStore.getState().acceptOutcome(outcome.budget_status);
     set((s) => {
       const incoming = outcome.transactions.filter((row) => visible(row, s.filters));
       const drop = new Set([...outcome.transactions.map((t) => t.id), ...(replacedId !== undefined ? [replacedId] : [])]);
@@ -112,7 +114,8 @@ export const useLedgerStore = create<LedgerState>((set, get) => ({
     void get().load();
   },
 
-  removeIds: (ids) => {
+  removeIds: (ids, outcome) => {
+    if (outcome) useBudgetStore.getState().acceptOutcome(outcome.budget_status);
     set((s) => ({ items: s.items.filter((row) => !ids.includes(row.id)), version: s.version + 1 }));
     void get().load();
   },

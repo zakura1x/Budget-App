@@ -220,7 +220,7 @@ export function Ledger() {
     setOpenId(null);
     try {
       const outcome = await deleteTransaction(row.id);
-      removeIds(outcome.transactions.map((t) => t.id));
+      removeIds(outcome.transactions.map((t) => t.id), outcome);
     } catch (e) {
       useLedgerStore.setState({ error: e instanceof ApiError ? e.message : 'That did not delete.' });
     }

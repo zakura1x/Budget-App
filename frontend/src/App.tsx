@@ -20,6 +20,7 @@ import { useAutoLock } from './hooks/useAutoLock';
 import { LOCKED_EVENT, SIGNED_OUT_EVENT } from './lib/api';
 import { BASE_URL } from './lib/config';
 import { Accounts } from './screens/Accounts';
+import { Budget } from './screens/Budget';
 import { Calendar } from './screens/Calendar';
 import { Categories } from './screens/Categories';
 import { Ledger } from './screens/Ledger';
@@ -31,8 +32,10 @@ import { PinSetup } from './screens/PinSetup';
 import { RecoveryPhraseEnter } from './screens/RecoveryPhraseEnter';
 import { RecoveryPhraseSetup } from './screens/RecoveryPhraseSetup';
 import { Register } from './screens/Register';
+import { Settings } from './screens/Settings';
 import { Stats } from './screens/Stats';
 import { useAuthStore } from './stores/authStore';
+import { useBudgetStore } from './stores/budgetStore';
 import { useLedgerStore } from './stores/ledgerStore';
 import { useUiStore } from './stores/uiStore';
 
@@ -62,6 +65,8 @@ function AppTabs() {
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/transactions" element={<Ledger />} />
+            <Route path="/budget" element={<Budget />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -91,6 +96,7 @@ export function App() {
   const autoLockMinutes = useAuthStore((s) => s.session?.auto_lock_minutes ?? 5);
   const closeAddSheet = useUiStore((s) => s.closeAddSheet);
   const resetLedger = useLedgerStore((s) => s.reset);
+  const resetBudget = useBudgetStore((s) => s.reset);
 
   useEffect(() => {
     void init();
@@ -112,8 +118,9 @@ export function App() {
     if (status !== 'unlocked') {
       closeAddSheet();
       resetLedger();
+      resetBudget();
     }
-  }, [status, closeAddSheet, resetLedger]);
+  }, [status, closeAddSheet, resetLedger, resetBudget]);
 
   useAutoLock(status === 'unlocked', autoLockMinutes, () => void lock());
 
