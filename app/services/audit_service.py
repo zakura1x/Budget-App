@@ -41,6 +41,10 @@ RESTORE = "RESTORE"
 REVALUE = "REVALUE"  # ACC-12 - a valuation change, deliberately not income
 REASSIGN = "REASSIGN"  # CAT-08 - transactions moved off a deleted category
 REORDER = "REORDER"
+# ACC-30 - a typed balance recorded as an adjustment. Written ONLY when the
+# user accepts; fixing the opening balance instead writes no such entry.
+BALANCE_ADJUST = "BALANCE_ADJUST"
+STATEMENT_CHECK = "STATEMENT_CHECK"  # ACC-24 - the bank's total for one statement
 
 
 def record(

@@ -238,9 +238,10 @@ isolation — must never be skipped or xfailed), `slow`.
 
 Phases 1–5 are built: crypto core, recovery phrase, database layer and
 migration, frontend shell, the whole sign-in / lock / recovery flow
-(2026-09-11); accounts, categories, transactions and budgets (2026-09-13) —
-406 passing tests across 29 files. Mounted: `auth`, `health`,
-`settings`, `accounts`, `categories`, `transactions`, `budgets`.
+(2026-09-11); accounts, categories, transactions and budgets (2026-09-13);
+card bills, statement check and balance adjustments (Phase 5b, 2026-09-14) —
+448 passing tests across 32 files. Mounted: `auth`, `health`,
+`settings`, `accounts`, `statements`, `categories`, `transactions`, `budgets`.
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -257,11 +258,25 @@ returns budget figures takes the CLIENT's `today` as a query parameter.
 `budget_service` imports `transaction_service`; the reverse import is lazy,
 inside `transaction_service.outcome()`, to avoid a cycle — keep it that way.
 
+**Cards and balances** (Phase 5b): a card's bill, its spending limit and the
+statement check are all DERIVED in `account_service` from postings — only the
+bank's typed totals (`statement_checks`) and the `spending_limit` are stored.
+`Posting` carries the transaction `kind` and `statement_on`, because a limit
+counts purchases, not payments. Two rules to keep:
+
+- A balance adjustment (`type = adjustment`) is written ONLY by
+  `account_service.update_account` after a `BALANCE_DIFFERS` answer, together
+  with its `BALANCE_ADJUST` audit entry in the same commit. Never let
+  `POST /transactions` create one, and never make one editable.
+- `card_posted_on` moves a purchase between STATEMENTS only. The budget reads
+  `txn_date` and nothing else. `statement_service` writes through
+  `transaction_service`, and nothing imports it.
+
 Still open on purpose: tags (TXN-10) are stored as an empty `tag_ids` with no
 management, and there is no explicit "copy last period's budget" action
 because allocations persist across periods (see the Phase 5 status in
 `misc/phases.md`).
 
-Phase 6 (calendar and stats) is next — everything from there on is a plan,
+Phase 6 (calendar and stats; it must exclude adjustments too) is next — everything from there on is a plan,
 not an observation, so check `misc/phases.md` before assuming a service,
 endpoint or script exists.

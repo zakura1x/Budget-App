@@ -13,10 +13,19 @@ moment you look, and returned in the same response as the figures it is about.
                   tolerance - day 10 of 30 with 60% spent warns
                   while there is still time to act
     category_over one allocation is used up                        danger
-    card_due      a credit card payment falls due soon (ACC-15)    warn
+    card_due      a card's bill is unpaid and falls due soon       warn
+                  (ACC-15/20)
+    card_limit_over         your own limit on a card is used up    danger
+    card_limit_approaching  ALERT_WARN_THRESHOLD_PCT of it is used warn
+    card_limit_pace         the card is being spent faster than    warn
+                            its statement cycle is passing (ACC-22)
+
+The card-limit checks are the budget's own rules applied to a card's statement
+cycle instead of the budget period - same threshold, same pace tolerance.
 
 `over` supersedes `approaching` and `pace` - three banners saying one thing
-is noise. Messages carry no figures; the client formats those from the status.
+is noise - and `card_limit_over` does the same for its card. Messages carry no
+figures; the client formats those from the status.
 """
 
 from dataclasses import dataclass
@@ -49,6 +58,17 @@ class CardDue:
     due_in_days: int
 
 
+@dataclass(frozen=True)
+class CardLimit:
+    """ACC-21/22. A card with your own spending limit, over its open statement cycle."""
+
+    account_id: int
+    limit: Decimal
+    spent: Decimal  # purchases minus refunds this cycle
+    days_elapsed: int  # including today
+    days_total: int
+
+
 def budget_alerts(
     allowance: Allowance,
     *,
@@ -58,6 +78,7 @@ def budget_alerts(
     categories: Iterable[CategoryUse] = (),
     category_level: bool = True,
     cards_due: Iterable[CardDue] = (),
+    card_limits: Iterable[CardLimit] = (),
 ) -> List[Alert]:
     alerts: List[Alert] = []
     available, spent = allowance.available, allowance.spent
@@ -84,8 +105,41 @@ def budget_alerts(
                 alerts.append(Alert("category_over", "danger", "This category is over its budget",
                                     category_id=use.category_id))
 
+    for card in card_limits:
+        alerts.extend(card_limit_alerts(card, warn_pct=warn_pct, pace_enabled=pace_enabled,
+                                        pace_tolerance_pct=pace_tolerance_pct))
+
     for card in cards_due:
         when = "today" if card.due_in_days == 0 else f"in {card.due_in_days} day{'s' if card.due_in_days != 1 else ''}"
         alerts.append(Alert("card_due", "warn", f"A card payment is due {when}", account_id=card.account_id))
 
+    return alerts
+
+
+def card_limit_alerts(
+    card: CardLimit,
+    *,
+    warn_pct: int = 80,
+    pace_enabled: bool = True,
+    pace_tolerance_pct: int = 10,
+) -> List[Alert]:
+    """
+    ACC-22. Day 14 of a 30-day cycle with 65% of the limit spent warns on pace:
+    47% of the cycle has passed, and 65 is more than 10 points ahead of it.
+    """
+    if card.limit <= ZERO:
+        return []
+    if card.spent >= card.limit:
+        return [Alert("card_limit_over", "danger", "This card is at its spending limit", account_id=card.account_id)]
+
+    alerts: List[Alert] = []
+    if card.spent * 100 >= card.limit * warn_pct:
+        alerts.append(Alert("card_limit_approaching", "warn", f"You have used {warn_pct}% of this card's spending limit",
+                            account_id=card.account_id))
+    if pace_enabled and card.spent > ZERO and 0 < card.days_elapsed <= card.days_total:
+        spent_pct = card.spent * 100 / card.limit
+        elapsed_pct = Decimal(card.days_elapsed * 100) / card.days_total
+        if spent_pct > elapsed_pct + pace_tolerance_pct:
+            alerts.append(Alert("card_limit_pace", "warn", "This card is being spent faster than its cycle is passing",
+                                account_id=card.account_id))
     return alerts

@@ -318,6 +318,12 @@ graph TD
     A2 --> BAN
     A3 --> BAN
 
+    CRD["each credit card<br/>(its own statement cycle)"] --> CK{"card checks"}
+    CK -->|"bill left to pay,<br/>due within 5 days"| A4["🟠 card due"]
+    CK -->|"own limit: 80% · pace<br/>· 100% = 🔴"| A5["🟠 / 🔴 card limit"]
+    A4 --> BAN
+    A5 --> BAN
+
     style C1 fill:#dcfce7,stroke:#166534
     style OUT fill:#fef3c7,stroke:#b45309
     style BAN fill:#fee2e2,stroke:#991b1b
@@ -335,6 +341,13 @@ the number changes behaviour rather than just reporting on it.
 Recurring rules feed this too — `recurring_service` expands rules into real
 transactions on their due date, so a ₱1,500 subscription reduces your allowance
 on the day it charges, not as a surprise at month end.
+
+The same rules also look **forward**. `projection_service` asks `recurring_service`
+for every occurrence in the coming months and lays them out as salary in,
+committed charges out, the rest of the budget, and cash on hand at each month
+end. It also shows each credit card's next statements. It reads and never posts,
+so a projected salary cannot turn into a real transaction by accident
+(ARCHITECTURE.md §4.5).
 
 ---
 
@@ -356,7 +369,7 @@ graph TD
 
     MORE --> M1["Accounts"]
     MORE --> M2["Budgets & categories"]
-    MORE --> M3["Recurring & subscriptions"]
+    MORE --> M3["Recurring & subscriptions<br/>projection · card look-ahead"]
     MORE --> M4["Savings goals"]
     MORE --> M5["Import / Export CSV"]
     MORE --> M6["Settings — theme, PIN,<br/>carry-over toggle,<br/>recovery phrase"]

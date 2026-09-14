@@ -15,6 +15,13 @@
  *
  * New entries are optimistic: the sheet closes and the row appears in the
  * ledger before the response lands. Edits and deletes wait for the server.
+ *
+ * Pick a card with your own spending limit and the sheet says what is left of
+ * it this cycle, live as you type (ACC-23). It warns; it never stops the save -
+ * refusing a purchase you really made would only make the records wrong.
+ *
+ * A balance adjustment (ACC-29) opens read-only, with Delete: it was recorded
+ * when a balance was set, and editing its amount would contradict the record.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
@@ -34,8 +41,8 @@ import {
   localToday,
   repeatLast,
   updateTransaction,
+  type EntryType,
   type TransactionDraft,
-  type TransactionType,
 } from '../lib/transactions';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
@@ -98,7 +105,7 @@ export function TransactionSheet() {
   const close = useUiStore((s) => s.closeAddSheet);
   const ledger = useLedgerStore();
 
-  const [kind, setKind] = useState<TransactionType>('expense');
+  const [kind, setKind] = useState<EntryType>('expense');
   const [typed, setTyped] = useState('0');
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [accountId, setAccountId] = useState<number | null>(null);
@@ -134,7 +141,7 @@ export function TransactionSheet() {
       .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
 
     if (editing) {
-      setKind(editing.type);
+      setKind(editing.type === 'adjustment' ? 'expense' : editing.type);
       setTyped(typedFrom(editing.amount));
       setTxnDate(editing.txn_date);
       setNote(editing.notes ?? '');
@@ -290,7 +297,50 @@ export function TransactionSheet() {
     }
   };
 
+  // ACC-23. What is left of your own limit on the chosen card after this
+  // purchase - only for a new expense dated inside the card's open cycle.
+  const chosen = accounts.find((a) => a.id === accountId);
+  const limitHint = (() => {
+    const credit = chosen?.credit;
+    if (!chosen || editing || kind !== 'expense' || !credit?.spending_limit || credit.limit_left === null) return null;
+    if (txnDate < credit.period_start || txnDate > credit.period_closes) return null;
+    const left = centavos(credit.limit_left) - amountCents;
+    const ceiling = centavos(credit.spending_limit);
+    const tone = left < 0 ? 'text-danger' : left * 5 < ceiling ? 'text-warn' : 'text-ink-2'; // under a fifth left
+    const text =
+      left < 0
+        ? `${formatPHP(fromCentavos(-left))} over your limit on ${chosen.name} this cycle`
+        : `${formatPHP(fromCentavos(left))} left on ${chosen.name} this cycle`;
+    return { text, tone };
+  })();
+
   const canRepeat = !editing && typed === '0' && ledger.items.some((row) => row.id > 0);
+
+  if (editing?.type === 'adjustment') {
+    const loss = editing.direction === 'out';
+    return (
+      <Sheet open={open} onClose={close} title={loss ? 'Unrecorded loss' : 'Unrecorded gain'}>
+        <div className="space-y-3 pb-2">
+          <output className="num block pt-2 text-center text-display text-ink">
+            {loss ? '' : '+'}
+            {formatPHP(loss ? `-${editing.amount}` : editing.amount)}
+          </output>
+          <p className="text-center text-footnote text-ink-2">
+            {[chosen?.name, editing.txn_date].filter(Boolean).join(' · ')}
+          </p>
+          {editing.notes && <p className="text-center text-body">{editing.notes}</p>}
+          <p className="rounded-2xl bg-surface-2 px-4 py-3 text-footnote text-ink-2">
+            Recorded when you set this account’s balance. It moves the balance but is not spending or income, and
+            it can’t be edited — delete it and set the balance again.
+          </p>
+          {error && <p className="text-footnote text-danger">{error}</p>}
+          <Button variant="ghost" block className="text-danger" onClick={() => void remove()} disabled={busy}>
+            Delete adjustment
+          </Button>
+        </div>
+      </Sheet>
+    );
+  }
   const accountChips = (selected: number | null, choose: (id: number) => void, exclude?: number | null) =>
     accounts
       .filter((a) => a.id !== exclude)
@@ -371,6 +421,11 @@ export function TransactionSheet() {
             <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Account">
               {accountChips(accountId, setAccountId)}
             </div>
+            {limitHint && (
+              <p aria-live="polite" className={`num text-footnote font-medium ${limitHint.tone}`}>
+                {limitHint.text}
+              </p>
+            )}
           </>
         )}
 

@@ -26,18 +26,18 @@
 | Group | Prefix | ✅ v1 | 🟡 Deferred | ❌ Out | ❓ Decide | Total |
 |---|---|---|---|---|---|---|
 | 1. Security & Access | `SEC` | 28 | 1 | 0 | 0 | 29 |
-| 2. Accounts | `ACC` | 15 | 0 | 3 | 0 | 18 |
+| 2. Accounts | `ACC` | 27 | 0 | 3 | 0 | 30 |
 | 3. Categories | `CAT` | 8 | 0 | 0 | 0 | 8 |
 | 4. Transactions | `TXN` | 19 | 0 | 2 | 0 | 21 |
 | 5. Budgets & Allowance | `BUD` | 15 | 0 | 1 | 0 | 16 |
 | 6. Calendar | `CAL` | 5 | 1 | 0 | 0 | 6 |
 | 7. Stats & Reports | `STA` | 10 | 1 | 0 | 0 | 11 |
-| 8. Recurring & Installments | `REC` | 17 | 0 | 1 | 0 | 18 |
+| 8. Recurring, Installments & Projection | `REC` | 28 | 1 | 1 | 0 | 30 |
 | 9. Subscriptions | `SUB` | 8 | 1 | 0 | 0 | 9 |
 | 10. Savings Goals | `GOA` | 6 | 1 | 0 | 0 | 7 |
 | 11. Data In/Out | `DAT` | 16 | 2 | 2 | 0 | 20 |
 | 12. Settings & UX | `UX` | 14 | 3 | 3 | 0 | 20 |
-| **Total** | | **161** | **10** | **12** | **0** | **183** |
+| **Total** | | **184** | **11** | **12** | **0** | **207** |
 
 **All decisions are closed** — §13 records what was chosen and why. Four new
 second-order questions came out of those choices; each has a working default
@@ -98,7 +98,7 @@ shared company database. See ARCHITECTURE.md §5.
 |---|---|---|---|---|
 | ACC-01 | Multiple accounts | ✅ v1 | 3 | Unlimited |
 | ACC-02 | Account types: cash, debit, credit, savings | ✅ v1 | 3 | |
-| ACC-03 | Opening balance | ✅ v1 | 3 | |
+| ACC-03 | Opening balance | ✅ v1 | 3 | Set when the account is created. Later corrections go through the balance edit (ACC-27, ACC-28) |
 | ACC-04 | Running balance | ✅ v1 | 3 | Computed in Python — SQL cannot sum ciphertext |
 | ACC-05 | Colour + icon per account | ✅ v1 | 3 | |
 | ACC-06 | Archive (never hard-delete) | ✅ v1 | 3 | History depends on the account existing |
@@ -110,10 +110,22 @@ shared company database. See ARCHITECTURE.md §5.
 | ACC-12 | Investment revaluation is **not** income | ✅ v1 | 3 | Updating a stock account ₱100k → ₱105k records a valuation change, excluded from income and spending stats. Otherwise market noise pollutes your spending reports |
 | ACC-13 | Dated valuation history on investment accounts | ✅ v1 | 3 | Each value you type is appended with its date, not overwritten, and shown on the investment account itself. Investments do not count in cash on hand (ACC-18), so this history feeds no total |
 | ACC-14 | Credit limit & available credit | ✅ v1 | 3 | `available = limit − current balance − unpaid installment remainder`. The bank blocks the whole installment amount, so leaving it out would overstate what you can spend (REC-14) |
-| ACC-15 | Payment-due alert | ✅ v1 | 5 | In-app, `CREDIT_DUE_ALERT_DAYS` ahead (default 5). Same in-session model as the budget alerts — no push (BUD-16) |
+| ACC-15 | Payment-due alert | ✅ v1 | 5 | In-app, `CREDIT_DUE_ALERT_DAYS` ahead (default 5). Same in-session model as the budget alerts — no push (BUD-16). Shown on Home. Built to clear only when the whole card is at zero; ACC-20 changes that to "this statement is paid" |
 | ACC-16 | Statement period ≠ budget period | ✅ v1 | 3 | A card closing on the 20th has nothing to do with a budget starting on the 1st. Two independent cycles; sharing `date_utils` but never the same dates |
 | ACC-17 | **Cash on hand** — the one total | ✅ v1 | 3 | **DECIDED.** *"What is in my pockets."* The sum of every account that counts (ACC-18). **Deliberately not net worth:** nothing you own (a motorcycle, a phone) and nothing you will owe later (unpaid installments) is part of it |
 | ACC-18 | "Count in cash on hand" switch per account | ✅ v1 | 3 | Defaults: cash, debit, savings **on** · credit card **on** — what you have already spent on it is subtracted · investment **off**. Change any of them in the account's settings |
+| ACC-19 | **Statement amount due** | ✅ v1 | 5b | *"₱12,300 due Oct 6."* What the card owed at the moment the statement closed, the same figure a bank statement shows. Derived from postings, never stored. The app never calculates interest or fees; they come in through the statement check (ACC-24) |
+| ACC-20 | **Bill reminder clears when that statement is paid** | ✅ v1 | 5b | Left to pay = statement amount − payments into the card since it closed, never below zero. A part payment shows *"₱7,300 left, due Oct 6"*. Paying in full clears the reminder even while new purchases build up on the next statement. See §21 |
+| ACC-21 | **Your own spending limit per card** | ✅ v1 | 5b | **DECIDED: per statement cycle.** Optional, e.g. ₱10,000 from the 17th to the 16th, so what you spend against it is what next month's bill will be. Separate from the bank's credit limit (ACC-14). Counts purchases minus refunds, including recurring and installment charges; payments never count |
+| ACC-22 | Card-limit alerts: approaching, pace, over | ✅ v1 | 5b | The budget's rules on the card's cycle: `warn` at `ALERT_WARN_THRESHOLD_PCT` (80%), `warn` when spending runs ahead of the cycle, `danger` at 100%. Home banner, tab badge, colour on the card. Over replaces the other two. No push (BUD-16) |
+| ACC-23 | "Left on this card" in the add sheet | ✅ v1 | 5b | Pick a card with a limit and the sheet shows *"₱1,200 left on BPI Card this cycle"*, updating as you type. It warns and never blocks the save |
+| ACC-24 | **Check the statement against the bank** | ✅ v1 | 5b | When a statement closes, the card asks for the bank's total. **One number, not every line.** The app shows its own figure beside it and the difference. A match is marked ✅ Checked. The bank's figure is kept on the card per statement; the difference is recalculated every time, never stored. See §21 |
+| ACC-25 | **Explain a difference** | ✅ v1 | 5b | Choices: **a one-time fee or interest** (posts to Financial › Bank fees or Interest on the closing date) · **a purchase I forgot** (add sheet, amount filled in) · **posted on the next statement** (ACC-26) · **leave it** (stays visible on the card). One difference can be split across several choices. Installment interest joins the list in Phase 7 (REC-29). The app suggests and never decides, and a *lower* bank total is never offered as interest |
+| ACC-26 | Purchases the bank posts late | ✅ v1 | 5b | Purchases in the last `CARD_POSTING_LAG_DAYS` (default 3) before closing are marked *"may be on next statement"*. If the bank did post one later, one tap moves it to the next statement and that cycle's limit. **The budget keeps the purchase date** |
+| ACC-27 | **Edit the current balance** | ✅ v1 | 5b | On an existing cash, debit, savings or credit account, the sheet shows the **current balance** (for a card, **amount owed**) instead of the opening balance. Saving a different figure asks first (ACC-28). Investment accounts keep their valuations (ACC-13) |
+| ACC-28 | **Ask before recording the difference** | ✅ v1 | 5b | *"Wallet: ₱2,450.00 → ₱2,100.00. Difference −₱350.00."* Choices: **record as a balance adjustment** (recommended) · **fix the opening balance instead** · **cancel**. Nothing is recorded without a tap. See §22 |
+| ACC-29 | **Balance adjustment — unrecorded loss or gain** | ✅ v1 | 5b | A transaction of type `adjustment`, dated today, on that account only. It moves the balance and cash on hand. It stays **out** of the budget, daily allowance, income/expense stats and card limit, because the app does not know what the money was. It has its own ledger label and a total in Stats. Delete to undo; never edited |
+| ACC-30 | **Audit trail only when accepted** | ✅ v1 | 5b | Accepting writes a `BALANCE_ADJUST` audit entry: before, after, difference and an optional note, encrypted under your key like every audit detail. Fixing the opening balance or cancelling writes no adjustment and no balance entry |
 
 ---
 
@@ -223,11 +235,11 @@ it — see ARCHITECTURE.md §4.3.
 | STA-08 | Per-account breakdown | ✅ v1 | 6 | |
 | STA-09 | Custom date range on every chart | ✅ v1 | 6 | |
 | STA-10 | Cash on hand over time | 🟡 Deferred | — | Renamed from "net worth over time". Now simple: the running balance of the counted accounts, built from transactions already stored, with no typed valuations involved |
-| STA-11 | **Forecast / projected period-end** | ✅ v1 | 6 | **Pulled into v1.** "At this rate you finish the month at ₱43,200." Runs off the same trend data as STA-03, so it is a calculation and a chart line, not new plumbing |
+| STA-11 | **Forecast / projected period-end** | ✅ v1 | 6 | **Pulled into v1.** "At this rate you finish the month at ₱43,200." Runs off the same trend data as STA-03, so it is a calculation and a chart line, not new plumbing. Current period only, from past spending — the months ahead, from your rules, are REC-21 |
 
 ---
 
-## 8. Recurring Transactions & Installments
+## 8. Recurring Transactions, Installments & Projection
 
 > iOS app: *"Set recurring transactions on a daily, weekly, monthly, or custom basis"*
 
@@ -235,6 +247,11 @@ REC-08 to REC-18 add **installment plans** — something bought on terms and pai
 monthly, like a motorcycle at ₱5,000 × 36. An installment is a recurring rule
 that also knows the total, so it can tell you what is left and when you finish.
 How it affects cash on hand is explained in §19.
+
+REC-19 to REC-27 add **projection** — your salary, bills, subscriptions and
+card installments laid out over the coming months, so you can see what each
+month will look like before it arrives. It reads the same rules the engine
+expands and never writes anything. §20 walks through it with numbers.
 
 | ID | Feature | Status | Phase | Notes |
 |---|---|---|---|---|
@@ -246,7 +263,7 @@ How it affects cash on hand is explained in §19.
 | REC-06 | End conditions: never / after N / until date | ✅ v1 | 7 | |
 | REC-07 | Pause and resume | ✅ v1 | 7 | |
 | REC-08 | **Installment plans** | ✅ v1 | 7 | **DECIDED.** A motorcycle at ₱5,000 × 36 months. An installment is a recurring rule with `kind = installment` — same one-engine rule as subscriptions (SUB-00), never a second system |
-| REC-09 | Installment details: total, number of payments, amount, start | ✅ v1 | 7 | ₱180,000 · 36 · ₱5,000 · Sept 2026. Stored in the rule's encrypted payload — no new table |
+| REC-09 | Installment details: total, number of payments, amount, start | ✅ v1 | 7 | ₱180,000 · 36 · ₱5,000 · Sept 2026. Stored in the rule's encrypted payload — no new table. **The total is what the bank bills, interest included.** Enter the price and let the first statement supply the interest (REC-28, REC-29), or enter both if you already know them (REC-30) |
 | REC-10 | **Remaining balance, payments left, payoff date** | ✅ v1 | 7 | *"₱125,000 left · 11 of 36 paid · done Aug 2029."* **Derived from the payments actually posted**, never stored as its own counter — same reason as GOA-07: a stored number drifts |
 | REC-11 | Each payment counts as spending | ✅ v1 | 7 | ₱5,000 hits your budget and daily allowance on the due date, like any expense |
 | REC-12 | **Never posts the full price up front** | ✅ v1 | 7 | Your account balances drop ₱5,000 a month, never ₱180,000 on day one. This is the *cash view* — see §19 |
@@ -256,6 +273,18 @@ How it affects cash on hand is explained in §19.
 | REC-16 | Final payment absorbs rounding | ✅ v1 | 7 | ₱100,000 ÷ 36 is ₱2,777.77…; the last payment is adjusted so the total is exact to the centavo |
 | REC-17 | Total still owed across all plans | ✅ v1 | 7 | One figure on the Installments screen: everything you have committed to but not yet paid |
 | REC-18 | Asset-and-debt net-worth view | ❌ Out | — | **DECIDED: cash view only.** Nothing you own is part of any total. The motorcycle never exists in the app as an asset — only its payments do. See §19 |
+| REC-19 | **Semi-monthly schedule** (twice a month) | ✅ v1 | 7 | Paid on the 15th and the 30th, the usual Philippine payroll. Two days per month, not "every 2 weeks" — those drift apart. A day past month-end clamps to the last day, so "30th" is Feb 28 |
+| REC-20 | **Scheduled amount change** | ✅ v1 | 7 | *"Salary goes to ₱48,000 from January."* A dated amount history on the rule, like the budget's. Expansion and projection both use the amount in effect on each occurrence date; posted transactions are never rewritten. Subscription price rises (SUB-08) record into the same history |
+| REC-21 | **Month-by-month projection** | ✅ v1 | 7 | Next 12 months by default (3 / 6 / 12). Each month: income due, committed outgoings, the rest of the budget, and **projected cash on hand at month end**, carried forward into the next month. See §20 |
+| REC-22 | Projection uses the expansion schedule and writes nothing | ✅ v1 | 7 | **One schedule, two readers.** `recurring_service` exposes the occurrence calculation; expansion posts it, projection only reads it. A separate forecast calendar could disagree with what actually posts — the same bug SUB-00 prevents. Nothing is stored and nothing is posted early |
+| REC-23 | Committed vs budgeted spending | ✅ v1 | 7 | A month's projected spending is **the larger of your budget and your committed outgoings**, because recurring charges already count against the budget (REC-11). A month where committed charges alone exceed the budget is flagged as overcommitted |
+| REC-24 | **Lowest point in each month** | ✅ v1 | 7 | Rent on the 1st and salary on the 15th can take you below zero mid-month even when the month ends positive. Shows the low point and its date, in `danger` when below zero |
+| REC-25 | **Credit-card look-ahead** | ✅ v1 | 7 | Per card, the next 6 statements (ACC-09 cycle): every installment payment, subscription and recurring charge landing on each one, the statement total, and its due date. *"April statement: ₱7,150 — due May 5."* Stops at an installment's final payment (REC-16). On a card with a spending limit (ACC-21), each statement also shows how much of the limit recurring charges already use |
+| REC-26 | Tap a month → every projected item | ✅ v1 | 7 | Dated list of occurrences, grouped by account, with the rule each came from. Paused rules (REC-07) are shown dimmed and left out of the totals |
+| REC-27 | What-if: try a plan before committing | 🟡 Deferred | — | *"Can I afford a phone at ₱3,000 × 12?"* An unsaved rule overlaid on the projection. Nearly free once REC-21 exists; kept out of v1 to hold the scope line |
+| REC-28 | **Installment from price and months only** | ✅ v1 | 7 | *"₱40,000 phone, 6 months, on BPI Card."* You rarely know the interest at the shop. Payments are **provisional** at price ÷ months (₱6,666.67) and the plan shows *"Terms not confirmed"* until the first statement. Budget, projection and card limit use the provisional amount meanwhile |
+| REC-29 | **Confirm the terms from the first statement** | ✅ v1 | 7 | A new choice in the statement check (ACC-25): **interest on this installment**. It is suggested when exactly one unconfirmed plan is on that statement; otherwise you pick the plan. ₱400 → the plan becomes ₱7,066.67 × 6, ₱2,400 interest. Payment 1's ₱400 posts on the closing date, linked to the plan. Payments 2–6, the remaining balance, the projection and the look-ahead all recalculate. A later bill that differs again can update the plan from that month through the amount history (REC-20) |
+| REC-30 | **Price and interest split on every payment** | ✅ v1 | 7 | ₱7,066.67 posts as **₱6,666.67** in the purchase's category and **₱400** in Financial › Interest — two splits (TXN-16). The bill and the card limit see one ₱7,066.67; Stats shows what the interest cost you. Also used when you enter known interest up front. A 0% plan posts a single split |
 
 ---
 
@@ -761,6 +790,7 @@ An honest scorecard against the iOS original.
 | Cloud sync | ✅ Inherent — one server, every device |
 | **Full encrypted backup + restore** | ✅ Beyond the source app (§15) |
 | **Installment plans with payoff tracking** | ✅ Beyond the source app (§19) |
+| **Month-by-month projection and card look-ahead** | ✅ Beyond the source app (§20) |
 | Unlimited categories (premium there) | ✅ Free here |
 | Receipt scanning (AI) | ❌ Out — image would leave the encryption boundary |
 | Voice entry | ❌ Out — same reason |
@@ -842,3 +872,284 @@ Both follow from "what is in my pockets", and both are a switch on the account
 - **Investments do not count.** Stocks and mutual funds are not in your pocket,
   and their value is a number you type (ACC-08). Switch an investment account on
   if you want it included.
+
+---
+
+## 20. Projection — seeing the months ahead
+
+**Added 2026-09-13.** *"Set a monthly salary that carries into every next month,
+so I can see a projection of my budgeting, and the deductions coming from
+recurring credit-card payments."*
+
+Most of this already existed. A salary is a recurring income rule (REC-01), and
+card installments and subscriptions are recurring rules too (REC-14, SUB-00).
+Two things were missing. The rules only ever looked **backwards**: they posted
+on the due date, and nothing showed you next month before it arrived. The other
+gap was a Philippine payroll: paid on the 15th and 30th, with raises that start
+on a future date. REC-19 to REC-27 close both gaps.
+
+### What goes in
+
+| Input | From | Example |
+|---|---|---|
+| Salary | An income rule, semi-monthly (REC-19) | ₱25,000 on the 15th and 30th, into BDO Payroll |
+| Raise | The rule's amount history (REC-20) | ₱27,000 per payday from Jan 1 |
+| Bills | Standard expense rules | Rent ₱12,000 on the 1st, from BDO |
+| Card charges | Subscription and installment rules on the card | Netflix ₱549 (5th) · phone ₱3,000 × 12, last one Dec 10 · motorcycle ₱5,000 (15th) |
+| Everything else you spend | Your budget (§5) | ₱30,000 a month |
+| Starting point | Cash on hand today (ACC-17) | ₱5,000 on Oct 1 |
+
+### The month strip (REC-21, REC-23, REC-24)
+
+| | Oct | Nov | Dec | Jan |
+|---|---|---|---|---|
+| Opening cash on hand | ₱5,000 | ₱25,000 | ₱45,000 | ₱65,000 |
+| Salary | +₱50,000 | +₱50,000 | +₱50,000 | **+₱54,000** — the raise |
+| Committed (rent, Netflix, phone, motorcycle) | ₱20,549 | ₱20,549 | ₱20,549 | **₱17,549** — phone paid off |
+| Rest of the budget | ₱9,451 | ₱9,451 | ₱9,451 | ₱12,451 |
+| Spending — the larger of budget and committed | −₱30,000 | −₱30,000 | −₱30,000 | −₱30,000 |
+| **Closing cash on hand** | **₱25,000** | **₱45,000** | **₱65,000** | **₱89,000** |
+| Lowest point | 🔴 **−₱20,000** · Oct 10 | ₱0 · Nov 10 | ₱20,000 · Dec 10 | ₱40,000 · Jan 5 |
+
+**Why spending is the budget, not budget + committed.** Rent and card charges
+already count against your budget when they post (REC-11). Adding them on top
+would count them twice. If committed charges ever exceed the budget, the month
+uses committed charges and is flagged as overcommitted: your plan no longer fits
+your budget.
+
+**Why October goes red while ending at ₱25,000.** Rent lands on the 1st and the
+first salary only on the 15th. The low point assumes the flexible part of your
+budget (₱9,451) could go any day, so it is set aside at the start of the month.
+₱5,000 − ₱9,451 − rent − Netflix − phone = −₱20,000 by the 10th. The month-end
+figure alone would never show that.
+
+### The card look-ahead (REC-25)
+
+For a card that closes on the 20th, with payment due on the 5th:
+
+| Statement | Netflix | Phone | Motorcycle | Total | Due |
+|---|---|---|---|---|---|
+| Oct 21 – Nov 20 | ₱549 | ₱3,000 | ₱5,000 | **₱8,549** | Dec 5 |
+| Nov 21 – Dec 20 | ₱549 | ₱3,000 · final | ₱5,000 | **₱8,549** | Jan 5 |
+| Dec 21 – Jan 20 | ₱549 | — | ₱5,000 | **₱5,549** | Feb 5 |
+
+The phone drops off after its 12th payment, and nothing is projected past an
+installment's end (REC-16).
+
+**The bill is not subtracted from cash on hand a second time.** Card charges
+already reduced cash on hand on the day they posted (§19). Paying the bill moves
+money from your debit account to the card, both counted, so it changes nothing.
+The look-ahead tells you how much needs to be in the debit account by the 5th.
+
+### Rules the projection keeps
+
+- **It never writes.** A projected salary is not a transaction. Only
+  `recurring_service` expansion posts, on the due date, as before (REC-22).
+- **It cannot disagree with what posts.** Projection and expansion share one
+  occurrence function. When November arrives, it posts exactly what the
+  projection showed, unless you have changed a rule since.
+- **It is computed, not stored.** It is recalculated on every view, inside your
+  session, and never kept in the browser (SEC-29). No new table, and nothing
+  new for backup or ID remapping (§15).
+- **Paused rules** are listed but left out of the totals (REC-26).
+- **Bonuses and 13th-month pay** use a yearly rule (REC-01). A single future
+  item uses a rule that ends after 1 occurrence (REC-06).
+
+### Defaults to confirm
+
+None of these blocks the build. Flag any you would rather flip.
+
+| Question | Default, and why |
+|---|---|
+| Should everyday spending come from the **budget** or from **past spending** (the STA-11 trend)? | **The budget.** It is the number you chose and can change. The trend reflects past mistakes and is noisy before you have three months of history |
+| How far ahead? | **12 months**, with 3 and 6 available. A 36-month installment still shows its payoff date on its own card (REC-10) |
+| Should the low point set aside the flexible budget on day 1? | **Yes**, the cautious reading. The alternative, spreading it evenly by day, shows a smaller dip that is easier to be surprised by |
+| Carry-over (BUD-11) in future months? | **Ignored.** The projection assumes you spend exactly your budget, so there is nothing left to carry |
+
+---
+
+## 21. Credit cards — the bill, and a limit of your own
+
+**Added 2026-09-13.** *"Add a purchase to September, get a statement of what to
+pay next month, and set a monthly spending limit on the card so I don't
+overspend with it."*
+
+### Decided: purchases stay in the month you make them
+
+A card purchase counts against the budget on its own date, as §19 already said.
+A budget that waited for the bill would warn you a month late, after the money
+was spent. Budgeting on the due date was considered and not chosen. The card
+tracks everything about the bill **next to** the budget instead of moving
+purchases into another month.
+
+Purchases still count **once**, against the budget. The card's bill and limit
+are views over the same transactions, never a second deduction.
+
+### One card, one cycle
+
+Statement closes on the **16th**, payment due on the **6th**, spending limit
+**₱10,000**.
+
+| Date | What happens | Budget | The card shows |
+|---|---|---|---|
+| Sep 13 | Buy ₱2,000 of groceries on the card | September −₱2,000 | Statement Aug 17 – Sep 16 |
+| Sep 16 | Statement closes, card owes ₱12,300 | — | **₱12,300 due Oct 6** (ACC-19) |
+| Sep 25 | Pay ₱5,000 from the debit account | — | **₱7,300 left, due Oct 6** (ACC-20) |
+| Sep 30 | Day 14 of 30, ₱6,500 spent this cycle | Each purchase counted in September | 🟠 *Spending faster than the cycle is passing* (ACC-22) |
+| Oct 1 | Pay the last ₱7,300 | — | ✅ **Paid**, reminder gone, even though the new cycle already holds ₱6,500 |
+| Oct 8 | ₱8,000 spent this cycle | Counted in October | 🟠 *80% of your BPI Card limit* |
+| Oct 14 | ₱10,000 spent this cycle | Counted in October | 🔴 *BPI Card is at its limit* |
+| Oct 16 | Statement closes at ₱10,000 | — | **₱10,000 due Nov 6**. The new cycle starts with the whole ₱10,000 limit |
+
+The pace warning on Sep 30 compares ₱6,500 (65% of the limit) with 14 of 30 days
+passed (47%). The gap is more than the 10-point tolerance, so it warns while
+half the cycle is still left to adjust.
+
+### Why the statement cycle, not the calendar month
+
+With the limit measured from the 17th to the 16th, **what you have spent
+against it is exactly what the next bill will be.** A calendar-month limit would
+split one bill across two limits and match neither. The cycle is independent of
+the budget period (ACC-16), so a budget starting on the 1st and a card closing
+on the 16th each keep their own dates.
+
+### What the limit is not
+
+- **Not the bank's credit limit (ACC-14).** That is what the bank lets you
+  spend; this is what you allow yourself. Both show on the card.
+- **Not a block.** The app never refuses a purchase you really made, since that
+  would only make your records wrong. It warns in the add sheet (ACC-23) and on
+  Home.
+- **Not a second budget.** A ₱2,000 purchase reduces your September budget and
+  counts toward the card's limit. It is one transaction, seen by two checks.
+- **Recurring charges count.** Netflix and installment payments land on the bill,
+  so they use up the limit. The card look-ahead (REC-25) shows how much of next
+  cycle's limit is already committed before you spend anything.
+
+### When the bill arrives — checking it against the bank (ACC-24..26, REC-28..30)
+
+*"I only want to put in the bill, not every line on it."* The app already knows
+what should be on the statement, because you entered the purchases on the day
+you made them. So you type **one number, the bank's total**, and the app asks
+about any difference.
+
+**The phone, bought without knowing the interest.** BPI Card closes on the 16th.
+
+| Date | What happens | The card shows |
+|---|---|---|
+| Sep 20 | Buy a phone: ₱40,000, 6 months. No interest entered | Plan ₱6,666.67 × 6 · *Terms not confirmed* (REC-28) |
+| Sep 17 – Oct 16 | Payment 1 (₱6,666.67) plus ₱12,000 of other purchases | App's statement: ₱18,666.67 |
+| Oct 17 | You enter the bank's total: **₱19,066.67** | Difference **+₱400.00** |
+| Oct 17 | Suggested: *"Interest on the phone installment?"* → tap | ₱400 Interest posts Oct 16 · plan ₱7,066.67 × 6 · ✅ Checked |
+| After | — | ₱35,333.33 left · 1 of 6 paid · payments 2–6 at ₱7,066.67, the last ₱7,066.65 |
+
+From then on every payment posts as ₱6,666.67 Gadgets + ₱400 Interest (REC-30),
+and the bill due on Nov 6 matches the bank to the centavo.
+
+**Why the app asks instead of deciding.** One total cannot say *why* it is
+different. The same ₱400 could be installment interest, a late fee, a forgotten
+purchase, or a purchase the bank posted late. So the app offers the likeliest
+reasons and records only what you choose:
+
+| The difference is | Likely cause | Choice |
+|---|---|---|
+| Higher, and one unconfirmed installment is on this statement | Its interest | **Interest on this installment** (suggested) |
+| Higher, no installment involved | Interest, late fee, annual fee | **One-time fee or interest** |
+| Higher by a round purchase-like amount | Something not entered | **A purchase I forgot** |
+| Lower, close to a purchase from the last 3 days | The bank posted it on the next statement | **Posted on the next statement** (ACC-26) |
+| Lower, no recent purchase | A refund not yet entered | **A purchase I forgot**, as a refund. **Never interest** |
+
+A difference can be split, for example ₱400 installment interest plus ₱150 late
+fee. "Leave it" is always allowed: the difference stays on the card until
+explained, but nothing blocks.
+
+**Defaults to confirm:**
+
+| Question | Default, and why |
+|---|---|
+| Where do interest and fees go? | **Financial › Interest** and **Financial › Bank fees**, which are already in the default categories (CAT-07). You can pick another category |
+| What date do they post on? | **The statement's closing date**, so they land on the statement that charged them and count in that budget period |
+| How close to closing counts as "may post late"? | **3 days** (`CARD_POSTING_LAG_DAYS`). Most Philippine cards post within 1–3 banking days |
+| When a second bill shows a different installment amount? | **Ask, and update the plan from that month** (REC-20). Earlier payments are never rewritten |
+
+**Nothing new for backup (§15).** The bank's figures live in the card's
+encrypted payload. Every resolution is an ordinary transaction, and the interest
+link uses the existing `recurring_id`, which is already remapped.
+
+---
+
+## 22. Balance adjustments — when the app and the real balance disagree
+
+**Added 2026-09-13.** *"When I edit the total amount on a card and save, ask
+whether to record it as a loss or a gain, and keep an audit trail only if I
+accept."*
+
+### Why this is needed
+
+A balance is never stored. It is the opening balance plus every transaction
+(ACC-04). Until now the only editable figure was the opening balance, and
+changing it **silently shifts every balance back to the day the account was
+opened.** Real balances drift anyway: cash goes missing, an e-wallet fee never
+gets entered, a coin jar gets counted.
+
+### What it is called
+
+**Balance adjustment**, shown as **Unrecorded loss** when it lowers the balance
+and **Unrecorded gain** when it raises it. "System loss" was considered, but it
+reads as if the app lost the money. The difference is really money that moved
+without being entered.
+
+### The question on save
+
+The Wallet (cash) account says ₱2,450; you count ₱2,100 and save that.
+
+```
+Wallet   ₱2,450.00 → ₱2,100.00
+Difference            −₱350.00
+
+[ Record as unrecorded loss ]        recommended
+[ Fix the opening balance instead ]
+[ Cancel ]
+Note (optional): ____________
+```
+
+| Choice | Balance | History before today | What is kept |
+|---|---|---|---|
+| **Record as unrecorded loss** | ₱2,100 from today | Unchanged | A −₱350 adjustment on the ledger, dated today, **plus an audit entry**: before, after, difference, note |
+| **Fix the opening balance instead** | ₱2,100 | Every past balance shifts by −₱350 | No adjustment, **no balance audit entry**. Meant for a mistake made when the account was set up |
+| **Cancel** | ₱2,450 | Unchanged | Nothing |
+
+**Credit cards** use the same question, with the field reading **amount owed**:
+owing more is a loss, owing less is a gain. A difference found on a bill should
+go through the statement check (ACC-24) instead, because that can say *what*
+the difference was.
+
+### What an adjustment counts toward
+
+| Counts | Does not count |
+|---|---|
+| The account balance and cash on hand (ACC-17) | Budget and daily allowance |
+| The ledger, labelled **Adjustment**, filterable by type | Income vs expense, category stats |
+| An **Adjustments** total in Stats, so repeated losses stay visible | The card spending limit (ACC-21) |
+
+**Why it stays out of spending:** the app does not know what the money was.
+Counting a gain as income or a loss as groceries would be a guess inside every
+report. If you later remember the ₱350 was lunch, delete the adjustment and
+enter the lunch.
+
+**Undo is delete only** (soft, audited, TXN-14). An adjustment cannot be edited:
+its audit entry recorded the before and after, and a changed amount would
+contradict it.
+
+### Defaults to confirm
+
+| Question | Default, and why |
+|---|---|
+| Should an unrecorded loss reduce the budget? | **No**, for the reason above. If you would rather losses count as spending (stricter), it can become a Settings toggle |
+| What date does it post on? | **Today**, the day you noticed. Never backdated |
+| The ordinary "account edited" audit entry | **Still written on every save, as today.** It says that the account changed (name and type, no amounts). The trail with the money — before, after, difference — exists only when you accept. Say if even the plain entry should be skipped when you decline |
+| Investment accounts? | **Not included.** Typing a new value there is already a dated valuation (ACC-13) |
+
+**Nothing new for backup (§15).** An adjustment is a transaction, so it is
+exported, remapped and restored like any other. CSV writes its type as
+`adjustment`.

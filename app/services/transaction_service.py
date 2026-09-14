@@ -20,6 +20,18 @@ moves money between your own accounts; it is never spending and never income,
 so its single split has no category and every total skips it. Both legs are
 written, edited and deleted together, in one database transaction.
 
+BALANCE ADJUSTMENTS (ACC-29) are the fourth type, and the only one nobody types
+in: `record_adjustment` writes one when a user sets an account's balance and
+accepts recording the difference (account_service.update_account). One
+account, one uncategorised split, `direction` out for an unrecorded loss and
+in for a gain. A balance counts it; the budget, the day totals and a card's
+spending limit read only the types they mean, so none of them ever does. It
+can be deleted and never edited - its audit entry recorded before and after.
+
+A PURCHASE THE BANK POSTED LATE (ACC-26) carries `card_posted_on`. It moves
+the purchase to a later card statement and changes nothing else: the budget
+reads `txn_date` and only `txn_date`.
+
 Reads never touch SQL beyond the first cold load - they filter, sort, search
 and page in Python over TransactionRepository.cached() (TXN-12/13).
 """
@@ -45,7 +57,8 @@ from app.db.repositories.transaction_repository import TransactionRepository
 from app.services import account_service, audit_service
 from app.services.account_service import Posting
 
-TYPES: Tuple[str, ...] = ("expense", "income", "transfer")
+TYPES: Tuple[str, ...] = ("expense", "income", "transfer")  # what can be entered
+LISTED_TYPES: Tuple[str, ...] = TYPES + ("adjustment",)  # what the ledger can show and filter on
 
 MAX_AMOUNT = Decimal("999999999.99")  # nine integer digits - what the numpad allows
 MAX_SPLITS = 20
@@ -82,6 +95,7 @@ class TransactionView:
     tag_ids: Tuple[int, ...] = ()
     recurring_id: Optional[int] = None
     created_at: Optional[datetime] = None
+    card_posted_on: Optional[date] = None  # ACC-26 - the statement it landed on, when later
 
 
 @dataclass(frozen=True)
@@ -170,15 +184,27 @@ def warm(db: Session, cipher: UserCipher) -> int:
 def postings(db: Session, cipher: UserCipher) -> List[Posting]:
     """
     Every transaction as a signed movement against its account - what
-    account_service adds to an opening balance. Expense and a transfer's out
-    leg take money away; income and the in leg bring it.
+    account_service adds to an opening balance. Expense, a transfer's out
+    leg and an unrecorded loss take money away; income, the in leg and an
+    unrecorded gain bring it. The type travels with it, so a card can tell a
+    purchase from a payment (ACC-21).
     """
     result: List[Posting] = []
     for record in TransactionRepository(db, cipher).cached():
         view = _view(record)
         sign = -1 if view.type == "expense" or view.direction == "out" else 1
-        result.append(Posting(view.account_id, view.txn_date, view.amount * sign))
+        result.append(Posting(view.account_id, view.txn_date, view.amount * sign, view.type, view.card_posted_on))
     return result
+
+
+def card_purchases(db: Session, cipher: UserCipher, account_id: int, start: date, end: date) -> List[TransactionView]:
+    """ACC-26. The expenses on a card whose STATEMENT day falls in [start, end], newest first."""
+    found = [
+        view for view in map(_view, TransactionRepository(db, cipher).cached())
+        if view.type == "expense" and view.account_id == account_id
+        and start <= (view.card_posted_on or view.txn_date) <= end
+    ]
+    return sorted(found, key=lambda v: (v.txn_date, v.id), reverse=True)
 
 
 def get_transaction(db: Session, cipher: UserCipher, transaction_id: int) -> TransactionView:
@@ -210,8 +236,8 @@ def list_transactions(
     day that straddles two pages still shows its true subtotal.
     """
     limit = max(1, min(limit, PAGE_MAX))
-    if type is not None and type not in TYPES:
-        raise ValidationException(f"type must be one of: {', '.join(TYPES)}")
+    if type is not None and type not in LISTED_TYPES:
+        raise ValidationException(f"type must be one of: {', '.join(LISTED_TYPES)}")
 
     categories = _category_scope(db, cipher, category_id) if category_id is not None else None
     needle = q.strip().casefold() if q and q.strip() else None
@@ -290,6 +316,10 @@ def update_transaction(
     repo = TransactionRepository(db, cipher)
     record = _record(db, cipher, transaction_id)
     current = record.data.get("type")
+    if current == "adjustment":
+        # Its audit entry recorded the balance before and after (ACC-30); an
+        # edited amount would contradict it. Delete it and set the balance again.
+        raise BusinessRuleException("A balance adjustment cannot be edited - delete it and set the balance again")
     kind = _type(payload.get("type") or current)
 
     if (current == "transfer") != (kind == "transfer"):
@@ -342,7 +372,8 @@ def repeat_last(
     the same validation as a new entry, so an account archived since cannot
     quietly receive a copy.
     """
-    records = TransactionRepository(db, cipher).cached()
+    # A balance adjustment is never something you meant to buy twice (ACC-29).
+    records = [r for r in TransactionRepository(db, cipher).cached() if r.data.get("type") != "adjustment"]
     if not records:
         raise NotFoundException("There is nothing to repeat yet")
     latest = max(records, key=lambda r: (r.row_created, r.id))
@@ -360,6 +391,57 @@ def repeat_last(
                    "account_id": data["account_id"], "merchant": data.get("merchant"),
                    "notes": data.get("notes"), "splits": data["splits"]}
     return create_transaction(db, cipher, payload, today=today)
+
+
+def record_adjustment(
+    db: Session,
+    cipher: UserCipher,
+    account_id: int,
+    difference: Decimal,
+    *,
+    on: date,
+    note: Optional[str] = None,
+) -> Record:
+    """
+    ACC-29. Write a balance adjustment for `difference` - negative for an
+    unrecorded loss - dated `on`.
+
+    Only account_service.update_account calls this, after the user was asked.
+    It neither commits nor audits: the caller writes the BALANCE_ADJUST entry
+    and commits both in the same database transaction (ACC-30).
+    """
+    amount = _positive(abs(difference), "difference")
+    data = {
+        "txn_date": on.isoformat(),
+        "type": "adjustment",
+        "amount": str(amount),
+        "account_id": account_id,
+        "direction": "out" if difference < ZERO else "in",
+        "counter_account_id": None,
+        "pair_id": None,
+        "merchant": None,
+        "notes": _text(note, NOTES_MAX),
+        # One uncategorised split - the same shape rule a transfer keeps, and
+        # the same guarantee that no category total can include it.
+        "splits": validate_splits(amount, [{"category_id": None, "amount": str(amount)}]),
+        "tag_ids": [],
+        "recurring_id": None,
+        "attachment_id": None,
+    }
+    return TransactionRepository(db, cipher).create(data)
+
+
+def set_card_posted_on(db: Session, cipher: UserCipher, transaction_id: int, day: date) -> TransactionView:
+    """
+    ACC-26. Record that the bank posted this purchase on `day`, moving it to a
+    later card statement. Its budget period is untouched. The caller audits
+    and commits (statement_service).
+    """
+    record = _record(db, cipher, transaction_id)
+    if record.data.get("type") != "expense":
+        raise BusinessRuleException("Only a purchase can be posted on a later statement")
+    updated = TransactionRepository(db, cipher).update(transaction_id, {**record.data, "card_posted_on": day.isoformat()})
+    return _view(updated)
 
 
 def outcome(
@@ -420,7 +502,7 @@ def _clean(
         if category.get("archived") and category_id not in kept:
             raise BusinessRuleException(f"Split {position}: that category is archived")
 
-    return {
+    cleaned = {
         "txn_date": when.isoformat(),
         "type": kind,
         "amount": str(amount),
@@ -432,6 +514,12 @@ def _clean(
         "recurring_id": (existing or {}).get("recurring_id"),
         "attachment_id": (existing or {}).get("attachment_id"),
     }
+    # ACC-26. A late posting date belongs to one purchase on one card on one
+    # day; moving the purchase to another day or card makes it meaningless.
+    posted_on = (existing or {}).get("card_posted_on")
+    if posted_on and existing.get("txn_date") == cleaned["txn_date"] and existing.get("account_id") == account_id:
+        cleaned["card_posted_on"] = posted_on
+    return cleaned
 
 
 def _clean_transfer(
@@ -501,6 +589,7 @@ def _view(record: Record) -> TransactionView:
         tag_ids=tuple(data.get("tag_ids") or ()),
         recurring_id=data.get("recurring_id"),
         created_at=record.row_created,
+        card_posted_on=date.fromisoformat(str(data["card_posted_on"])) if data.get("card_posted_on") else None,
     )
 
 

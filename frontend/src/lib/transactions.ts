@@ -12,7 +12,13 @@ import { api } from './api';
 import type { Account, CashOnHand } from './accounts';
 import type { BudgetStatus } from './budgets';
 
-export type TransactionType = 'expense' | 'income' | 'transfer';
+/** What can be entered. */
+export type EntryType = 'expense' | 'income' | 'transfer';
+/**
+ * What the ledger can show. A balance adjustment (ACC-29) is never entered: it
+ * comes from setting an account's balance, and can be deleted but not edited.
+ */
+export type TransactionType = EntryType | 'adjustment';
 
 export interface Split {
   category_id: number | null;
@@ -33,6 +39,8 @@ export interface Transaction {
   counter_account_id: number | null;
   pair_id: number | null;
   created_at: string | null;
+  /** ACC-26 - the day the bank posted it, when that moved it to a later statement. */
+  card_posted_on?: string | null;
 }
 
 export interface DayTotal {
@@ -57,7 +65,7 @@ export interface Outcome {
 }
 
 export interface TransactionDraft {
-  type: TransactionType;
+  type: EntryType;
   amount: string;
   account_id: number;
   txn_date: string;

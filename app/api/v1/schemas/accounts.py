@@ -27,10 +27,17 @@ class AccountIn(BaseModel):
     sort_order: Optional[int] = Field(default=None, ge=0, le=9999)
     note: Optional[str] = Field(default=None, max_length=280)
 
-    # Credit cards only (ACC-09/14). Ignored on any other type.
+    # Credit cards only (ACC-09/14/21). Ignored on any other type.
     statement_closing_day: Optional[DayOfMonth] = None
     payment_due_day: Optional[DayOfMonth] = None
     credit_limit: Optional[Money] = None
+    spending_limit: Optional[Money] = None  # your own, per statement cycle - not the bank's
+
+    # ACC-27/28. On an edit: the balance you typed, and - once the server has
+    # answered BALANCE_DIFFERS - what to do with the difference.
+    balance: Optional[Money] = None
+    balance_action: Optional[Literal["adjust", "fix_opening"]] = None
+    balance_note: Optional[str] = Field(default=None, max_length=280)
 
 
 class ArchiveIn(BaseModel):
@@ -53,6 +60,23 @@ class ValuationOut(BaseModel):
     note: Optional[str] = None
 
 
+class StatementOut(BaseModel):
+    """One closed statement (ACC-19/20/24). `difference` is null until the bank's total is entered."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    account_id: int
+    start: date
+    closes: date
+    due: date
+    amount: Money
+    paid_since_close: Money
+    left_to_pay: Money
+    overdue: bool
+    bank_total: Optional[Money] = None
+    difference: Optional[Money] = None
+
+
 class CreditOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,6 +93,13 @@ class CreditOut(BaseModel):
     available: Optional[Money]
     due_in_days: int
     due_soon: bool
+    bill: StatementOut
+    amount_due: Money
+    spending_limit: Optional[Money] = None
+    limit_spent: Money
+    limit_left: Optional[Money] = None
+    period_days: int
+    period_days_elapsed: int
 
 
 class AccountOut(BaseModel):

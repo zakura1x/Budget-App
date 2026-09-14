@@ -86,6 +86,17 @@ class ConflictException(AppException):
     title = "Conflict"
 
 
+class BalanceDiffersException(ConflictException):
+    """
+    ACC-28. A typed balance differs from the derived one and the user has not
+    said how to record the difference. A question, not a failure: the client
+    reads `before`, `after` and `difference` off the body and asks.
+    """
+
+    code = "BALANCE_DIFFERS"
+    title = "Balance Differs"
+
+
 class AuthenticationException(AppException):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "AUTH_REQUIRED"

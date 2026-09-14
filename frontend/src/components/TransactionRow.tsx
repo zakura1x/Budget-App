@@ -5,6 +5,8 @@
  * one, otherwise the category. A split says so rather than picking one of
  * its categories to pretend to be. A transfer reads as a movement - "BDO →
  * Wallet" - and its amount carries no sign, because no money left you.
+ * A balance adjustment says what it is - an unrecorded loss or gain (ACC-29) -
+ * and is signed, because the balance did move, but never green: it is not income.
  */
 import type { Lookups } from '../hooks/useLookups';
 import { formatPHP } from '../lib/money';
@@ -32,6 +34,11 @@ export function TransactionRow({ row, lookups }: { row: Transaction; lookups: Lo
     subtitle = row.notes ?? 'Transfer';
     icon = 'undo';
     colour = NEUTRAL;
+  } else if (row.type === 'adjustment') {
+    title = row.direction === 'out' ? 'Unrecorded loss' : 'Unrecorded gain';
+    subtitle = [account?.name, row.notes ?? 'Balance adjustment'].filter(Boolean).join(' · ');
+    icon = 'tools';
+    colour = NEUTRAL;
   } else {
     const label = split ? `Split · ${row.splits.length} categories` : category?.name ?? 'Uncategorised';
     title = row.merchant ?? (split ? 'Split' : category?.name ?? 'Transaction');
@@ -39,7 +46,8 @@ export function TransactionRow({ row, lookups }: { row: Transaction; lookups: Lo
   }
 
   const amount =
-    row.type === 'expense' ? `-${row.amount}` : row.type === 'income' ? row.amount : row.amount;
+    row.type === 'expense' || (row.type === 'adjustment' && row.direction === 'out') ? `-${row.amount}` : row.amount;
+  const gain = row.type === 'adjustment' && row.direction === 'in';
 
   return (
     <span className={`flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left ${isPending(row) ? 'opacity-60' : ''}`}>
@@ -53,7 +61,7 @@ export function TransactionRow({ row, lookups }: { row: Transaction; lookups: Lo
           row.type === 'income' ? 'text-ok' : row.type === 'transfer' ? 'text-ink-2' : 'text-ink'
         }`}
       >
-        {row.type === 'income' ? '+' : ''}
+        {row.type === 'income' || gain ? '+' : ''}
         {formatPHP(amount)}
       </span>
     </span>

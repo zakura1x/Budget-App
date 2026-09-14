@@ -16,7 +16,9 @@ from app.api.v1.schemas.accounts import AccountOut, CashOnHandOut
 from app.api.v1.schemas.budgets import StatusOut
 from app.api.v1.schemas.common import Money
 
-TransactionType = Literal["expense", "income", "transfer"]
+TransactionType = Literal["expense", "income", "transfer"]  # what can be entered
+# A balance adjustment (ACC-29) is shown, never entered: it comes from setting an account's balance.
+ListedType = Literal["expense", "income", "transfer", "adjustment"]
 
 
 class SplitIn(BaseModel):
@@ -53,7 +55,7 @@ class TransactionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    type: TransactionType
+    type: ListedType
     txn_date: date
     amount: Money
     account_id: int
@@ -64,6 +66,7 @@ class TransactionOut(BaseModel):
     counter_account_id: Optional[int] = None
     pair_id: Optional[int] = None
     created_at: Optional[datetime] = None
+    card_posted_on: Optional[date] = None  # ACC-26
 
 
 class DayTotalOut(BaseModel):

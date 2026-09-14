@@ -4,11 +4,12 @@
 - **Project**: Personal Budget & Spending Tracker (encrypted, mobile-first)
 - **Model**: Budget App — Spending Tracker (iOS, id1525179720)
 - **Duration**: 13–15 weeks (re-estimated 2026-09-11; was 9–11 when v1 had
-  ~100 features — it now has 161)
-- **Planned**: Sep 14 – Dec 10, 2026 (88 days), plus ~2 weeks of buffer
+  ~100 features — it now has 184, after projection, card bills, the statement check and
+  balance adjustments were added 2026-09-13)
+- **Planned**: Sep 14 – Dec 18, 2026 (96 days), plus ~2 weeks of buffer
 - **Built so far**: Phases 1 and 2, both on 2026-09-11 — crypto core, database,
   schema `ZBDGT` created, sign-in / lock / recovery. 212 tests
-- **Usable**: after Phase 5 (~Oct 30). Backups start in Phase 8a (~Nov 23);
+- **Usable**: after Phase 5 (~Oct 30). Backups start in Phase 8a (~Dec 1);
   until then the company database is your only copy
 - **Team**: 1 solo developer
 - **Strategy**: backend and frontend developed simultaneously, per feature
@@ -45,12 +46,14 @@ gantt
     section Phase 5 Budgets
     BE - periods, allowance, alerts    :e1, after d1, 8d
     FE - home screen, ring             :e2, after d2, 8d
+    section Phase 5b Cards and Balance Adjustments
+    Bills, statement check, adjustments :e3, after e1, 5d
     section Phase 6 Calendar and Stats
-    BE - aggregation, forecast         :f1, after e1, 7d
-    FE - heatmap, charts               :f2, after e2, 7d
+    BE - aggregation, forecast         :f1, after e3, 7d
+    FE - heatmap, charts               :f2, after e3, 7d
     section Phase 7 Recurring, Subscriptions, Installments
-    BE - one rule engine, three kinds  :g1, after f1, 10d
-    FE - recurring, subs, installments :g2, after f2, 10d
+    BE - one rule engine, projection   :g1, after f1, 13d
+    FE - recurring, subs, projection   :g2, after f2, 13d
     section Phase 8a Backup and Restore
     Full backup, ID remap, round-trip  :h1, after g1, 7d
     section Phase 8b Settings, Goals, PWA
@@ -860,7 +863,152 @@ Verify:
 
 ---
 
-## 📦 PHASE 6: Calendar & Stats (Oct 31 – Nov 6 · 7 days)
+## 📦 PHASE 5b: Card Bills, Statement Check & Balance Adjustments (Oct 31 – Nov 4 · 5 days)
+
+### 🎯 Objective: Know what the card bill is, stop overspending on the card, and correct a balance without losing its history
+
+> **Status 2026-09-14: BUILT.** Card bill, spending limit and its alerts,
+> statement check, balance adjustments - 448 tests passing (14 SQL Server
+> tests skipped by default). Every new screen checked at 390px with the local
+> harness: the card tile, the statement check and its charge form, the balance
+> question, the add-sheet hint and the adjustment row in the ledger.
+>
+> Decided while building, and worth knowing:
+> - **The bill is always the last CLOSED statement.** `amount_due` is what the
+>   reminder keys on: the bill's remainder, or - in the rare days when the
+>   open statement is the one falling due and has not been cut - what the
+>   card owes so far.
+> - **Added beyond the plan:** an unpaid bill past its due date shows as
+>   overdue on the card; `GET /accounts/{id}/statements/{closes}` reads a
+>   statement without checking it; every `/accounts` call takes the client's
+>   `today`, like `/budgets`.
+> - **An adjustment can't be entered, repeated or edited.** The ledger shows
+>   it read-only with Delete. `POST /transactions` refuses the type.
+>
+> Not verified against SQL Server: nothing here changes the schema - only
+> fields inside existing encrypted payloads.
+
+> **Added 2026-09-13.** Extends the built Phase 3 card view and Phase 5 alerts,
+> so it runs next, before Phase 6. Scope: FEATURES.md ACC-19..30, §21, §22.
+> The installment side of the statement check (REC-28..30) needs installment
+> plans, so it lands in Phase 7.
+> Purchases keep counting against the budget on their own date (§19, ACC-16).
+> Nothing here moves a purchase into another month.
+
+### Backend Tasks
+
+```yaml
+Day 1:
+  Card bill (ACC-19, ACC-20):
+    ✅ statement_amount = what the card owed at the close of the statement
+       being paid. Derived from postings, never stored.
+    ✅ left_to_pay = max(0, statement_amount - payments into the card
+       since that close)
+    ✅ ★ FIX: _cards_due keys on owed > 0 today, so the reminder keeps
+       firing after the bill is paid while new purchases sit on the card.
+       Key it on left_to_pay > 0.
+
+  Own spending limit (ACC-21, ACC-22):
+    ✅ spending_limit: optional Decimal in the account payload, credit only.
+       No migration (FEATURES §14). Separate from credit_limit.
+    ✅ limit_spent = purchases - refunds posted to the card in the OPEN
+       statement period. Recurring + installment charges count; payments
+       and transfers never do.
+    ✅ alerts.py: card_limit_over (danger), card_limit_approaching and
+       card_limit_pace (warn). Same warn_pct + pace tolerance as the
+       budget, over the statement period. over replaces the other two.
+    ✅ Pure functions, tested directly like allowance.py
+
+Day 3:
+  Statement check (ACC-24..26):
+    ✅ statement_checks: [{closes, bank_total}] appended to the card
+       payload. difference = bank_total - statement amount, DERIVED.
+    ✅ statement_service - resolutions are ordinary transactions, written
+       through transaction_service. Nothing imports statement_service.
+         one-time fee/interest -> expense on the card, closing date,
+                                  Financial > Bank fees | Interest
+         forgot a purchase     -> the normal add path
+         posted next statement -> card_posted_on on the purchase
+    ✅ ★ Statement membership + card limit use card_posted_on if set,
+       else txn_date. The BUDGET always uses txn_date.
+    ✅ A difference can be split across choices; "leave it" stores nothing
+    ✅ A LOWER bank total is never offered as interest
+    ✅ CARD_POSTING_LAG_DAYS (default 3) in config
+
+Day 5:
+  Balance adjustments (ACC-27..30):
+    ✅ Transaction type 'adjustment': one account, one split with
+       category_id null. Balance, cash on hand and the statement amount
+       include it; budget, allowance, stats and card limit EXCLUDE it by
+       type. Find every place that filters on type.
+    ✅ PATCH /accounts/{id} with a balance that differs from the derived one
+       -> 409 BALANCE_DIFFERS carrying the difference. NOTHING is saved.
+    ✅ Resubmit with balance_action:
+         adjust      -> adjustment txn dated today + audit BALANCE_ADJUST
+                        {before, after, difference, note}, ONE db transaction
+         fix_opening -> opening_balance += difference, NO BALANCE_ADJUST
+    ✅ audit_service.BALANCE_ADJUST constant
+    ✅ An adjustment can be deleted (audited), never edited
+```
+
+### Frontend Tasks
+
+```yaml
+Day 2:
+    ✅ Card tile: "PHP 7,300 left of 12,300 · due Oct 6", or "Paid"
+    ✅ Limit bar on the card tile in ok / warn / danger
+    ✅ AccountSheet: optional "Spending limit per statement" field
+    ✅ TransactionSheet: "PHP 1,200 left on BPI Card this cycle" when a
+       card with a limit is picked, live as you type. Never blocks saving.
+    ✅ Home banner text for the three card_limit kinds
+
+Day 4:
+    ✅ "Enter your statement total" prompt on the card once it closes
+    ✅ Check sheet: app figure / bank figure / difference, then the
+       choices, with the likeliest one first. Split a difference.
+    ✅ "May be on next statement" marker on purchases near closing
+    ✅ ✅ Checked state on the statement
+
+Day 5:
+    ✅ AccountSheet: "Current balance" ("Amount owed" on a card) for an
+       existing account; opening balance only when creating one
+    ✅ Ask sheet on 409 BALANCE_DIFFERS: old -> new, difference, the three
+       choices, optional note
+    ✅ "Adjustment" label and type filter in the ledger; Adjustments total
+       ready for Stats
+    ✅ npm run build + commit dist/ (invariant 9)
+```
+
+### 🔗 Integration Points
+
+```yaml
+  GET /api/v1/accounts         credit view gains statement_amount,
+                               left_to_pay, spending_limit, limit_spent
+  GET /api/v1/budgets/current  alerts gain card_limit_over / _approaching / _pace
+  GET  /api/v1/accounts/{id}/statements/{closes}           the statement as it stands
+  POST /api/v1/accounts/{id}/statements/{closes}/check     the bank's total
+  POST /api/v1/accounts/{id}/statements/{closes}/resolve   one choice + amount
+  PATCH /api/v1/accounts/{id}  balance [+ balance_action, balance_note]
+                               -> 409 BALANCE_DIFFERS until a choice is sent
+
+Verify:
+  ✅ Bill paid in full -> reminder gone, even with purchases in the new cycle
+  ✅ Part payment -> the remaining amount shows, reminder stays
+  ✅ Day 14 of 30 with 65% of the limit spent -> pace warning
+  ✅ A card with no limit -> no limit alerts, the card looks as it does today
+  ✅ One purchase lowers the budget once and the card limit once - never twice
+  ✅ Each resolution brings the difference to exactly 0.00
+  ✅ "Posted on next statement" moves the purchase between statements and
+    card cycles, and leaves its budget period unchanged
+  ✅ Accept an adjustment -> balance equals the typed figure; budget,
+    allowance and stats unchanged; one BALANCE_ADJUST entry
+  ✅ Fix opening balance -> no adjustment row, no BALANCE_ADJUST entry
+  ✅ Delete the adjustment -> the old balance is back
+```
+
+---
+
+## 📦 PHASE 6: Calendar & Stats (Nov 5 – Nov 11 · 7 days)
 
 ### 🎯 Objective: Everything SQL would normally compute, computed in Python
 
@@ -881,6 +1029,8 @@ Days 4-5:
        split count are different numbers - be deliberate about which
        one each chart reports.
     ☐ ★ Exclude investment revaluations from income/spending (ACC-12)
+    ☐ ★ Exclude balance adjustments too (ACC-29) - shown only as their
+       own Adjustments total
     ☐ Category breakdown (pie), with sub-category drill-down
     ☐ Spending trend over time (line)
     ☐ Month-over-month comparison
@@ -925,7 +1075,7 @@ Verify:
 
 ---
 
-## 📦 PHASE 7: Recurring, Subscriptions & Installments (Nov 7 – Nov 16 · 10 days)
+## 📦 PHASE 7: Recurring, Subscriptions, Installments & Projection (Nov 12 – Nov 24 · 13 days)
 
 ### 🎯 Objective: Money that moves without you touching the app
 
@@ -940,6 +1090,12 @@ Days 1-3:
     ☐ Catch-up on login for missed days (server may have been down)
     ☐ IDEMPOTENCY: expanding twice must not double-charge. Test this.
     ☐ End conditions: never / after N / until date
+    ☐ Semi-monthly schedule (REC-19): two days a month, e.g. 15th + 30th;
+       a day past month-end clamps to the last day
+    ☐ Dated amount history on the rule (REC-20) - "PHP 48,000 from Jan".
+       Posted transactions keep the amount they posted with.
+    ☐ ★ occurrences(rule, start, end) is ONE pure function. Expansion posts
+       it; projection only reads it. Build it first, test it alone.
 
 Days 4-5:
   ★ INSTALLMENTS (REC-08..17) - e.g. a motorcycle, PHP 5,000 x 36:
@@ -962,6 +1118,18 @@ Days 4-5:
        card; available credit subtracts the WHOLE unpaid remainder
     ☐ Installments screen: progress card per plan + total still owed
        across every plan (REC-17)
+    ☐ Price + months only (REC-28): terms = provisional, amount =
+       price / payments, "Terms not confirmed" on the card
+    ☐ Statement check gains "interest on this installment" (REC-29).
+       Suggested only when ONE unconfirmed plan is on that statement.
+       Posts payment 1's interest on the closing date WITH recurring_id,
+       sets interest/total/amount, terms = confirmed. A later differing
+       bill updates from that month via the amount history (REC-20).
+    ☐ ★ Two splits per payment (REC-30): price/payments in the purchase's
+       category, interest/payments in Financial > Interest. EACH split's
+       last payment absorbs its own rounding. 0% -> one split.
+    ☐ Test: PHP 40,000 x 6, first bill +400 -> 7,066.67 x 5 + 7,066.65,
+       price exactly 40,000.00, interest exactly 2,400.00
     ☐ Test: 36 payments posted -> remaining exactly 0, plan closed,
        37th never generated, catch-up after a gap never double-posts
 
@@ -979,6 +1147,25 @@ Days 4-5:
     ☐ Price-change history (SUB-08) - record the old amount on edit
     ☐ Upcoming charges view, reminder lead days
     ☐ Monthly subscription total, and its share of the budget
+
+Days 11-13:
+  ★ PROJECTION (REC-21..26) - ARCHITECTURE §4.5, FEATURES §20:
+    ☐ projection_service - READ-ONLY. Never posts, never stores.
+       Imports recurring/account/budget services; nothing imports it.
+    ☐ Per month: income, committed, max(budget, committed), closing cash
+       on hand carried into the next month (REC-21, REC-23)
+    ☐ Current month = remaining budget + occurrences AFTER today only
+    ☐ Budget month respects the custom start day; weekly budgets are
+       pro-rated by days, Decimal to the centavo
+    ☐ Lowest running balance and its date per month (REC-24)
+    ☐ Card look-ahead (REC-25): next 6 statements per card, grouped by the
+       ACC-09 cycle. The bill is shown, NEVER subtracted a second time.
+    ☐ Paused rules shown but excluded from totals (REC-26)
+    ☐ Test: projected occurrences == what expansion posts when the clock
+       is moved forward over the same dates. Same dates, same amounts.
+    ☐ Test: 36-payment installment stops in the projection at payment 36,
+       and the final amount absorbs the rounding
+    ☐ Test: calling the projection leaves the transaction count unchanged
 ```
 
 ### Frontend Tasks
@@ -997,6 +1184,14 @@ Days 4-5:
     ☐ "Detected subscriptions" suggestion list, one-tap confirm
     ☐ Upcoming-charges timeline
     ☐ Monthly total banner
+
+Days 11-13:
+  Projection UI:
+    ☐ Month strip (3 / 6 / 12): closing cash on hand per month, low point
+       in danger when below zero, overcommitted months flagged
+    ☐ Tap a month -> bottom sheet of every projected item, by account
+    ☐ Card look-ahead: statement cards with total and due date
+    ☐ Amount-change and semi-monthly options in the rule sheet
 ```
 
 ### 🔗 Integration Points
@@ -1006,15 +1201,18 @@ Days 4-5:
   POST /api/v1/recurring/{id}/pause
   GET  /api/v1/subscriptions
   GET  /api/v1/subscriptions/detected
+  GET  /api/v1/projection         ?today&months
+  GET  /api/v1/projection/cards   ?today&statements
 
 Verify:
   ☐ Log in after 10 days away -> exactly the right catch-up transactions, once
   ☐ Recurring charges reduce the daily allowance on their due date
+  ☐ Next month's projection matches what actually posts once it arrives
 ```
 
 ---
 
-## 📦 PHASE 8: Backup, Settings & PWA — in two halves (Nov 17 – Nov 30 · 14 days)
+## 📦 PHASE 8: Backup, Settings & PWA — in two halves (Nov 25 – Dec 8 · 14 days)
 
 ### 🎯 Objective: Data portability, preferences, and a real home-screen app
 
@@ -1024,8 +1222,8 @@ Verify:
 >
 > | Half | Dates | Covers |
 > |---|---|---|
-> | **8a — Backup & restore** | Nov 17 – Nov 23 · 7 days | CSV import/export, attachments, the full encrypted backup, ID remapping, automatic backup, the round-trip test, the backup screen |
-> | **8b — Settings, goals & PWA** | Nov 24 – Nov 30 · 7 days | Settings, recovery-phrase screens, savings goals, account deletion, PWA and offline |
+> | **8a — Backup & restore** | Nov 25 – Dec 1 · 7 days | CSV import/export, attachments, the full encrypted backup, ID remapping, automatic backup, the round-trip test, the backup screen |
+> | **8b — Settings, goals & PWA** | Dec 2 – Dec 8 · 7 days | Settings, recovery-phrase screens, savings goals, account deletion, PWA and offline |
 >
 > **8a goes first** because the round-trip test (DAT-14) must pass before the
 > app holds data you would hate to lose, and it should not share its slot
@@ -1160,7 +1358,7 @@ Verify:
 
 ---
 
-## 📦 PHASE 9: Hardening, Rotation & Deployment (Dec 1 – Dec 10 · 10 days)
+## 📦 PHASE 9: Hardening, Rotation & Deployment (Dec 9 – Dec 18 · 10 days)
 
 ### 🎯 Objective: Make it survivable — key rotation, backups, and a real deploy
 
@@ -1249,8 +1447,9 @@ scripts/
 | 3 | Accounts, categories | Account + category managers | First real encrypted CRUD |
 | 4 | Transactions, cache | Numpad sheet, ledger | **You can actually track spending** |
 | 5 | Budgets, daily allowance | Home ring | **The app becomes useful** |
+| 5b | Card bill left to pay, own spending limit, statement check, balance adjustments | Card tile, add-sheet hint, banners, check sheet, balance ask sheet | Cards you can't overspend on by surprise, bills that match the bank, balances you can correct honestly |
 | 6 | Calendar, stats | Heatmap, charts | Insight |
-| 7 | Recurring, subscriptions, installments | Recurring, subs + installment screens | Automation |
+| 7 | Recurring, subscriptions, installments, projection | Recurring, subs, installment + projection screens | Automation, and the months ahead |
 | 8a | Full backup, ID remap, CSV | Backup screen, CSV screens | **Your data exists outside the company DB** |
 | 8b | Settings, goals, account deletion | Settings, PWA, goals | Installable, configurable |
 | 9 | Master-key + DEK rotation, tests, deploy | Polish | **Live at /ZBDGT, and survivable** |
@@ -1305,28 +1504,39 @@ scripts/
 - ✅ Copy last period's budget
 - ✅ Home ring animating from the POST response
 
-### Phase 6 · Oct 31 – Nov 6 · 7 days: Calendar & Stats
+### Phase 5b · Oct 31 – Nov 4 · 5 days: Card Bills, Statement Check & Balance Adjustments
+- ✅ "PHP 12,300 due Oct 6", and the reminder clears once that statement is paid
+- ✅ Own spending limit per statement cycle, with approaching / pace / over alerts
+- ✅ "Left on this card" in the add sheet, never blocking
+- ✅ Enter the bank's total, explain the difference, statement shows ✅ Checked
+- ✅ Editing a balance asks first; the audit trail exists only when accepted
+
+### Phase 6 · Nov 5 – Nov 11 · 7 days: Calendar & Stats
 - ☐ Heatmap, charts and forecast over the warm cache
 - ☐ Consistent category colours app-wide
 
-### Phase 7 · Nov 7 – Nov 16 · 10 days: Recurring, Subscriptions & Installments
+### Phase 7 · Nov 12 – Nov 24 · 13 days: Recurring, Subscriptions, Installments & Projection
 - ☐ Catch-up expansion idempotent across a 10-day gap
 - ☐ One engine for all three kinds - nothing ever posts twice
 - ☐ Installment: 36 payments -> remaining exactly 0, no 37th
+- ☐ 12-month projection and card look-ahead, from the same occurrence
+  function expansion uses - and it never writes
+- ☐ Installment from price + months, interest confirmed by the first bill,
+  every payment split into price and interest
 
-### Phase 8a · Nov 17 – Nov 23 · 7 days: Backup & Restore
+### Phase 8a · Nov 25 – Dec 1 · 7 days: Backup & Restore
 - ☐ **Round-trip test passes: export -> empty DB -> export, identical**
 - ☐ Restore works with the recovery phrase alone (no .env)
 - ☐ Automatic backup fires 5 minutes after a change
 - ☐ CSV round-trip, with the plaintext export warning
 
-### Phase 8b · Nov 24 – Nov 30 · 7 days: Settings, Goals & PWA
+### Phase 8b · Dec 2 – Dec 8 · 7 days: Settings, Goals & PWA
 - ☐ Recovery phrase view / regenerate, DEK rotation offered honestly
 - ☐ Savings goals, progress derived from real transfers
 - ☐ Installed to iPhone home screen, standalone
 - ☐ Offline shows no figures; nothing decrypted in browser storage
 
-### Phase 9 · Dec 1 – Dec 10 · 10 days: Hardening & Deploy
+### Phase 9 · Dec 9 – Dec 18 · 10 days: Hardening & Deploy
 - ☐ Master-key rotation rehearsed on a copy
 - ☐ **Backup restored successfully at least once**
 - ☐ Deployed at https://delca.noahapplication.com/ZBDGT, one worker
@@ -1422,6 +1632,18 @@ Found while building Phase 2 (2026-09-11):
   - The 12 words travel once, in the /auth/register response over TLS. There
     is no way to show them without sending them; they are never logged
     (redaction covers phrases) and never stored.
+
+Found while building Phase 5b (2026-09-14):
+  - Card banners (bill due, spending limit) arrive with the budget status,
+    so someone with no budget gets none. card_due always worked this way;
+    fix it if anyone tracks cards without a budget.
+  - "Paid since the close" counts payments (transfers into the card) only.
+    A refund after the close does not reduce what is left to pay, although
+    some banks apply it that way.
+  - A statement that differs from the bank shows on the card, but raises no
+    banner on Home.
+  - "A purchase I forgot" opens the ordinary add sheet dated today; the user
+    has to set the date on or before the closing day themselves.
 
 To revisit after Phase 1's benchmark:
   - If cold load > 1500ms, adopt bucket columns (ARCHITECTURE.md §5.7) and

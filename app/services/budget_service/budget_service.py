@@ -52,6 +52,7 @@ from app.services import account_service, audit_service, transaction_service
 from app.services.budget_service.alerts import (
     Alert,
     CardDue,
+    CardLimit,
     CategoryUse,
     budget_alerts,
 )
@@ -171,6 +172,7 @@ def status(
     is_current = period.covers(today)
     alerts: List[Alert] = []
     if settings.ALERT_ENABLED and is_current:
+        cards_due, card_limits = _card_alerts(db, cipher, today)
         alerts = budget_alerts(
             allowance,
             warn_pct=int(prefs.get("alert_warn_threshold_pct") or settings.ALERT_WARN_THRESHOLD_PCT),
@@ -178,7 +180,8 @@ def status(
             pace_tolerance_pct=settings.ALERT_PACE_TOLERANCE_PCT,
             categories=[CategoryUse(c.category_id, c.allocated, c.spent) for c in categories],
             category_level=settings.ALERT_CATEGORY_LEVEL,
-            cards_due=_cards_due(db, cipher, today),
+            cards_due=cards_due,
+            card_limits=card_limits,
         )
 
     return BudgetStatus(
@@ -394,15 +397,23 @@ def _category_progress(
     return sorted(progress, key=lambda p: (-p.used_ratio, p.category_id))
 
 
-def _cards_due(db: Session, cipher: UserCipher, today: date) -> List[CardDue]:
+def _card_alerts(db: Session, cipher: UserCipher, today: date) -> Tuple[List[CardDue], List[CardLimit]]:
+    """
+    The cards worth a banner. A reminder keys on what the next payment still
+    owes (ACC-20) - so paying the bill silences it even while new purchases
+    sit on the next statement. A limit is checked on its own cycle (ACC-22).
+    """
     views = account_service.list_accounts(
         db, cipher, postings=transaction_service.postings(db, cipher), today=today, include_archived=False
     )
-    return [
-        CardDue(v.id, v.credit.due_in_days)
-        for v in views
-        if v.credit is not None and v.credit.due_soon and v.credit.owed > ZERO
+    cards = [v for v in views if v.credit is not None]
+    due = [CardDue(v.id, v.credit.due_in_days) for v in cards if v.credit.due_soon and v.credit.amount_due > ZERO]
+    limits = [
+        CardLimit(v.id, v.credit.spending_limit, v.credit.limit_spent,
+                  v.credit.period_days_elapsed, v.credit.period_days)
+        for v in cards if v.credit.spending_limit is not None
     ]
+    return due, limits
 
 
 def _replace_allocations(

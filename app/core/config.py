@@ -209,6 +209,9 @@ class Settings(BaseSettings):
     ALERT_PACE_TOLERANCE_PCT: int = 10
     ALERT_CATEGORY_LEVEL: bool = True
     CREDIT_DUE_ALERT_DAYS: int = 5
+    # ACC-26. Purchases this many days before a statement closes are marked
+    # "may be on next statement" - most cards post within 1-3 banking days.
+    CARD_POSTING_LAG_DAYS: int = Field(default=3, ge=0, le=10)
 
     # ============================================
     # Frontend

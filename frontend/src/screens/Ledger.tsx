@@ -137,6 +137,7 @@ function FilterSheet({
             { value: 'expense', label: 'Spent' },
             { value: 'income', label: 'Earned' },
             { value: 'transfer', label: 'Moved' },
+            { value: 'adjustment', label: 'Adjusted' },
           ]}
         />
         <div>

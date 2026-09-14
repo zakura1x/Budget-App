@@ -40,6 +40,7 @@ Budget App/
 │   │       │   ├── stats.py
 │   │       │   ├── recurring.py
 │   │       │   ├── subscriptions.py
+│   │       │   ├── projection.py        # months ahead + card look-ahead (read-only)
 │   │       │   ├── goals.py
 │   │       │   ├── settings.py
 │   │       │   ├── admin.py             # account management only
@@ -54,6 +55,7 @@ Budget App/
 │   │           ├── stats.py
 │   │           ├── recurring.py
 │   │           ├── subscription.py
+│   │           ├── projection.py
 │   │           ├── goal.py
 │   │           └── settings.py
 │   │
@@ -148,7 +150,8 @@ Budget App/
 │   │   │   ├── budget_service.py
 │   │   │   ├── allowance.py             # ★ the daily allowance calculation
 │   │   │   ├── carry_over.py            # symmetric surplus/deficit roll-forward
-│   │   │   └── alerts.py                # over / approaching / pace (in-app only)
+│   │   │   └── alerts.py                # over / approaching / pace (in-app only),
+│   │   │                                #   card due + card limit on the statement cycle
 │   │   ├── account_service.py
 │   │   ├── category_service.py
 │   │   ├── transaction_service.py
@@ -156,6 +159,10 @@ Budget App/
 │   │   │                                 # subscription | installment
 │   │   ├── subscription_service.py      # view over recurring_rules,
 │   │   │                                 # NOT a second expansion engine
+│   │   ├── projection_service.py        # READ-ONLY months ahead over the same
+│   │   │                                 # occurrences() expansion uses (§4.5)
+│   │   ├── statement_service.py         # bank total vs the app's statement;
+│   │   │                                 # resolutions are ordinary transactions
 │   │   ├── stats_service.py             # every aggregation SQL cannot do
 │   │   ├── calendar_service.py
 │   │   ├── goal_service.py
@@ -246,6 +253,7 @@ Budget App/
 │       │   ├── Recurring.tsx
 │       │   ├── Subscriptions.tsx
 │       │   ├── Installments.tsx         # progress cards + total still owed
+│       │   ├── Projection.tsx           # month strip, low points, card look-ahead
 │       │   ├── Goals.tsx
 │       │   ├── ImportExport.tsx
 │       │   ├── BackupRestore.tsx        # ★ download / restore / verify
@@ -304,6 +312,12 @@ Budget App/
 │   ├── test_multi_user_isolation.py     # ★ Bob must never see Alice's rows
 │   ├── test_recurring.py                # idempotent catch-up
 │   ├── test_installments.py             # remaining hits 0, never a 37th
+│   ├── test_projection.py               # projected == what later posts; writes nothing
+│   ├── test_card_bills.py               # paid bill clears; limit per statement cycle
+│   ├── test_statement_check.py          # difference -> 0 after each resolution;
+│   │                                    #   late posting moves statement, not budget
+│   ├── test_balance_adjustment.py       # asked first; audit ONLY when accepted;
+│   │                                    #   never touches budget or stats
 │   ├── test_transactions.py
 │   └── test_api_integration.py
 │

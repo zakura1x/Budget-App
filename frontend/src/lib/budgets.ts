@@ -66,7 +66,15 @@ export interface CategoryProgress {
 }
 
 export interface Alert {
-  kind: 'over' | 'approaching' | 'pace' | 'category_over' | 'card_due';
+  kind:
+    | 'over'
+    | 'approaching'
+    | 'pace'
+    | 'category_over'
+    | 'card_due'
+    | 'card_limit_over'
+    | 'card_limit_approaching'
+    | 'card_limit_pace';
   severity: 'danger' | 'warn';
   message: string;
   category_id: number | null;

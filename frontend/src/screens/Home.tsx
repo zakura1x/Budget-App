@@ -56,10 +56,20 @@ function alertText(alert: Alert, status: BudgetStatus, lookups: Lookups): string
     const name = lookups.categoryById.get(alert.category_id ?? -1)?.name ?? 'A category';
     return `${name} is over its budget.`;
   }
+  const card = alert.account_id !== null ? lookups.accountById.get(alert.account_id) : undefined;
+  const name = card?.name ?? 'A card';
   if (alert.kind === 'card_due') {
-    const name = lookups.accountById.get(alert.account_id ?? -1)?.name;
-    return name ? `${name}: ${alert.message.toLowerCase()}.` : `${alert.message}.`;
+    // ACC-20 - the amount still owed on the bill, not the whole card.
+    const due = card?.credit && !isZero(card.credit.amount_due) ? `${formatPHP(card.credit.amount_due)} ` : '';
+    const when = alert.message.replace(/^A card payment is due /, '');
+    return `${name}: ${due}due ${when}.`;
   }
+  if (alert.kind === 'card_limit_over') return `${name} is at your spending limit for this cycle.`;
+  if (alert.kind === 'card_limit_approaching') {
+    const left = card?.credit?.limit_left;
+    return left ? `${name}: ${formatPHP(left)} left of your limit this cycle.` : `${name} is close to your limit.`;
+  }
+  if (alert.kind === 'card_limit_pace') return `${name} is being spent faster than its cycle is passing.`;
   return `${alert.message}.`;
 }
 

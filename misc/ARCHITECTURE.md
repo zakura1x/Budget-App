@@ -155,12 +155,14 @@ This project adds one rule of its own, and it is absolute:
 |---|---|
 | *(no service)* | Key handling lives in `app/core/crypto/`. Its façade is `UserCipher`: repositories are handed one, services pass it along, and neither ever holds a key |
 | `auth_service/` | Login, JWT issue/refresh, lockout, PIN, password rules |
-| `account_service` | Cash, debit, credit, savings, investment accounts; balances; credit statement cycles and available credit |
+| `account_service` | Cash, debit, credit, savings, investment accounts; balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit |
+| `statement_service` | Checks a card statement against the bank's total and applies what you say the difference was (§4.4). Writes only through `transaction_service` and `recurring_service`; nothing imports it |
 | `category_service` | Categories and sub-categories, icons, colours, ordering |
-| `transaction_service` | Expense/income/transfer CRUD; the write path |
+| `transaction_service` | Expense/income/transfer/adjustment CRUD; the write path |
 | `budget_service/` | Periods, per-category allocations, **daily allowance** |
 | `recurring_service` | Rule expansion — daily/weekly/monthly/custom. The one engine behind standard rules, subscriptions and installments |
 | `subscription_service` | Your recurring merchant charges (Netflix, gym). A **view over** `recurring_rules`, never a second expansion engine |
+| `projection_service` | The months ahead: salary, bills, installments and card statements laid out from the rules (§4.5). **Read-only** — it never posts a transaction |
 | `stats_service` | Every chart series; all aggregation, since SQL cannot |
 | `calendar_service` | Day-by-day spending heatmap |
 | `goal_service` | Savings goals and progress |
@@ -225,7 +227,8 @@ Two invariants the service enforces, because the database cannot:
 
 - `amount` equals the sum of `splits[].amount`, **Decimal-exact**. A one-centavo
   drift here silently corrupts every report downstream.
-- `splits` is never empty.
+- `splits` is never empty. A balance adjustment carries exactly one split with
+  `category_id: null`, the one split without a category (§4.4).
 
 There is no `currency` field. The app is PHP-only by decision (FEATURES.md
 ACC-11), so currency is a formatting constant, not data.
@@ -243,7 +246,7 @@ stays inside the ciphertext.
 | A | `refresh_tokens` | Hashed token, family id, parent id, expiry, revocation |
 | A | `login_attempts` | `kind` (login / pin / recovery / register), `email_bidx`, success flag, keyed hash of the IP, timestamp |
 | A | `audit_log` | user_id, action, entity, entity_id, encrypted detail blob |
-| B | `accounts` | name, type, opening balance, colour, archived, `counts_in_cash_on_hand`, manual value (investment), statement/due day + credit limit (credit) |
+| B | `accounts` | name, type, opening balance, colour, archived, `counts_in_cash_on_hand`, manual value (investment), statement/due day + credit limit + optional own `spending_limit` + `statement_checks` — the bank's total per statement (credit) |
 | B | `categories` | name, parent_id, icon, colour, kind, sort order |
 | B | `budgets` | period type, start day, amount, carry-over flag, active range |
 | B | `budget_allocations` | budget_id, category_id, allocated amount |
@@ -311,6 +314,153 @@ motorcycle, never ₱180,000 at once. The asset-and-debt alternative is out
 **Credit-card installments** post the monthly amount to the card each month.
 `available credit` still subtracts the whole unpaid remainder, because the bank
 blocks it from your limit on day one.
+
+**Card bills (FEATURES.md ACC-19, ACC-20)** are derived from postings, never
+stored:
+
+```
+statement amount = what the card owed at the close of that statement
+left to pay      = max(0, statement amount − payments into the card since the close)
+card_due alert   = left to pay > 0  and  due within CREDIT_DUE_ALERT_DAYS
+```
+
+The alert keys on *left to pay*, not on the card's whole balance. Keyed on the
+balance, as first built in Phase 5, it kept warning after the bill was paid
+whenever new purchases sat on the next statement.
+
+**Your own spending limit (ACC-21, ACC-22)** is an optional `spending_limit` in
+the account payload, separate from the bank's `credit_limit`. It needs no
+migration. It is measured over the **open statement period**: purchases minus
+refunds posted to the card, including recurring and installment charges,
+excluding payments and transfers. The check reuses the budget's rules in
+`budget_service/alerts.py`, with the same `ALERT_WARN_THRESHOLD_PCT` and pace
+tolerance, applied to the statement period instead of the budget period.
+`card_limit_over` replaces `card_limit_approaching` and `card_limit_pace` for
+that card, just as `over` does for the budget. Nothing is ever blocked, and a
+purchase still counts once, against the budget period of its own date (ACC-16).
+
+**The statement check (ACC-24..26)** is the one number the user types at
+billing. The bank's total is appended to the card's payload as
+`statement_checks: [{closes, bank_total}]`, the same append-only shape as the
+valuation history (ACC-13), with no migration. The difference is derived on
+every read, never stored:
+
+```
+difference = bank_total − statement amount (the app's)
+```
+
+Every resolution is an ordinary transaction, so once it posts the difference
+recomputes to zero and nothing else needs updating:
+
+| Choice | Writes |
+|---|---|
+| One-time fee or interest | An expense on the card, dated the closing date, in Financial › Bank fees or Interest |
+| Interest on this installment (REC-29) | The same, linked to the plan by `recurring_id`, plus the plan's terms updated |
+| A purchase I forgot | Whatever the add sheet saves |
+| Posted on the next statement | `card_posted_on` on the purchase |
+
+**Statement membership and the card limit use `card_posted_on` when it is set,
+otherwise `txn_date`. The budget always uses `txn_date`.** That is the whole
+effect of a late posting: it moves between statements, never between budget
+periods. A lower bank total is never offered as interest.
+
+**Installment terms** can arrive after the purchase (REC-28..30):
+
+```json
+{ "kind": "installment", "price": "40000.00", "payments": 6,
+  "terms": "provisional", "amount": "6666.67", "start": "2026-09-20" }
+
+// after the first statement confirms ₱400 a month:
+{ "kind": "installment", "price": "40000.00", "interest": "2400.00",
+  "total": "42400.00", "payments": 6, "terms": "confirmed",
+  "amount": "7066.67", "start": "2026-09-20" }
+```
+
+A provisional plan's `total` is its `price`. Each payment posts two splits:
+`price ÷ payments` in the purchase's category and `interest ÷ payments` in
+Financial › Interest. Each split's last payment absorbs its own rounding
+(REC-16), so both the price and the interest come out exact. Zero interest
+posts one split. The remaining balance stays derived, as above: the ₱400 posted
+for payment 1 carries the plan's `recurring_id`, so it counts as paid.
+
+**Balance adjustments (FEATURES.md ACC-27..30).** A balance is never stored, so
+"set the balance to X" has to be recorded as *something*. The edit sheet sends
+the typed balance alongside the account fields. `account_service` compares it
+with the derived balance, and if they differ it saves nothing and returns
+`409 BALANCE_DIFFERS` carrying the difference. The client asks the user, then
+resubmits with one choice (cancel never reaches the server):
+
+| `balance_action` | Writes |
+|---|---|
+| `adjust` | An `adjustment` transaction dated today for the difference, plus `audit_service.BALANCE_ADJUST` with `{before, after, difference, note}`. Both happen in the same database transaction as the account update |
+| `fix_opening` | `opening_balance += difference`. No adjustment and no `BALANCE_ADJUST` |
+
+The ordinary `UPDATE` audit entry (name and type, no amounts) is written on
+every save either way, as it is today.
+
+`adjustment` joins `expense`, `income` and `transfer` in `transaction_service.TYPES`.
+It posts to one account with one uncategorised split. **Balances, cash on hand
+and the statement amount include it; the budget, the allowance, stats and the
+card limit exclude it by type.** Every place that filters on type has to be
+checked when it lands. Deleting is the only undo (soft, audited); `update`
+refuses an adjustment, because its audit entry already recorded the before and
+after.
+
+### 4.5 Projection — the months ahead
+
+Projection (FEATURES.md REC-19..27, §20) lays salary, bills, subscriptions and
+installments over the next months. **It adds no table and stores nothing.** It
+runs on request, in the user's session, over rules already in the working set.
+
+**One schedule, two readers.** `recurring_service` exposes a pure function,
+`occurrences(rule, start, end)`, that returns dated amounts. It handles
+frequency, semi-monthly days (REC-19), end conditions, skips, the amount history
+(REC-20) and the installment's rounding-absorbing final payment (REC-16).
+Expansion posts what it returns up to today. `projection_service` reads what it
+returns after today. There is no second calendar that could disagree with what
+actually posts.
+
+```
+recurring_service.occurrences()  ──┬──▶ expansion  (≤ today)  → transactions
+                                   └──▶ projection (> today)  → a response, never a row
+```
+
+The amount history is a dated list inside the rule's encrypted payload. Like
+every payload field, it needs no migration; a rule without one uses its single
+`amount`.
+
+**Per month**, starting from today's cash on hand (ACC-17):
+
+```
+income     = income occurrences into counted accounts
+committed  = expense occurrences on counted accounts (cards included, §19)
+spending   = max(budget for the month, committed)     REC-23
+closing    = opening + income − spending              → next month's opening
+low point  = lowest running balance over the dated occurrences,   REC-24
+             with (spending − committed) set aside on day 1
+```
+
+- The **current month** uses what is left of the current budget period, not the
+  full budget, plus the occurrences still to come after today.
+- A **"month"** is the budget month when the budget is monthly, which respects a
+  custom start day (BUD-04). Weekly and custom budgets are pro-rated by days
+  into calendar months, rounded to the centavo with `Decimal`.
+- **Carry-over is ignored.** The projection assumes you spend exactly the
+  budget, so there is nothing to carry.
+- **Transfers** follow ACC-18. Between two counted accounts they change nothing;
+  into an uncounted one they reduce cash on hand.
+
+**Credit-card look-ahead (REC-25)** groups each card's occurrences by statement
+period, using the same `date_utils` statement cycle as ACC-09. A card charge
+reduces projected cash on hand on the day it posts, not when the bill is paid.
+The bill is shown as *"₱7,150 due May 5"* but never subtracted again, because
+paying it is a transfer between two counted accounts.
+
+Like the budget endpoints, `GET /api/v1/projection` and
+`GET /api/v1/projection/cards` take the client's `today`. Nothing from either
+response is cached in the browser (SEC-29). `projection_service` imports
+`recurring_service`, `account_service` and `budget_service`, and none of them
+imports it back.
 
 ---
 

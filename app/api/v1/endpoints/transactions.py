@@ -39,7 +39,7 @@ def list_transactions(
     date_to: Optional[date] = Query(default=None, alias="to"),
     category: Optional[int] = Query(default=None),
     account: Optional[int] = Query(default=None),
-    type: Optional[str] = Query(default=None, pattern="^(expense|income|transfer)$"),
+    type: Optional[str] = Query(default=None, pattern="^(expense|income|transfer|adjustment)$"),
     q: Optional[str] = Query(default=None, max_length=80),
     cursor: Optional[str] = Query(default=None, max_length=40),
     limit: int = Query(default=50, ge=1, le=200),
