@@ -245,7 +245,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                       <Choice
                         key={purchase.id}
                         title={`${purchase.merchant ?? 'A purchase'} was posted on the next statement`}
-                        hint={`${formatPHP(purchase.amount)} on ${day(purchase.txn_date)} — close to the closing day. Your budget keeps its date.`}
+                        hint={`${formatPHP(purchase.amount)} on ${day(purchase.txn_date)} — within this card’s ${statement.posting_lag_days}-day posting delay. Your budget keeps its date.`}
                         onClick={() => void run(() => markPostedNext(account.id, closes, purchase.id), true)}
                         disabled={busy}
                       />

@@ -25,6 +25,8 @@ export interface Statement {
   overdue: boolean;
   bank_total: string | null;
   difference: string | null;
+  /** ACC-26 - this card's window for "may be on next statement". */
+  posting_lag_days: number;
 }
 
 export interface Credit {
@@ -50,6 +52,7 @@ export interface Credit {
   limit_left: string | null;
   period_days: number;
   period_days_elapsed: number;
+  posting_lag_days: number;
 }
 
 export interface Valuation {
@@ -102,6 +105,8 @@ export interface AccountDraft {
   payment_due_day?: number;
   credit_limit?: string | null;
   spending_limit?: string | null;
+  /** ACC-26. Days this bank can take to post a purchase, 0-10; a new card starts at 3. */
+  posting_lag_days?: number;
   /** ACC-27. The balance you typed on an existing account - signed, so a card you owe on is negative. */
   balance?: string;
   balance_action?: BalanceAction;

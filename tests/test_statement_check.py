@@ -167,6 +167,28 @@ def test_only_a_purchase_near_the_close_can_move(session, owner, setup):
                                   {"choice": "posted_next", "transaction_id": early.id}, today=AFTER)
 
 
+def test_the_posting_window_is_the_cards_own_setting(session, owner, setup):
+    """ACC-26, per card since 2026-09-14 - a new card starts at 3 days, and the user can change it."""
+    buy(session, owner, setup, "1500.00", "2026-10-12")  # 4 days before the close
+    statement_service.check(session, owner, setup.card, CLOSES, "0.00", today=AFTER)
+    assert statement_of(session, owner, setup).late_candidates == []  # outside the default 3 days
+
+    account_service.update_account(session, owner, setup.card, {**CARD, "posting_lag_days": 5})
+    widened = statement_of(session, owner, setup)
+    assert [c.amount for c in widened.late_candidates] == [D("1500.00")]
+
+    account_service.update_account(session, owner, setup.card, {**CARD, "name": "BPI Gold"})
+    assert statement_of(session, owner, setup).statement.posting_lag_days == 5  # an edit that doesn't mention it keeps it
+
+    account_service.update_account(session, owner, setup.card, {**CARD, "name": "BPI Gold", "posting_lag_days": 0})
+    assert statement_of(session, owner, setup).late_candidates == []
+
+
+def test_a_posting_window_past_ten_days_is_refused(session, owner, setup):
+    with pytest.raises(ValidationException):
+        account_service.update_account(session, owner, setup.card, {**CARD, "posting_lag_days": 11})
+
+
 def test_moving_the_purchase_to_another_day_forgets_the_late_posting(session, owner, setup):
     late = buy(session, owner, setup, "1500.00", "2026-10-15")
     statement_service.check(session, owner, setup.card, CLOSES, "0.00", today=AFTER)

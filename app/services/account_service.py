@@ -10,7 +10,7 @@ What lives here and could not live in SQL:
     own closing day and has nothing to do with the budget month; the shared
     helpers are in app/core/date_utils.py, the dates never are.
   * THE BILL (ACC-19/20). What the card owed when its last statement closed,
-    less the payments made since. Derived on every read, never stored, so a
+    less the payments and refunds made since. Derived on every read, never stored, so a
     payment, a refund or an edited purchase can never leave it stale.
   * YOUR OWN SPENDING LIMIT (ACC-21), measured over the OPEN statement period:
     purchases minus refunds, which is exactly what the next bill will show.
@@ -142,6 +142,7 @@ class Statement:
     overdue: bool
     bank_total: Optional[Decimal]
     difference: Optional[Decimal]
+    posting_lag_days: int  # ACC-26 - this card's window for "may be on next statement"
 
 
 @dataclass(frozen=True)
@@ -168,6 +169,7 @@ class CreditView:
     limit_left: Optional[Decimal]  # negative once over
     period_days: int
     period_days_elapsed: int  # including today
+    posting_lag_days: int  # ACC-26, set per card
 
 
 @dataclass(frozen=True)
@@ -582,6 +584,7 @@ def _credit_view(
         limit_left=(own - spent).quantize(ZERO) if own is not None else None,
         period_days=(period.closes - period.start).days + 1,
         period_days_elapsed=(when - period.start).days + 1,
+        posting_lag_days=_posting_lag(data),
     )
 
 
@@ -596,13 +599,15 @@ def _statement(
     """
     ACC-19/20. The bill is the card's balance at the moment the statement was
     cut - earlier unpaid balances included, as a bank's statement does. What
-    is left of it is that, less the payments into the card since.
+    is left of it is that, less the payments into the card since - and, as
+    decided 2026-09-14, the refunds: money returned to the card after the cut
+    reduces what you still have to pay.
     """
     at_close = opening + total(p.amount for p in postings if p.statement_day <= period.closes)
     amount = max(-at_close, ZERO).quantize(ZERO)
     paid = total(
         p.amount for p in postings
-        if p.amount > ZERO and p.kind in (None, "transfer") and period.closes < p.statement_day <= today
+        if p.amount > ZERO and p.kind in (None, "transfer", "income") and period.closes < p.statement_day <= today
     ).quantize(ZERO)
     left = max(amount - paid, ZERO).quantize(ZERO)
     bank = _bank_total(data, period.closes)
@@ -617,6 +622,7 @@ def _statement(
         overdue=today > period.due and left > ZERO,
         bank_total=bank,
         difference=(bank - amount) if bank is not None else None,
+        posting_lag_days=_posting_lag(data),
     )
 
 
@@ -627,6 +633,14 @@ def _is_purchase(posting: Posting) -> bool:
     because nobody knows what that money was (ACC-29).
     """
     return posting.amount < ZERO and posting.kind in (None, "expense")
+
+
+def _posting_lag(data: Mapping[str, Any]) -> int:
+    """A card saved before the window was per-card uses the configured default."""
+    try:
+        return int(data.get("posting_lag_days", settings.CARD_POSTING_LAG_DAYS))
+    except (TypeError, ValueError):
+        return settings.CARD_POSTING_LAG_DAYS
 
 
 def _card_days(data: Mapping[str, Any]) -> Tuple[int, int]:
@@ -759,7 +773,7 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
 
     # --- credit terms (ACC-09/14/21), only on a card
     for field in ("statement_closing_day", "payment_due_day", "credit_limit", "spending_limit",
-                  "unpaid_installments", "statement_checks"):
+                  "posting_lag_days", "unpaid_installments", "statement_checks"):
         data.pop(field, None)
     if kind == "credit":
         data["statement_closing_day"] = _day_of_month(payload.get("statement_closing_day"), "statement_closing_day")
@@ -774,6 +788,14 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
             if own <= ZERO:
                 raise ValidationException("A spending limit is more than zero - leave it empty for none")
             data["spending_limit"] = str(own)
+        # ACC-26. How many days before closing this bank may still post a
+        # purchase on the next statement. Banks differ, so it is the card's
+        # own setting; a new card starts from CARD_POSTING_LAG_DAYS, and an
+        # edit that does not mention it keeps what the card had.
+        lag = payload.get("posting_lag_days")
+        if lag is None:
+            lag = (existing or {}).get("posting_lag_days", settings.CARD_POSTING_LAG_DAYS)
+        data["posting_lag_days"] = _lag_days(lag)
         # The bank's statement totals (ACC-24) are only ever written by
         # record_statement_check() - never set from a submitted body.
         checks = (existing or {}).get("statement_checks")
@@ -801,6 +823,18 @@ def _note(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text[:NOTE_MAX] or None
+
+
+def _lag_days(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValidationException("posting_lag_days is 0-10 days")
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        raise ValidationException("posting_lag_days is 0-10 days") from None
+    if not 0 <= days <= 10:
+        raise ValidationException("posting_lag_days is 0-10 days")
+    return days
 
 
 def _day_of_month(value: Any, field: str) -> int:

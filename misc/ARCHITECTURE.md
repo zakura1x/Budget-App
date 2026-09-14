@@ -320,7 +320,7 @@ stored:
 
 ```
 statement amount = what the card owed at the close of that statement
-left to pay      = max(0, statement amount − payments into the card since the close)
+left to pay      = max(0, statement amount − payments and refunds into the card since the close)
 card_due alert   = left to pay > 0  and  due within CREDIT_DUE_ALERT_DAYS
 ```
 
@@ -332,7 +332,7 @@ whenever new purchases sat on the next statement.
 the account payload, separate from the bank's `credit_limit`. It needs no
 migration. It is measured over the **open statement period**: purchases minus
 refunds posted to the card, including recurring and installment charges,
-excluding payments and transfers. The check reuses the budget's rules in
+excluding payments, transfers and balance adjustments. The check reuses the budget's rules in
 `budget_service/alerts.py`, with the same `ALERT_WARN_THRESHOLD_PCT` and pace
 tolerance, applied to the statement period instead of the budget period.
 `card_limit_over` replaces `card_limit_approaching` and `card_limit_pace` for
@@ -401,8 +401,8 @@ every save either way, as it is today.
 `adjustment` joins `expense`, `income` and `transfer` in `transaction_service.TYPES`.
 It posts to one account with one uncategorised split. **Balances, cash on hand
 and the statement amount include it; the budget, the allowance, stats and the
-card limit exclude it by type.** Every place that filters on type has to be
-checked when it lands. Deleting is the only undo (soft, audited); `update`
+card limit exclude it by type** — confirmed by the user on 2026-09-14. Every
+place that filters on type has to be checked when it lands. Deleting is the only undo (soft, audited); `update`
 refuses an adjustment, because its audit entry already recorded the before and
 after.
 

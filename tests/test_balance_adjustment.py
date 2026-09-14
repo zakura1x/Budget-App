@@ -4,9 +4,9 @@ Balance adjustments (ACC-27..30, FEATURES.md §22).
 A balance is never stored, so typing one is a question before it is a save.
 The guarantees: nothing is written until the user answers; accepting writes an
 adjustment and exactly one BALANCE_ADJUST audit entry, and moves the balance
-without touching the budget, the day totals or a card's spending limit;
-fixing the opening balance writes neither; an adjustment can be deleted but
-never edited, repeated or entered by hand.
+while the budget, the day totals and a card's spending limit stay the same
+(confirmed 2026-09-14); fixing the opening balance writes neither; an adjustment can be deleted but never edited, repeated or entered
+by hand.
 """
 
 from datetime import date
@@ -36,7 +36,9 @@ def setup(session, owner):
     food = category_service.create_category(session, owner, {"name": "Food"})
     transaction_service.create_transaction(session, owner, {
         "type": "expense", "amount": "50.00", "account_id": wallet.id, "category_id": food.id, "txn_date": "2026-09-10"})
-    budget_service.create_budget(session, owner, {"period": "monthly", "amount": "30000.00"}, today=TODAY)
+    budget_service.create_budget(session, owner, {
+        "period": "monthly", "amount": "30000.00",
+        "allocations": [{"category_id": food.id, "amount": "5000.00"}]}, today=TODAY)
 
     class S:
         pass
@@ -118,14 +120,17 @@ def test_an_unrecorded_gain_raises_the_balance(session, owner, setup):
 
 
 @pytest.mark.security
-def test_an_adjustment_is_never_spending_or_income(session, owner, setup):
-    before = budget_service.status(session, owner, today=TODAY).allowance.spent
-    set_balance(session, owner, setup.wallet, "1000.00", action="adjust")
+@pytest.mark.parametrize("typed", ["1600.00", "2100.00"], ids=["loss", "gain"])
+def test_the_budget_stays_the_same(session, owner, setup, typed):
+    """Confirmed 2026-09-14 - an adjustment moves the balance, never the budget or the day totals."""
+    before = budget_service.status(session, owner, today=TODAY)
+    set_balance(session, owner, setup.wallet, typed, action="adjust")
+    after = budget_service.status(session, owner, today=TODAY)
 
-    assert budget_service.status(session, owner, today=TODAY).allowance.spent == before
-    page = transaction_service.list_transactions(session, owner)
-    today_totals = [d for d in page.days if d.on == TODAY]
-    assert today_totals == []  # no spent, no earned - the adjustment is in neither
+    assert balance(session, owner, setup.wallet) == D(typed)
+    assert (after.allowance.spent, after.allowance.daily) == (before.allowance.spent, before.allowance.daily)
+    assert [(c.category_id, c.spent) for c in after.categories] == [(c.category_id, c.spent) for c in before.categories]
+    assert [d for d in transaction_service.list_transactions(session, owner).days if d.on == TODAY] == []
 
 
 def test_an_adjustment_on_a_card_does_not_use_its_limit(session, owner):
@@ -136,8 +141,7 @@ def test_an_adjustment_on_a_card_does_not_use_its_limit(session, owner):
 
     credit = account_service.get_account(session, owner, card.id, postings=transaction_service.postings(session, owner),
                                          today=TODAY).credit
-    assert credit.owed == D("800.00")
-    assert credit.limit_spent == D("0.00")
+    assert (credit.owed, credit.limit_spent) == (D("800.00"), D("0.00"))
 
 
 # ------------------------------------------------------ fixing the opening

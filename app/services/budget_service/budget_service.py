@@ -20,8 +20,9 @@ ONE BUDGET PER USER. Its payload:
     nothing to copy, because nothing was cleared.
 
 Spending is the EXPENSE SPLITS inside the period (TXN-16), read from the working
-set. Income does not raise a budget and a transfer is not spending, so neither
-is ever a Spend.
+set. Income does not raise a budget, a transfer is not spending, and a balance
+adjustment - loss or gain - is neither (ACC-29, confirmed 2026-09-14), so none
+of them is ever a Spend.
 """
 
 from dataclasses import dataclass, field

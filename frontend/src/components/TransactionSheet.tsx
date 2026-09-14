@@ -330,8 +330,8 @@ export function TransactionSheet() {
           </p>
           {editing.notes && <p className="text-center text-body">{editing.notes}</p>}
           <p className="rounded-2xl bg-surface-2 px-4 py-3 text-footnote text-ink-2">
-            Recorded when you set this account’s balance. It moves the balance but is not spending or income, and
-            it can’t be edited — delete it and set the balance again.
+            Recorded when you set this account’s balance. It moves the balance only — your budget stays the same —
+            and it can’t be edited; delete it and set the balance again.
           </p>
           {error && <p className="text-footnote text-danger">{error}</p>}
           <Button variant="ghost" block className="text-danger" onClick={() => void remove()} disabled={busy}>

@@ -3,9 +3,9 @@ Card bills and your own spending limit (ACC-19..23, FEATURES.md §21).
 
 What is worth proving: the bill is what the card owed at the close, paying it
 in full silences the reminder even while new purchases sit on the next
-statement, a part payment does not, and the spending limit counts purchases
-and refunds - never payments or balance adjustments - over the card's own
-cycle, raising the budget's alerts on the card's dates.
+statement, a part payment does not, a refund after the close reduces what is
+left, and the spending limit counts purchases and refunds - never payments -
+over the card's own cycle, raising the budget's alerts on the card's dates.
 """
 
 from datetime import date
@@ -112,12 +112,14 @@ def test_an_unpaid_bill_past_its_due_date_is_overdue(session, owner, setup):
     assert card_view(session, owner, setup, date(2026, 10, 7)).bill.overdue is False
 
 
-def test_a_refund_on_the_card_is_not_a_payment_of_the_bill(session, owner, setup):
+def test_a_refund_after_the_close_reduces_what_is_left_to_pay(session, owner, setup):
+    """Decided 2026-09-14 - money returned to the card counts against the bill, like a payment."""
     buy(session, owner, setup, "1000.00", "2026-09-10")
     transaction_service.create_transaction(session, owner, {
         "type": "income", "amount": "400.00", "account_id": setup.card,
         "category_id": setup.refunds, "txn_date": "2026-09-20"})
-    assert card_view(session, owner, setup, date(2026, 9, 21)).bill.left_to_pay == D("1000.00")
+    bill = card_view(session, owner, setup, date(2026, 9, 21)).bill
+    assert (bill.amount, bill.paid_since_close, bill.left_to_pay) == (D("1000.00"), D("400.00"), D("600.00"))
 
 
 # ---------------------------------------------------------- the spending limit

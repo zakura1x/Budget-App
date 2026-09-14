@@ -37,7 +37,6 @@ from typing import Any, List, Mapping, Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.crypto.user_cipher import UserCipher
 from app.core.exceptions import BusinessRuleException, ValidationException
 from app.core.utils.money import ZERO, money
@@ -59,8 +58,9 @@ def get(db: Session, cipher: UserCipher, account_id: int, closes: date, *, today
     found = account_service.statement(
         db, cipher, account_id, closes, postings=transaction_service.postings(db, cipher), today=today
     )
-    lag = settings.CARD_POSTING_LAG_DAYS
-    # ACC-26: the last `lag` days of the statement, closing day included.
+    lag = found.posting_lag_days
+    # ACC-26: the last `lag` days of the statement, closing day included -
+    # the card's own window, since every bank posts at its own speed.
     candidates = (
         transaction_service.card_purchases(db, cipher, account_id, closes - timedelta(days=lag - 1), closes)
         if lag > 0 else []

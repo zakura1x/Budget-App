@@ -25,8 +25,9 @@ in: `record_adjustment` writes one when a user sets an account's balance and
 accepts recording the difference (account_service.update_account). One
 account, one uncategorised split, `direction` out for an unrecorded loss and
 in for a gain. A balance counts it; the budget, the day totals and a card's
-spending limit read only the types they mean, so none of them ever does. It
-can be deleted and never edited - its audit entry recorded before and after.
+spending limit read only the types they mean, so none of them ever does - the
+budget stays the same (confirmed 2026-09-14). It can be deleted and never
+edited - its audit entry recorded before and after.
 
 A PURCHASE THE BANK POSTED LATE (ACC-26) carries `card_posted_on`. It moves
 the purchase to a later card statement and changes nothing else: the budget

@@ -115,16 +115,16 @@ shared company database. See ARCHITECTURE.md §5.
 | ACC-17 | **Cash on hand** — the one total | ✅ v1 | 3 | **DECIDED.** *"What is in my pockets."* The sum of every account that counts (ACC-18). **Deliberately not net worth:** nothing you own (a motorcycle, a phone) and nothing you will owe later (unpaid installments) is part of it |
 | ACC-18 | "Count in cash on hand" switch per account | ✅ v1 | 3 | Defaults: cash, debit, savings **on** · credit card **on** — what you have already spent on it is subtracted · investment **off**. Change any of them in the account's settings |
 | ACC-19 | **Statement amount due** | ✅ v1 | 5b | *"₱12,300 due Oct 6."* What the card owed at the moment the statement closed, the same figure a bank statement shows. Derived from postings, never stored. The app never calculates interest or fees; they come in through the statement check (ACC-24) |
-| ACC-20 | **Bill reminder clears when that statement is paid** | ✅ v1 | 5b | Left to pay = statement amount − payments into the card since it closed, never below zero. A part payment shows *"₱7,300 left, due Oct 6"*. Paying in full clears the reminder even while new purchases build up on the next statement. See §21 |
-| ACC-21 | **Your own spending limit per card** | ✅ v1 | 5b | **DECIDED: per statement cycle.** Optional, e.g. ₱10,000 from the 17th to the 16th, so what you spend against it is what next month's bill will be. Separate from the bank's credit limit (ACC-14). Counts purchases minus refunds, including recurring and installment charges; payments never count |
+| ACC-20 | **Bill reminder clears when that statement is paid** | ✅ v1 | 5b | Left to pay = statement amount − payments and refunds into the card since it closed, never below zero. Refunds count — decided 2026-09-14. A part payment shows *"₱7,300 left, due Oct 6"*. Paying in full clears the reminder even while new purchases build up on the next statement. See §21 |
+| ACC-21 | **Your own spending limit per card** | ✅ v1 | 5b | **DECIDED: per statement cycle.** Optional, e.g. ₱10,000 from the 17th to the 16th, so what you spend against it is what next month's bill will be. Separate from the bank's credit limit (ACC-14). Counts purchases minus refunds, including recurring and installment charges; payments and balance adjustments never count |
 | ACC-22 | Card-limit alerts: approaching, pace, over | ✅ v1 | 5b | The budget's rules on the card's cycle: `warn` at `ALERT_WARN_THRESHOLD_PCT` (80%), `warn` when spending runs ahead of the cycle, `danger` at 100%. Home banner, tab badge, colour on the card. Over replaces the other two. No push (BUD-16) |
 | ACC-23 | "Left on this card" in the add sheet | ✅ v1 | 5b | Pick a card with a limit and the sheet shows *"₱1,200 left on BPI Card this cycle"*, updating as you type. It warns and never blocks the save |
 | ACC-24 | **Check the statement against the bank** | ✅ v1 | 5b | When a statement closes, the card asks for the bank's total. **One number, not every line.** The app shows its own figure beside it and the difference. A match is marked ✅ Checked. The bank's figure is kept on the card per statement; the difference is recalculated every time, never stored. See §21 |
 | ACC-25 | **Explain a difference** | ✅ v1 | 5b | Choices: **a one-time fee or interest** (posts to Financial › Bank fees or Interest on the closing date) · **a purchase I forgot** (add sheet, amount filled in) · **posted on the next statement** (ACC-26) · **leave it** (stays visible on the card). One difference can be split across several choices. Installment interest joins the list in Phase 7 (REC-29). The app suggests and never decides, and a *lower* bank total is never offered as interest |
-| ACC-26 | Purchases the bank posts late | ✅ v1 | 5b | Purchases in the last `CARD_POSTING_LAG_DAYS` (default 3) before closing are marked *"may be on next statement"*. If the bank did post one later, one tap moves it to the next statement and that cycle's limit. **The budget keeps the purchase date** |
+| ACC-26 | Purchases the bank posts late | ✅ v1 | 5b | Purchases in the card's **posting delay** before closing are marked *"may be on next statement"*. **Per card since 2026-09-14:** set when the card is added (a new card starts at 3 days, `CARD_POSTING_LAG_DAYS`) and editable any time, 0–10, because every bank posts at its own speed. If the bank did post one later, one tap moves it to the next statement and that cycle's limit. **The budget keeps the purchase date** |
 | ACC-27 | **Edit the current balance** | ✅ v1 | 5b | On an existing cash, debit, savings or credit account, the sheet shows the **current balance** (for a card, **amount owed**) instead of the opening balance. Saving a different figure asks first (ACC-28). Investment accounts keep their valuations (ACC-13) |
 | ACC-28 | **Ask before recording the difference** | ✅ v1 | 5b | *"Wallet: ₱2,450.00 → ₱2,100.00. Difference −₱350.00."* Choices: **record as a balance adjustment** (recommended) · **fix the opening balance instead** · **cancel**. Nothing is recorded without a tap. See §22 |
-| ACC-29 | **Balance adjustment — unrecorded loss or gain** | ✅ v1 | 5b | A transaction of type `adjustment`, dated today, on that account only. It moves the balance and cash on hand. It stays **out** of the budget, daily allowance, income/expense stats and card limit, because the app does not know what the money was. It has its own ledger label and a total in Stats. Delete to undo; never edited |
+| ACC-29 | **Balance adjustment — unrecorded loss or gain** | ✅ v1 | 5b | A transaction of type `adjustment`, dated today, on that account only. It moves the balance and cash on hand. **DECIDED 2026-09-14: the budget stays the same.** Neither a loss nor a gain touches the budget, the daily allowance, income/expense stats or a card's limit, because the app does not know what the money was. Own ledger label and a total in Stats. Delete to undo; never edited |
 | ACC-30 | **Audit trail only when accepted** | ✅ v1 | 5b | Accepting writes a `BALANCE_ADJUST` audit entry: before, after, difference and an optional note, encrypted under your key like every audit detail. Fixing the opening balance or cancelling writes no adjustment and no balance entry |
 
 ---
@@ -161,7 +161,7 @@ The core of the app. TXN-01 is the feature everything else exists to support.
 | TXN-07 | Date (defaults to today) | ✅ v1 | 4 | |
 | TXN-08 | Merchant / payee | ✅ v1 | 4 | Encrypted |
 | TXN-09 | Free-text notes | ✅ v1 | 4 | Encrypted |
-| TXN-10 | Tags | ✅ v1 | 4 | Stored as ids inside the transaction payload |
+| TXN-10 | Tags | ✅ v1 | 6 | Stored as ids inside the transaction payload. **Moved to Phase 6 (2026-09-14):** the ids have been kept, empty, since Phase 4; Phase 6 adds managing them, choosing them in the add sheet, a ledger filter and spending by tag |
 | TXN-11 | Ledger grouped by day, with subtotals | ✅ v1 | 4 | Sticky date headers |
 | TXN-12 | Search across merchant and notes | ✅ v1 | 4 | Substring, in memory — encrypted fields can't be searched in SQL |
 | TXN-13 | Filter by category, account, date, type | ✅ v1 | 4 | All in Python over the warm cache |
@@ -194,7 +194,7 @@ The core of the app. TXN-01 is the feature everything else exists to support.
 | BUD-10 | Over-budget detection + colour states | ✅ v1 | 5 | Green → amber → red |
 | BUD-11 | Carry over unspent to next period | ✅ v1 | 5 | **Now a Settings toggle, default OFF** — so you no longer have to decide up front. Symmetric when on: a surplus rolls forward, and so does an overspend. §13-B explains it with numbers |
 | BUD-12 | **In-app over-budget alerts** | ✅ v1 | 5 | **DECIDED: in-app only.** Banner on Home, badge on the tab bar, red on the offending category |
-| BUD-13 | **Copy last period's budget** | ✅ v1 | 5 | **Pulled into v1.** Start a new period from the previous one's allocations instead of retyping every category. You will want this by month two |
+| BUD-13 | **Copy last period's budget** | ✅ v1 | 5 | **Pulled into v1.** Start a new period from the previous one's allocations instead of retyping every category. You will want this by month two. **Confirmed 2026-09-14: no button** — allocations stay in force from period to period, so there is nothing to copy |
 | BUD-14 | Approaching-budget warning | ✅ v1 | 5 | Fires at `ALERT_WARN_THRESHOLD_PCT` (default 80%) of the period budget |
 | BUD-15 | **Pace alert** — spending faster than the period is elapsing | ✅ v1 | 5 | Day 10 of 30 with 60% spent. More useful than a fixed threshold, because it warns you while there is still time to act |
 | BUD-16 | Web push notifications | ❌ Out | — | **DECIDED: no push.** It would need a background sender that decrypts to know your budget state — a service holding keys outside a user session, weakening ARCHITECTURE.md §5.5. Every alert above is computed inside your own session instead |
@@ -463,8 +463,8 @@ if you find yourself wanting the weeks to add up to a monthly figure.
 
 ### New questions raised by your decisions
 
-Four second-order questions. **None of them blocks anything** — I have picked a
-default for each and built it into the docs. Flag any you would rather flip.
+Four second-order questions. **Confirmed 2026-09-14: all four kept as written
+below.**
 
 | Ref | Question | What I assumed, and why |
 |---|---|---|
@@ -955,11 +955,11 @@ The look-ahead tells you how much needs to be in the debit account by the 5th.
 - **Bonuses and 13th-month pay** use a yearly rule (REC-01). A single future
   item uses a rule that ends after 1 occurrence (REC-06).
 
-### Defaults to confirm
+### Decisions — confirmed 2026-09-14
 
-None of these blocks the build. Flag any you would rather flip.
+All four kept as proposed.
 
-| Question | Default, and why |
+| Question | Decision, and why |
 |---|---|
 | Should everyday spending come from the **budget** or from **past spending** (the STA-11 trend)? | **The budget.** It is the number you chose and can change. The trend reflects past mistakes and is noisy before you have three months of history |
 | How far ahead? | **12 months**, with 3 and 6 available. A 36-month installment still shows its payoff date on its own card (REC-10) |
@@ -1063,13 +1063,15 @@ A difference can be split, for example ₱400 installment interest plus ₱150 l
 fee. "Leave it" is always allowed: the difference stays on the card until
 explained, but nothing blocks.
 
-**Defaults to confirm:**
+**Decisions — confirmed 2026-09-14.** Also decided that day: a refund made
+after the statement closes reduces what is left to pay on it (ACC-20), and the
+posting window is each card's own setting.
 
-| Question | Default, and why |
+| Question | Decision, and why |
 |---|---|
 | Where do interest and fees go? | **Financial › Interest** and **Financial › Bank fees**, which are already in the default categories (CAT-07). You can pick another category |
 | What date do they post on? | **The statement's closing date**, so they land on the statement that charged them and count in that budget period |
-| How close to closing counts as "may post late"? | **3 days** (`CARD_POSTING_LAG_DAYS`). Most Philippine cards post within 1–3 banking days |
+| How close to closing counts as "may post late"? | **Per card, starting at 3 days** — "Bank posting delay" in the card's settings, 0–10, editable any time. Most Philippine cards post within 1–3 banking days, but some are slower |
 | When a second bill shows a different installment amount? | **Ask, and update the plan from that month** (REC-20). Earlier payments are never rewritten |
 
 **Nothing new for backup (§15).** The bank's figures live in the card's
@@ -1126,26 +1128,31 @@ the difference was.
 
 ### What an adjustment counts toward
 
-| Counts | Does not count |
-|---|---|
-| The account balance and cash on hand (ACC-17) | Budget and daily allowance |
-| The ledger, labelled **Adjustment**, filterable by type | Income vs expense, category stats |
-| An **Adjustments** total in Stats, so repeated losses stay visible | The card spending limit (ACC-21) |
+**Decided 2026-09-14: the budget stays the same.** (Briefly changed that day
+to "a loss counts as spending", then changed back.)
 
-**Why it stays out of spending:** the app does not know what the money was.
-Counting a gain as income or a loss as groceries would be a guess inside every
-report. If you later remember the ₱350 was lunch, delete the adjustment and
-enter the lunch.
+| | Unrecorded loss | Unrecorded gain |
+|---|---|---|
+| Account balance and cash on hand (ACC-17) | ✅ lowers them | ✅ raises them |
+| Budget and daily allowance | ❌ unchanged | ❌ unchanged |
+| Spending and income in Stats, the day's totals | ❌ | ❌ |
+| A card's spending limit (ACC-21) | ❌ | ❌ |
+| The ledger, labelled **Unrecorded loss / gain**, and an **Adjustments** total in Stats | ✅ | ✅ |
+
+**Why the budget stays the same:** the app does not know what the money was,
+and counting it as spending would be a guess inside every report. The balance
+still tells the truth about what you have. If you later remember the ₱350 was
+lunch, delete the adjustment and enter the lunch — then it counts, in Food.
 
 **Undo is delete only** (soft, audited, TXN-14). An adjustment cannot be edited:
 its audit entry recorded the before and after, and a changed amount would
 contradict it.
 
-### Defaults to confirm
+### Decisions — confirmed 2026-09-14
 
-| Question | Default, and why |
+| Question | Decision, and why |
 |---|---|
-| Should an unrecorded loss reduce the budget? | **No**, for the reason above. If you would rather losses count as spending (stricter), it can become a Settings toggle |
+| Should an unrecorded loss reduce the budget? | **No — the budget stays the same**, as first proposed. See the table above |
 | What date does it post on? | **Today**, the day you noticed. Never backdated |
 | The ordinary "account edited" audit entry | **Still written on every save, as today.** It says that the account changed (name and type, no amounts). The trail with the money — before, after, difference — exists only when you accept. Say if even the plain entry should be skipped when you decline |
 | Investment accounts? | **Not included.** Typing a new value there is already a dated valuation (ACC-13) |

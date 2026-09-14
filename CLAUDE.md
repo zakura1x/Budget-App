@@ -267,16 +267,19 @@ counts purchases, not payments. Two rules to keep:
 - A balance adjustment (`type = adjustment`) is written ONLY by
   `account_service.update_account` after a `BALANCE_DIFFERS` answer, together
   with its `BALANCE_ADJUST` audit entry in the same commit. Never let
-  `POST /transactions` create one, and never make one editable.
+  `POST /transactions` create one, and never make one editable. It moves
+  balances only: no budget, allowance, day total, stat or card limit counts it.
 - `card_posted_on` moves a purchase between STATEMENTS only. The budget reads
   `txn_date` and nothing else. `statement_service` writes through
   `transaction_service`, and nothing imports it.
 
 Still open on purpose: tags (TXN-10) are stored as an empty `tag_ids` with no
-management, and there is no explicit "copy last period's budget" action
-because allocations persist across periods (see the Phase 5 status in
-`misc/phases.md`).
+management until Phase 6. There is no "copy last period's budget" action,
+because allocations persist across periods - confirmed by the user on
+2026-09-14, along with every other proposed default in FEATURES.md §13 and
+§20-22, plus two changes: refunds after a statement closes reduce what is left
+to pay, and each card has its own posting delay.
 
-Phase 6 (calendar and stats; it must exclude adjustments too) is next — everything from there on is a plan,
+Phase 6 (calendar, stats and tags; stats must exclude balance adjustments) is next — everything from there on is a plan,
 not an observation, so check `misc/phases.md` before assuming a service,
 endpoint or script exists.

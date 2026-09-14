@@ -32,6 +32,7 @@ class AccountIn(BaseModel):
     payment_due_day: Optional[DayOfMonth] = None
     credit_limit: Optional[Money] = None
     spending_limit: Optional[Money] = None  # your own, per statement cycle - not the bank's
+    posting_lag_days: Optional[int] = Field(default=None, ge=0, le=10)  # ACC-26; a new card starts at 3
 
     # ACC-27/28. On an edit: the balance you typed, and - once the server has
     # answered BALANCE_DIFFERS - what to do with the difference.
@@ -75,6 +76,7 @@ class StatementOut(BaseModel):
     overdue: bool
     bank_total: Optional[Money] = None
     difference: Optional[Money] = None
+    posting_lag_days: int
 
 
 class CreditOut(BaseModel):
@@ -100,6 +102,7 @@ class CreditOut(BaseModel):
     limit_left: Optional[Money] = None
     period_days: int
     period_days_elapsed: int
+    posting_lag_days: int
 
 
 class AccountOut(BaseModel):

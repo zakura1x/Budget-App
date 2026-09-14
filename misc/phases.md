@@ -6,10 +6,10 @@
 - **Duration**: 13–15 weeks (re-estimated 2026-09-11; was 9–11 when v1 had
   ~100 features — it now has 184, after projection, card bills, the statement check and
   balance adjustments were added 2026-09-13)
-- **Planned**: Sep 14 – Dec 18, 2026 (96 days), plus ~2 weeks of buffer
+- **Planned**: Sep 14 – Dec 20, 2026 (98 days), plus ~2 weeks of buffer
 - **Built so far**: Phases 1 and 2, both on 2026-09-11 — crypto core, database,
   schema `ZBDGT` created, sign-in / lock / recovery. 212 tests
-- **Usable**: after Phase 5 (~Oct 30). Backups start in Phase 8a (~Dec 1);
+- **Usable**: after Phase 5 (~Oct 30). Backups start in Phase 8a (~Dec 3);
   until then the company database is your only copy
 - **Team**: 1 solo developer
 - **Strategy**: backend and frontend developed simultaneously, per feature
@@ -49,8 +49,8 @@ gantt
     section Phase 5b Cards and Balance Adjustments
     Bills, statement check, adjustments :e3, after e1, 5d
     section Phase 6 Calendar and Stats
-    BE - aggregation, forecast         :f1, after e3, 7d
-    FE - heatmap, charts               :f2, after e3, 7d
+    BE - aggregation, forecast, tags   :f1, after e3, 9d
+    FE - heatmap, charts, tags         :f2, after e3, 9d
     section Phase 7 Recurring, Subscriptions, Installments
     BE - one rule engine, projection   :g1, after f1, 13d
     FE - recurring, subs, projection   :g2, after f2, 13d
@@ -884,6 +884,11 @@ Verify:
 >   `today`, like `/budgets`.
 > - **An adjustment can't be entered, repeated or edited.** The ledger shows
 >   it read-only with Delete. `POST /transactions` refuses the type.
+> - **Changed by the user's decisions, 2026-09-14:** a refund after the close
+>   reduces what is left to pay on the bill, and the posting window became
+>   each card's own "Bank posting delay" setting. Adjustments stay out of the
+>   budget (briefly changed to count losses as spending, then changed back). Every other proposed default in
+>   FEATURES §13 and §20-22 was confirmed.
 >
 > Not verified against SQL Server: nothing here changes the schema - only
 > fields inside existing encrypted payloads.
@@ -933,14 +938,15 @@ Day 3:
        else txn_date. The BUDGET always uses txn_date.
     ✅ A difference can be split across choices; "leave it" stores nothing
     ✅ A LOWER bank total is never offered as interest
-    ✅ CARD_POSTING_LAG_DAYS (default 3) in config
+    ✅ Posting delay per card (posting_lag_days, 0-10) - a new card starts
+       at CARD_POSTING_LAG_DAYS (3); editable in the account sheet
 
 Day 5:
   Balance adjustments (ACC-27..30):
     ✅ Transaction type 'adjustment': one account, one split with
        category_id null. Balance, cash on hand and the statement amount
-       include it; budget, allowance, stats and card limit EXCLUDE it by
-       type. Find every place that filters on type.
+       include it; budget, allowance, day totals, stats and card limit
+       EXCLUDE it by type - confirmed 2026-09-14.
     ✅ PATCH /accounts/{id} with a balance that differs from the derived one
        -> 409 BALANCE_DIFFERS carrying the difference. NOTHING is saved.
     ✅ Resubmit with balance_action:
@@ -1008,7 +1014,7 @@ Verify:
 
 ---
 
-## 📦 PHASE 6: Calendar & Stats (Nov 5 – Nov 11 · 7 days)
+## 📦 PHASE 6: Calendar, Stats & Tags (Nov 5 – Nov 13 · 9 days)
 
 ### 🎯 Objective: Everything SQL would normally compute, computed in Python
 
@@ -1029,13 +1035,23 @@ Days 4-5:
        split count are different numbers - be deliberate about which
        one each chart reports.
     ☐ ★ Exclude investment revaluations from income/spending (ACC-12)
-    ☐ ★ Exclude balance adjustments too (ACC-29) - shown only as their
-       own Adjustments total
+    ☐ ★ Exclude balance adjustments too (ACC-29) - losses and gains show
+       only as their own Adjustments total, never as spending or income
     ☐ Category breakdown (pie), with sub-category drill-down
     ☐ Spending trend over time (line)
     ☐ Month-over-month comparison
     ☐ Top merchants, average daily spend, income vs expense
     ☐ ★ All of it over the warm cache - profile it, keep it under 50ms
+
+Days 8-9:
+  Tags (TXN-10, moved here 2026-09-14):
+    ☐ tag_service + repository - name, colour. The `tags` table has existed
+       since Phase 1; every payload has carried an empty tag_ids since Phase 4.
+    ☐ transaction_service validates tag_ids against the user's tags - no
+       foreign key is possible, the same rule as category_id
+    ☐ ★ Deleting a tag walks every transaction and drops the id (CAT-08's
+       rule: no FK can protect it, so the service must)
+    ☐ Ledger filter by tag; spending by tag in stats
 ```
 
 ### Frontend Tasks
@@ -1058,6 +1074,12 @@ Days 4-5:
        Same trend data as the line chart - a calculation, not plumbing.
     ☐ Top merchants list
     ☐ Consistent chart palette - same category colour everywhere in the app
+
+Days 8-9:
+  Tags:
+    ☐ Tag chips in the add sheet, one tap away beside "Add note" - never in
+       the way of two taps and a number
+    ☐ Tag manager under More; tag filter in the ledger
 ```
 
 ### 🔗 Integration Points
@@ -1067,15 +1089,18 @@ Days 4-5:
   GET /api/v1/stats/categories   ?from&to
   GET /api/v1/stats/trend        ?from&to&granularity
   GET /api/v1/stats/comparison   ?period
+  GET /api/v1/stats/tags         ?from&to
+  GET/POST/PATCH/DELETE /api/v1/tags
 
 Verify:
   ☐ Category colours match between the pie, the ledger and the budget bars
   ☐ Stats over a full year of data stay under 50ms warm
+  ☐ Deleting a tag leaves no transaction pointing at it
 ```
 
 ---
 
-## 📦 PHASE 7: Recurring, Subscriptions, Installments & Projection (Nov 12 – Nov 24 · 13 days)
+## 📦 PHASE 7: Recurring, Subscriptions, Installments & Projection (Nov 14 – Nov 26 · 13 days)
 
 ### 🎯 Objective: Money that moves without you touching the app
 
@@ -1212,7 +1237,7 @@ Verify:
 
 ---
 
-## 📦 PHASE 8: Backup, Settings & PWA — in two halves (Nov 25 – Dec 8 · 14 days)
+## 📦 PHASE 8: Backup, Settings & PWA — in two halves (Nov 27 – Dec 10 · 14 days)
 
 ### 🎯 Objective: Data portability, preferences, and a real home-screen app
 
@@ -1222,8 +1247,8 @@ Verify:
 >
 > | Half | Dates | Covers |
 > |---|---|---|
-> | **8a — Backup & restore** | Nov 25 – Dec 1 · 7 days | CSV import/export, attachments, the full encrypted backup, ID remapping, automatic backup, the round-trip test, the backup screen |
-> | **8b — Settings, goals & PWA** | Dec 2 – Dec 8 · 7 days | Settings, recovery-phrase screens, savings goals, account deletion, PWA and offline |
+> | **8a — Backup & restore** | Nov 27 – Dec 3 · 7 days | CSV import/export, attachments, the full encrypted backup, ID remapping, automatic backup, the round-trip test, the backup screen |
+> | **8b — Settings, goals & PWA** | Dec 4 – Dec 10 · 7 days | Settings, recovery-phrase screens, savings goals, account deletion, PWA and offline |
 >
 > **8a goes first** because the round-trip test (DAT-14) must pass before the
 > app holds data you would hate to lose, and it should not share its slot
@@ -1358,7 +1383,7 @@ Verify:
 
 ---
 
-## 📦 PHASE 9: Hardening, Rotation & Deployment (Dec 9 – Dec 18 · 10 days)
+## 📦 PHASE 9: Hardening, Rotation & Deployment (Dec 11 – Dec 20 · 10 days)
 
 ### 🎯 Objective: Make it survivable — key rotation, backups, and a real deploy
 
@@ -1448,7 +1473,7 @@ scripts/
 | 4 | Transactions, cache | Numpad sheet, ledger | **You can actually track spending** |
 | 5 | Budgets, daily allowance | Home ring | **The app becomes useful** |
 | 5b | Card bill left to pay, own spending limit, statement check, balance adjustments | Card tile, add-sheet hint, banners, check sheet, balance ask sheet | Cards you can't overspend on by surprise, bills that match the bank, balances you can correct honestly |
-| 6 | Calendar, stats | Heatmap, charts | Insight |
+| 6 | Calendar, stats, tags | Heatmap, charts, tag chips | Insight |
 | 7 | Recurring, subscriptions, installments, projection | Recurring, subs, installment + projection screens | Automation, and the months ahead |
 | 8a | Full backup, ID remap, CSV | Backup screen, CSV screens | **Your data exists outside the company DB** |
 | 8b | Settings, goals, account deletion | Settings, PWA, goals | Installable, configurable |
@@ -1496,7 +1521,7 @@ scripts/
 - ✅ Splits: amount == sum of splits, Decimal-exact
 - ✅ Numpad sheet: two taps and a number; repeat last entry
 - ✅ Working-set cache warm and write-through, dropped with the key
-- ☐ Tags (TXN-10) - payload shape kept, management not built
+- ☐ Tags (TXN-10) - payload shape kept, management moved to Phase 6 (2026-09-14)
 
 ### Phase 5 · Oct 23 – Oct 30 · 8 days: Budgets — the app becomes usable — built 2026-09-13
 - ✅ Daily allowance correct in both modes; carry-over toggle
@@ -1511,11 +1536,12 @@ scripts/
 - ✅ Enter the bank's total, explain the difference, statement shows ✅ Checked
 - ✅ Editing a balance asks first; the audit trail exists only when accepted
 
-### Phase 6 · Nov 5 – Nov 11 · 7 days: Calendar & Stats
+### Phase 6 · Nov 5 – Nov 13 · 9 days: Calendar, Stats & Tags
 - ☐ Heatmap, charts and forecast over the warm cache
 - ☐ Consistent category colours app-wide
+- ☐ Tags: add, assign, filter, delete without leaving orphans
 
-### Phase 7 · Nov 12 – Nov 24 · 13 days: Recurring, Subscriptions, Installments & Projection
+### Phase 7 · Nov 14 – Nov 26 · 13 days: Recurring, Subscriptions, Installments & Projection
 - ☐ Catch-up expansion idempotent across a 10-day gap
 - ☐ One engine for all three kinds - nothing ever posts twice
 - ☐ Installment: 36 payments -> remaining exactly 0, no 37th
@@ -1524,19 +1550,19 @@ scripts/
 - ☐ Installment from price + months, interest confirmed by the first bill,
   every payment split into price and interest
 
-### Phase 8a · Nov 25 – Dec 1 · 7 days: Backup & Restore
+### Phase 8a · Nov 27 – Dec 3 · 7 days: Backup & Restore
 - ☐ **Round-trip test passes: export -> empty DB -> export, identical**
 - ☐ Restore works with the recovery phrase alone (no .env)
 - ☐ Automatic backup fires 5 minutes after a change
 - ☐ CSV round-trip, with the plaintext export warning
 
-### Phase 8b · Dec 2 – Dec 8 · 7 days: Settings, Goals & PWA
+### Phase 8b · Dec 4 – Dec 10 · 7 days: Settings, Goals & PWA
 - ☐ Recovery phrase view / regenerate, DEK rotation offered honestly
 - ☐ Savings goals, progress derived from real transfers
 - ☐ Installed to iPhone home screen, standalone
 - ☐ Offline shows no figures; nothing decrypted in browser storage
 
-### Phase 9 · Dec 9 – Dec 18 · 10 days: Hardening & Deploy
+### Phase 9 · Dec 11 – Dec 20 · 10 days: Hardening & Deploy
 - ☐ Master-key rotation rehearsed on a copy
 - ☐ **Backup restored successfully at least once**
 - ☐ Deployed at https://delca.noahapplication.com/ZBDGT, one worker
@@ -1637,9 +1663,6 @@ Found while building Phase 5b (2026-09-14):
   - Card banners (bill due, spending limit) arrive with the budget status,
     so someone with no budget gets none. card_due always worked this way;
     fix it if anyone tracks cards without a budget.
-  - "Paid since the close" counts payments (transfers into the card) only.
-    A refund after the close does not reduce what is left to pay, although
-    some banks apply it that way.
   - A statement that differs from the bank shows on the card, but raises no
     banner on Home.
   - "A purchase I forgot" opens the ordinary add sheet dated today; the user

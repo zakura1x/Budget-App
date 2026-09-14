@@ -84,6 +84,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   const [dueDay, setDueDay] = useState('');
   const [limit, setLimit] = useState('');
   const [ownLimit, setOwnLimit] = useState('');
+  const [lag, setLag] = useState('3');
   const [value, setValue] = useState('');
   const [question, setQuestion] = useState<BalanceQuestion | null>(null);
   const [balanceNote, setBalanceNote] = useState('');
@@ -112,6 +113,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       setDueDay(account.credit ? String(account.credit.payment_due_day) : '');
       setLimit(account.credit?.limit ?? '');
       setOwnLimit(account.credit?.spending_limit ?? '');
+      setLag(account.credit ? String(account.credit.posting_lag_days) : '3');
     } else {
       setType('cash');
       setName('');
@@ -124,6 +126,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       setDueDay('5');
       setLimit('');
       setOwnLimit('');
+      setLag('3');
     }
   }, [open, account]);
 
@@ -149,6 +152,8 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
               payment_due_day: Number(dueDay) || 1,
               credit_limit: limit.trim() ? toDecimalString(limit.trim()) : null,
               spending_limit: ownLimit.trim() ? toDecimalString(ownLimit.trim()) : null,
+              // Empty keeps what the card has (or the default for a new one).
+              ...(lag.trim() ? { posting_lag_days: Number(lag) } : {}),
             }
           : {}),
       };
@@ -250,7 +255,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
               Record as unrecorded {loss ? 'loss' : 'gain'}
             </Button>
             <p className="mt-1.5 text-center text-footnote text-ink-3">
-              On the ledger from today, with a record of before and after. Not spending or income.
+              On the ledger from today, with a record of before and after. Your budget stays the same.
             </p>
           </div>
           <div>
@@ -381,6 +386,15 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
               placeholder="10,000.00"
               hint="Per statement cycle — what you allow yourself. You are warned, never blocked."
             />
+            <TextField
+              label="Bank posting delay"
+              value={lag}
+              onChange={(e) => setLag(e.target.value.replace(/\D/g, '').slice(0, 2))}
+              inputMode="numeric"
+              placeholder="3"
+              error={lag.trim() && Number(lag) > 10 ? 'Up to 10 days' : null}
+              hint="Days your bank can take to record a purchase, 0–10. When a statement looks short, purchases this close to the closing day are suggested as posted late."
+            />
           </div>
         )}
 
@@ -437,7 +451,12 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
 
         {error && <p className="text-footnote text-danger">{error}</p>}
 
-        <Button block size="lg" onClick={() => void save()} disabled={busy || !name.trim()}>
+        <Button
+          block
+          size="lg"
+          onClick={() => void save()}
+          disabled={busy || !name.trim() || (type === 'credit' && Number(lag || '0') > 10)}
+        >
           {editing ? 'Save changes' : 'Add account'}
         </Button>
 
