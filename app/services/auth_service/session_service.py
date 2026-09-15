@@ -21,7 +21,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.crypto.dek import wrap_dek
+from app.core.crypto.dek import wrap_dek, wrapped_key_version
 from app.core.crypto.keyring import MasterKeyring, get_master_keyring
 from app.core.crypto.session_keys import get_session_keyring
 from app.core.exceptions import AuthenticationException, SessionRevokedException
@@ -55,12 +55,16 @@ def start_session(db: Session, user: User, dek: bytearray, keyring: Optional[Mas
     the keyring zeroes the caller's buffer.
 
     Also the lazy half of a master-key rotation: a DEK still wrapped under a
-    retired version is re-wrapped under the current one here, at sign-in.
+    retired version is re-wrapped under the current one here, at sign-in
+    (scripts/rotate_keys.py --rewrap is the eager half).
+
+    The WRAP's version is what is compared and moved. users.key_version is not
+    touched: it names the version profile_enc was sealed under - part of that
+    ciphertext's AAD - and changing it would leave the profile unreadable.
     """
     keyring = keyring or get_master_keyring()
-    if user.key_version != keyring.current_version:
+    if wrapped_key_version(bytes(user.dek_wrapped)) != keyring.current_version:
         user.dek_wrapped = wrap_dek(dek, keyring, user.id)
-        user.key_version = keyring.current_version
     session_id = new_session_id()
     raw, token_hash = new_refresh_token()
     TokenRepository(db).add(user_id=user.id, token_hash=token_hash, family_id=session_id, expires_at=_refresh_expiry())
