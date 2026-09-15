@@ -21,6 +21,13 @@ moment you look, and returned in the same response as the figures it is about.
                             its statement cycle is passing (ACC-22)
     subscription_due        a subscription charges within its      warn
                             reminder days (SUB-06)
+    statement_differs       a card's last statement was checked    warn
+                            against the bank and does not match
+                            (ACC-24)
+
+The account alerts - every kind from card_due down - come from
+account_alerts(), and are raised whether or not a budget exists: someone who
+only tracks a card still needs to hear that its bill is due (Phase 10).
 
 The card-limit checks are the budget's own rules applied to a card's statement
 cycle instead of the budget period - same threshold, same pace tolerance.
@@ -60,6 +67,13 @@ class SubscriptionDue:
 
 
 @dataclass(frozen=True)
+class StatementDiffers:
+    """ACC-24. A card whose last closed statement has a bank total that is not the app's."""
+
+    account_id: int
+
+
+@dataclass(frozen=True)
 class CategoryUse:
     category_id: int
     allocated: Decimal
@@ -94,6 +108,7 @@ def budget_alerts(
     cards_due: Iterable[CardDue] = (),
     card_limits: Iterable[CardLimit] = (),
     subscriptions_due: Iterable[SubscriptionDue] = (),
+    statements_differ: Iterable[StatementDiffers] = (),
 ) -> List[Alert]:
     alerts: List[Alert] = []
     available, spent = allowance.available, allowance.spent
@@ -120,19 +135,42 @@ def budget_alerts(
                 alerts.append(Alert("category_over", "danger", "This category is over its budget",
                                     category_id=use.category_id))
 
+    alerts.extend(account_alerts(
+        cards_due=cards_due, card_limits=card_limits, subscriptions_due=subscriptions_due,
+        statements_differ=statements_differ,
+        warn_pct=warn_pct, pace_enabled=pace_enabled, pace_tolerance_pct=pace_tolerance_pct,
+    ))
+    return alerts
+
+
+def _when(days: int) -> str:
+    return "today" if days == 0 else f"in {days} day{'s' if days != 1 else ''}"
+
+
+def account_alerts(
+    *,
+    cards_due: Iterable[CardDue] = (),
+    card_limits: Iterable[CardLimit] = (),
+    subscriptions_due: Iterable[SubscriptionDue] = (),
+    statements_differ: Iterable[StatementDiffers] = (),
+    warn_pct: int = 80,
+    pace_enabled: bool = True,
+    pace_tolerance_pct: int = 10,
+) -> List[Alert]:
+    """The alerts about accounts rather than the budget - they need no budget to exist."""
+    alerts: List[Alert] = []
     for card in card_limits:
         alerts.extend(card_limit_alerts(card, warn_pct=warn_pct, pace_enabled=pace_enabled,
                                         pace_tolerance_pct=pace_tolerance_pct))
-
     for card in cards_due:
-        when = "today" if card.due_in_days == 0 else f"in {card.due_in_days} day{'s' if card.due_in_days != 1 else ''}"
-        alerts.append(Alert("card_due", "warn", f"A card payment is due {when}", account_id=card.account_id))
-
+        alerts.append(Alert("card_due", "warn", f"A card payment is due {_when(card.due_in_days)}",
+                            account_id=card.account_id))
+    for statement in statements_differ:
+        alerts.append(Alert("statement_differs", "warn", "A card's statement does not match the bank's total",
+                            account_id=statement.account_id))
     for sub in subscriptions_due:
-        when = "today" if sub.due_in_days == 0 else f"in {sub.due_in_days} day{'s' if sub.due_in_days != 1 else ''}"
-        alerts.append(Alert("subscription_due", "warn", f"{sub.name} charges {when}",
+        alerts.append(Alert("subscription_due", "warn", f"{sub.name} charges {_when(sub.due_in_days)}",
                             account_id=sub.account_id, rule_id=sub.rule_id))
-
     return alerts
 
 

@@ -123,6 +123,9 @@ class StatusOut(BaseModel):
 
 class StatusEnvelope(BaseModel):
     status: Optional[StatusOut]
+    # Today's alerts. With a budget, the same list as status.alerts; without one,
+    # the account alerts - a card's bill, a subscription - which need no budget.
+    alerts: List[AlertOut] = []
 
 
 class ProgressOut(BaseModel):

@@ -243,7 +243,7 @@ def test_budget_status_needs_an_unlocked_session(api):
 
 def test_the_home_payload_through_the_api(api):
     wallet, food = api_setup(api)
-    assert api.get("/budgets/current?today=2026-09-13").json() == {"status": None}
+    assert api.get("/budgets/current?today=2026-09-13").json() == {"status": None, "alerts": []}
 
     created = api.post("/budgets?today=2026-09-13", {"period": "monthly", "amount": "30000.00",
                                                      "allocations": [{"category_id": food, "amount": "9000.00"}]})

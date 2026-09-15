@@ -30,11 +30,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional
 
-logger = logging.getLogger(__name__)
-
 from app.core.crypto.dek import zero
 from app.core.crypto.envelope import KEY_BYTES
 from app.core.crypto.user_cipher import UserCipher
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

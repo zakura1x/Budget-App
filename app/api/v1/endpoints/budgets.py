@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.budgets import (
+    AlertOut,
     BudgetEnvelope,
     BudgetIn,
     BudgetOut,
@@ -58,7 +59,12 @@ def current(
 ) -> StatusEnvelope:
     """The home screen payload: allowance, per-category progress and alerts, in one response."""
     result = budget_service.status(db, ctx.cipher, today=today, on=on)
-    return StatusEnvelope(status=StatusOut.model_validate(result) if result else None)
+    if result is None:
+        # No budget - but a card's bill or a subscription still deserves a banner.
+        alerts = budget_service.standalone_alerts(db, ctx.cipher, today=today)
+        return StatusEnvelope(status=None, alerts=[AlertOut.model_validate(a) for a in alerts])
+    return StatusEnvelope(status=StatusOut.model_validate(result),
+                          alerts=[AlertOut.model_validate(a) for a in result.alerts])
 
 
 @router.patch("/{budget_id}", response_model=BudgetOut)

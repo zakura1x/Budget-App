@@ -110,6 +110,7 @@ export function TransactionSheet() {
   const editing = useUiStore((s) => s.editing);
   const close = useUiStore((s) => s.closeAddSheet);
   const addOn = useUiStore((s) => s.addOn);
+  const addPreset = useUiStore((s) => s.addPreset);
   const ledger = useLedgerStore();
 
   const [kind, setKind] = useState<EntryType>('expense');
@@ -143,9 +144,12 @@ export function TransactionSheet() {
         setTree(categories);
         setTags(tagList);
         if (!editing) {
-          // The account you used last is the account you are about to use.
+          // The screen that opened the sheet may know the account ("a purchase I
+          // forgot" on a card); otherwise the account you used last is the one.
+          const preset = addPreset?.accountId;
           const recent = ledger.items.find((row) => row.id > 0)?.account_id;
-          setAccountId(active.some((a) => a.id === recent) ? (recent ?? null) : (active[0]?.id ?? null));
+          const chosen = [preset, recent].find((id) => id !== undefined && active.some((a) => a.id === id));
+          setAccountId(chosen ?? active[0]?.id ?? null);
           setCounterId(active[1]?.id ?? null);
         }
       })
@@ -175,7 +179,7 @@ export function TransactionSheet() {
           : [],
       );
     } else {
-      setKind('expense');
+      setKind(addPreset?.type ?? 'expense');
       setTyped('0');
       setCategoryId(null);
       setTxnDate(addOn ?? localToday());

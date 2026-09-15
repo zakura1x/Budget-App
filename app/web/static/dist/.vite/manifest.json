@@ -1,11 +1,83 @@
 {
   "index.html": {
-    "file": "assets/index-DaFCjELP.js",
+    "file": "assets/index-CItEHRLH.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
+    "dynamicImports": [
+      "src/screens/AboutEncryption.tsx",
+      "src/screens/Admin.tsx",
+      "src/screens/Backup.tsx",
+      "src/screens/Goals.tsx",
+      "src/screens/Projection.tsx",
+      "src/screens/Recurring.tsx",
+      "src/screens/Stats.tsx"
+    ],
     "css": [
       "assets/index-6IW6ykps.css"
+    ]
+  },
+  "src/screens/AboutEncryption.tsx": {
+    "file": "assets/AboutEncryption-BR3ZVzbF.js",
+    "name": "AboutEncryption",
+    "src": "src/screens/AboutEncryption.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/screens/Admin.tsx": {
+    "file": "assets/Admin-DXLC7LiK.js",
+    "name": "Admin",
+    "src": "src/screens/Admin.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/screens/Backup.tsx": {
+    "file": "assets/Backup-CorFdgpT.js",
+    "name": "Backup",
+    "src": "src/screens/Backup.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/screens/Goals.tsx": {
+    "file": "assets/Goals-BtOQ6mj5.js",
+    "name": "Goals",
+    "src": "src/screens/Goals.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/screens/Projection.tsx": {
+    "file": "assets/Projection-CBQ9v_sD.js",
+    "name": "Projection",
+    "src": "src/screens/Projection.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/screens/Recurring.tsx": {
+    "file": "assets/Recurring-DYbkCuC5.js",
+    "name": "Recurring",
+    "src": "src/screens/Recurring.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/screens/Stats.tsx": {
+    "file": "assets/Stats-BFR_R7dJ.js",
+    "name": "Stats",
+    "src": "src/screens/Stats.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
     ]
   }
 }

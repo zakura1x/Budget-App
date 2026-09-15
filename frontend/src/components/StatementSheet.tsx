@@ -7,9 +7,11 @@
  * difference is. The app suggests; nothing is recorded without a tap:
  *
  *   higher  a fee or interest (posts to the card on the closing date) ·
- *           a purchase I forgot (the ordinary add sheet) · leave it
+ *           a purchase I forgot (the add sheet, on this card, dated the
+ *           closing day) · leave it
  *   lower   a purchase the bank posted on the next statement (moves it; the
- *           budget keeps its date) · a refund I forgot · leave it
+ *           budget keeps its date) · a refund I forgot (the add sheet, as
+ *           income on this card, dated the closing day) · leave it
  *
  * A lower total is never offered as interest. A difference can be explained in
  * parts: each answer comes back as the statement now stands, with what is left.
@@ -126,9 +128,12 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
     setBusy(false);
   };
 
-  const forgot = () => {
+  // Phase 10: the entry starts on this card, dated the closing day - the last
+  // day that puts it on this statement - so nobody has to set either by hand.
+  const forgot = (type: 'expense' | 'income') => {
+    const on = data?.statement.closes ?? undefined;
     onClose();
-    openAddSheet();
+    openAddSheet(undefined, on, { accountId: account?.id, type });
   };
 
   if (!account || !closes) return null;
@@ -281,8 +286,8 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                     )}
                     <Choice
                       title="A purchase I forgot"
-                      hint={`Add it on this card, dated on or before ${day(statement.closes)}.`}
-                      onClick={forgot}
+                      hint={`Opens on this card, dated ${day(statement.closes)} - change the day if you know it.`}
+                      onClick={() => forgot('expense')}
                       disabled={busy}
                     />
                   </>
@@ -301,8 +306,8 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                     ))}
                     <Choice
                       title="A refund I haven’t entered"
-                      hint="Add it as income on this card."
-                      onClick={forgot}
+                      hint={`Opens as income on this card, dated ${day(statement.closes)}.`}
+                      onClick={() => forgot('income')}
                       disabled={busy}
                     />
                   </>

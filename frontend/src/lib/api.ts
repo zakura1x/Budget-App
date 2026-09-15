@@ -142,12 +142,37 @@ async function send(path: string, options: RequestOptions, parseOk: boolean) {
     (code === 'TOKEN_EXPIRED' || code === 'AUTH_REQUIRED') &&
     !NO_REFRESH.some((p) => path.startsWith(p))
   ) {
-    if (await refreshSession()) {
-      response = await attempt();
+    const recovered = await recoverSession(attempt);
+    if (recovered) {
+      response = recovered;
       payload = await read(response);
     }
   }
   return { response, payload };
+}
+
+const REFRESH_LOCK = 'zbdgt-session-refresh';
+
+/**
+ * A fresh session, then the request again - without two TABS refreshing at
+ * once. Tabs share one refresh cookie, and if two sent it together the second
+ * would look like a replayed token and end the session (SEC-06). The Web Locks
+ * API makes tabs take turns: a tab that had to wait retries its request first,
+ * because the tab before it has already put fresh cookies in the shared jar.
+ * A browser without Web Locks (iOS Safari before 15.4) keeps the one-tab
+ * behaviour, which `refreshSession` already covers.
+ */
+async function recoverSession(retry: () => Promise<Response>): Promise<Response | null> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  if (!locks) return (await refreshSession()) ? retry() : null;
+  return locks.request(REFRESH_LOCK, { ifAvailable: true }, async (lock) => {
+    if (lock) return (await refreshSession()) ? retry() : null;
+    return locks.request(REFRESH_LOCK, async () => {
+      const again = await retry();
+      if (again.status !== 401) return again;
+      return (await refreshSession()) ? retry() : null;
+    });
+  });
 }
 
 function toError(path: string, response: Response, payload: Record<string, unknown> | null): ApiError {

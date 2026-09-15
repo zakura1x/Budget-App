@@ -55,7 +55,9 @@ from app.services.budget_service.alerts import (
     CardDue,
     CardLimit,
     CategoryUse,
+    StatementDiffers,
     SubscriptionDue,
+    account_alerts,
     budget_alerts,
 )
 from app.services.budget_service.allowance import (
@@ -174,7 +176,7 @@ def status(
     is_current = period.covers(today)
     alerts: List[Alert] = []
     if settings.ALERT_ENABLED and is_current:
-        cards_due, card_limits = _card_alerts(db, cipher, today)
+        cards_due, card_limits, statements_differ = _card_alerts(db, cipher, today)
         alerts = budget_alerts(
             allowance,
             warn_pct=int(prefs.get("alert_warn_threshold_pct") or settings.ALERT_WARN_THRESHOLD_PCT),
@@ -185,6 +187,7 @@ def status(
             cards_due=cards_due,
             card_limits=card_limits,
             subscriptions_due=_subscriptions_due(db, cipher, today),
+            statements_differ=statements_differ,
         )
 
     return BudgetStatus(
@@ -199,6 +202,28 @@ def status(
         allocated=allocated,
         unallocated=(amount or ZERO) - allocated,
         alerts=alerts,
+    )
+
+
+def standalone_alerts(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> List[Alert]:
+    """
+    Phase 10. The account alerts - a card's bill or limit, a statement that
+    does not match the bank, a subscription about to charge - for someone with
+    NO budget. With a budget, status() carries exactly these inside its alerts.
+    """
+    if not settings.ALERT_ENABLED:
+        return []
+    today = today or date.today()
+    prefs = _preferences(db, cipher)
+    cards_due, card_limits, statements_differ = _card_alerts(db, cipher, today)
+    return account_alerts(
+        cards_due=cards_due,
+        card_limits=card_limits,
+        statements_differ=statements_differ,
+        subscriptions_due=_subscriptions_due(db, cipher, today),
+        warn_pct=int(prefs.get("alert_warn_threshold_pct") or settings.ALERT_WARN_THRESHOLD_PCT),
+        pace_enabled=bool(prefs.get("alert_pace_enabled", settings.ALERT_PACE_ENABLED)),
+        pace_tolerance_pct=settings.ALERT_PACE_TOLERANCE_PCT,
     )
 
 
@@ -457,11 +482,15 @@ def _category_progress(
     return sorted(progress, key=lambda p: (-p.used_ratio, p.category_id))
 
 
-def _card_alerts(db: Session, cipher: UserCipher, today: date) -> Tuple[List[CardDue], List[CardLimit]]:
+def _card_alerts(
+    db: Session, cipher: UserCipher, today: date
+) -> Tuple[List[CardDue], List[CardLimit], List[StatementDiffers]]:
     """
     The cards worth a banner. A reminder keys on what the next payment still
     owes (ACC-20) - so paying the bill silences it even while new purchases
     sit on the next statement. A limit is checked on its own cycle (ACC-22).
+    A last statement whose bank total was entered and does not match raises
+    one too (ACC-24) - until the difference is explained or the total fixed.
     """
     views = account_service.list_accounts(
         db, cipher, postings=transaction_service.postings(db, cipher), today=today, include_archived=False
@@ -473,7 +502,11 @@ def _card_alerts(db: Session, cipher: UserCipher, today: date) -> Tuple[List[Car
                   v.credit.period_days_elapsed, v.credit.period_days)
         for v in cards if v.credit.spending_limit is not None
     ]
-    return due, limits
+    differ = [
+        StatementDiffers(v.id)
+        for v in cards if v.credit.bill.difference is not None and v.credit.bill.difference != ZERO
+    ]
+    return due, limits, differ
 
 
 def _subscriptions_due(db: Session, cipher: UserCipher, today: date) -> List[SubscriptionDue]:

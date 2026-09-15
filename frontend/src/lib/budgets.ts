@@ -75,7 +75,8 @@ export interface Alert {
     | 'card_limit_over'
     | 'card_limit_approaching'
     | 'card_limit_pace'
-    | 'subscription_due';
+    | 'subscription_due'
+    | 'statement_differs';
   severity: 'danger' | 'warn';
   message: string;
   category_id: number | null;
@@ -127,7 +128,8 @@ export interface Preferences {
 const today = () => `today=${localToday()}`;
 
 export const getStatus = (on?: string | null, signal?: AbortSignal) =>
-  api<{ status: BudgetStatus | null }>(`/budgets/current?${today()}${on ? `&on=${on}` : ''}`, { signal });
+  // `alerts` are today's: without a budget, still a card's bill or a subscription.
+  api<{ status: BudgetStatus | null; alerts: Alert[] }>(`/budgets/current?${today()}${on ? `&on=${on}` : ''}`, { signal });
 
 export const getBudget = (signal?: AbortSignal) => api<{ budget: Budget | null }>(`/budgets?${today()}`, { signal });
 

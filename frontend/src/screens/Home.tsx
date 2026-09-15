@@ -51,8 +51,8 @@ function toneOf(status: BudgetStatus): Tone {
   return toneFor(ratio(a.used_ratio));
 }
 
-function alertText(alert: Alert, status: BudgetStatus, lookups: Lookups): string {
-  if (alert.kind === 'over') return `You are ${formatPHP(status.allowance.over_by)} over this period's budget.`;
+function alertText(alert: Alert, status: BudgetStatus | null, lookups: Lookups): string {
+  if (alert.kind === 'over' && status) return `You are ${formatPHP(status.allowance.over_by)} over this period's budget.`;
   if (alert.kind === 'category_over') {
     const name = lookups.categoryById.get(alert.category_id ?? -1)?.name ?? 'A category';
     return `${name} is over its budget.`;
@@ -71,13 +71,14 @@ function alertText(alert: Alert, status: BudgetStatus, lookups: Lookups): string
     return left ? `${name}: ${formatPHP(left)} left of your limit this cycle.` : `${name} is close to your limit.`;
   }
   if (alert.kind === 'card_limit_pace') return `${name} is being spent faster than its cycle is passing.`;
+  if (alert.kind === 'statement_differs') return `${name}: the last statement doesn’t match the bank’s total. Check it under Accounts.`;
   return `${alert.message}.`;
 }
 
-function AlertBanner({ status, lookups }: { status: BudgetStatus; lookups: Lookups }) {
-  const [first, ...rest] = status.alerts;
+function AlertBanner({ alerts, status, lookups }: { alerts: Alert[]; status: BudgetStatus | null; lookups: Lookups }) {
+  const [first, ...rest] = alerts;
   if (!first) return null;
-  const danger = status.alerts.some((a) => a.severity === 'danger');
+  const danger = alerts.some((a) => a.severity === 'danger');
   return (
     <div
       role="status"
@@ -198,7 +199,7 @@ export function Home() {
   const navigate = useNavigate();
   const name = useAuthStore((s) => s.session?.user.display_name);
   const { items, filters, load, error } = useLedgerStore();
-  const { status, loaded, load: loadBudget, error: budgetError } = useBudgetStore();
+  const { status, alerts, loaded, load: loadBudget, error: budgetError } = useBudgetStore();
   const openSheet = useUiStore((s) => s.openAddSheet);
   const lookups = useLookups();
   const [, setTick] = useState(0);
@@ -246,7 +247,9 @@ export function Home() {
         }
       />
 
-      {status?.is_current && <AlertBanner status={status} lookups={lookups} />}
+      {status
+        ? status.is_current && <AlertBanner alerts={status.alerts} status={status} lookups={lookups} />
+        : <AlertBanner alerts={alerts} status={null} lookups={lookups} />}
       {(error || budgetError) && (
         <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error ?? budgetError}</p>
       )}

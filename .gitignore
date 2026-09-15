@@ -72,6 +72,8 @@ yarn-error.log*
 logs/
 uploads/
 temp_uploads/
+# scripts/make_release.py output - rebuilt from a commit, never committed
+release/
 *.log
 *.db
 *.sqlite3

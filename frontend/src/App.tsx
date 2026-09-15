@@ -11,14 +11,11 @@
  * Routes are relative to BASE_URL (/ZBDGT); a refresh on /ZBDGT/stats lands
  * back on Stats through the server's SPA fallback.
  */
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { BottomTabBar } from './components/BottomTabBar';
 import { Offline } from './components/Offline';
 import { useOnline } from './hooks/useOnline';
-import { AboutEncryption } from './screens/AboutEncryption';
-import { Admin } from './screens/Admin';
-import { Goals } from './screens/Goals';
 import { usePreferencesStore } from './stores/preferencesStore';
 import { Splash } from './components/Splash';
 import { TransactionSheet } from './components/TransactionSheet';
@@ -26,7 +23,6 @@ import { useAutoLock } from './hooks/useAutoLock';
 import { LOCKED_EVENT, SIGNED_OUT_EVENT } from './lib/api';
 import { BASE_URL } from './lib/config';
 import { Accounts } from './screens/Accounts';
-import { Backup } from './screens/Backup';
 import { Budget } from './screens/Budget';
 import { Calendar } from './screens/Calendar';
 import { Categories } from './screens/Categories';
@@ -40,14 +36,22 @@ import { PinSetup } from './screens/PinSetup';
 import { Register } from './screens/Register';
 import { ResetPassword } from './screens/ResetPassword';
 import { Settings } from './screens/Settings';
-import { Projection } from './screens/Projection';
-import { Recurring } from './screens/Recurring';
-import { Stats } from './screens/Stats';
 import { Tags } from './screens/Tags';
 import { useAuthStore } from './stores/authStore';
 import { useBudgetStore } from './stores/budgetStore';
 import { useLedgerStore } from './stores/ledgerStore';
 import { useUiStore } from './stores/uiStore';
+
+// Loaded when first opened (Phase 10): Stats carries recharts, the largest
+// dependency, and the rest are visited rarely. Everything on the way to Home
+// and the add sheet stays in the main bundle.
+const AboutEncryption = lazy(() => import('./screens/AboutEncryption').then((m) => ({ default: m.AboutEncryption })));
+const Admin = lazy(() => import('./screens/Admin').then((m) => ({ default: m.Admin })));
+const Backup = lazy(() => import('./screens/Backup').then((m) => ({ default: m.Backup })));
+const Goals = lazy(() => import('./screens/Goals').then((m) => ({ default: m.Goals })));
+const Projection = lazy(() => import('./screens/Projection').then((m) => ({ default: m.Projection })));
+const Recurring = lazy(() => import('./screens/Recurring').then((m) => ({ default: m.Recurring })));
+const Stats = lazy(() => import('./screens/Stats').then((m) => ({ default: m.Stats })));
 
 function SignedOutRoutes() {
   return (
@@ -68,6 +72,7 @@ function AppTabs() {
       <div className="mx-auto min-h-dvh max-w-app px-safe pt-safe">
         {/* bottom padding clears the tab bar, the raised [+] and the home indicator */}
         <main className="pb-[calc(theme(spacing.tabbar)+env(safe-area-inset-bottom)+2rem)]">
+          <Suspense fallback={<div className="skeleton mt-16 h-96 rounded-card" aria-hidden="true" />}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/calendar" element={<Calendar />} />
@@ -87,6 +92,7 @@ function AppTabs() {
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
       <BottomTabBar onAdd={() => openAddSheet()} />

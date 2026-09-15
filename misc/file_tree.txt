@@ -282,6 +282,8 @@ Budget App/
 │           └── theme.css                # light/dark tokens
 │
 ├── scripts/
+│   ├── make_release.py                  # release/zbdgt-<commit>.zip from the last commit -
+│   │                                    #   what gets copied to the server
 │   ├── generate_keys.py                 # every secret in one run; --fill never overwrites
 │   ├── env_fingerprint.py               # SEC-31: fingerprints of the random keys;
 │   │                                    #   --compare the offline .env copy
@@ -319,6 +321,7 @@ Budget App/
 │   ├── test_auth.py                     # tokens, replay, lock, PIN, restart = lock
 │   ├── test_password_reset.py           # SEC-30: same answer, one use, expiry, Host ignored
 │   ├── test_integrity.py                # tampered row, broken ref, missing receipt found
+│   ├── test_alerts_without_budget.py    # card / statement / subscription alerts need no budget
 │   ├── test_middleware.py               # rate limits, request log, CSRF header
 │   ├── test_db_mssql_auth.py            # the whole auth flow on SQL Server
 │   ├── test_budget_periods.py           # custom start days, year boundaries

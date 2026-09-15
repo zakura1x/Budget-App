@@ -104,7 +104,10 @@ style issue.
    plaintext.
 9. **`app/web/static/dist/` is committed on purpose** and `.gitattributes`
    marks it `-text`. Rebuild and commit it whenever frontend source changes;
-   the server only ever does `git pull` + restart.
+   the server has no npm. Deploys are COPIED, not pulled (there is no git
+   remote): `scripts/make_release.py` zips the last commit, and the runbook
+   in `misc/how-to-run.txt` says which server folders to replace and which
+   (`.env`, `uploads/`, `backups/`, `logs/`) never to touch.
 10. **Nothing from the API is persisted in browser storage** (localStorage,
     IndexedDB, Cache API) — the browser origin is shared with other company
     apps (SEC-29).
@@ -273,6 +276,10 @@ autouse fixture in `tests/conftest.py`.
 dated amount history; the pure pieces — `allowance.py`, `carry_over.py`,
 `alerts.py` — take plain inputs and are tested directly. Every endpoint that
 returns budget figures takes the CLIENT's `today` as a query parameter.
+Account alerts (card due/limit, `statement_differs`, `subscription_due`) come
+from `alerts.account_alerts()` and need no budget: with no budget,
+`GET /budgets/current` returns `{"status": null, "alerts": [...]}` from
+`budget_service.standalone_alerts`.
 `budget_service` imports `transaction_service`; the reverse import is lazy,
 inside `transaction_service.outcome()`, to avoid a cycle — keep it that way.
 

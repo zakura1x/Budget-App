@@ -242,9 +242,29 @@ trade for not asking every user to keep 12 words on paper.
 ═══════════════════════════════════════════════════════════════════
 DEPLOY TO THE SERVER  (IIS, same host as QUOT)
 ═══════════════════════════════════════════════════════════════════
-1. On your PC:  cd frontend  then  npm run build
-   and commit app/web/static/dist/ - the server has no npm.
-2. On the server, put the code in  C:\inetpub\wwwroot\ZBDGT
+Updates are COPIED to the server (there is no git remote). The zip holds
+only committed files, so it can never carry your local .env or data.
+
+EVERY UPDATE
+  a. On your PC:  cd frontend  then  npm run build   (the server has no npm)
+  b. Commit everything, including app/web/static/dist/.
+  c. python scripts/make_release.py   -> release\zbdgt-<commit>.zip
+     (it refuses while anything is uncommitted - that would be missing)
+  d. On the server, in C:\inetpub\wwwroot\ZBDGT:
+       - DELETE the folders app\, alembic\ and scripts\ (so files removed
+         from the code, like old bundle files, do not linger)
+       - unzip the release over the folder
+       - NEVER delete or overwrite  .env  uploads\  backups\  logs\
+  e. If requirements.txt changed: step 4 below (dry run first).
+  f. If alembic\versions gained a file: ask the DB owner, then
+       C:\inetpub\wwwroot\FAST-PYTHON\.venv\Scripts\alembic upgrade head
+     (local development shares the SAME ZBDGT schema - usually it is
+      already applied from your PC)
+  g. Recycle the ZBDGT app pool, then open /ZBDGT/api/v1/health.
+
+FIRST DEPLOY
+1. Steps a-c above.
+2. On the server, unzip it into  C:\inetpub\wwwroot\ZBDGT
 3. Copy .env into that folder BY HAND. It is not in git, and it holds
    the master key and the database password. Check it matches the
    offline copy (env_fingerprint.py) - they must be the same keys.

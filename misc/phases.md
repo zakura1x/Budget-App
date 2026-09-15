@@ -1140,7 +1140,7 @@ Verify:
 > does not yet update the plan through the amount history (REC-29's last
 > sentence); interest for more than one provisional payment is confirmed one
 > statement at a time; subscription reminders show on Home only when a budget
-> exists, like the card banners.
+> exists, like the card banners (RESOLVED in Phase 10, 2026-09-15).
 
 ### Backend Tasks
 
@@ -1411,21 +1411,19 @@ Verify:
   #    not /health, which stays unauthenticated and says yes/no only.
   #  - The admin screen (UX-20) landed here too: disable, enable, delete - no
   #    emails or figures, by construction.
-  Settings & goals:
-    ☐ user_preferences - theme, week/month start, carry-over toggle,
-       alert thresholds  (NO currency - PHP only)
-    ☐ ★ Account deletion cascade (SEC-21): destroys the user's rows,
-       attachments, DEK and its wrapped copy. Irreversible, audited,
-       and gated behind typing the account name. There is no undo and
-       no server-side backup - say so in the dialog.
-    ☐ goal_service - savings goals and progress
-    ☐ ★ Goal contributions are REAL TRANSFERS into the linked account
-       (GOA-06). Progress is DERIVED from those transfers, never stored
-       as its own number - otherwise the goal can claim ₱50,000 saved
-       while the account holds ₱30,000, which is the classic budgeting
-       -app inconsistency.
-    ☐ Consequence to surface in the UI: a goal REQUIRES a linked account
-    ☐ /health extended: key version, cache stats, row counts
+  Settings & goals:   (ticked 2026-09-15 - all built in 8b; see the note above)
+    ✅ user_preferences - theme, week/month start, carry-over toggle,
+       alert thresholds, auto-lock  (NO currency - PHP only)
+    ✅ ★ Account deletion cascade (SEC-21): destroys the user's rows,
+       attachments, backups, DEK and its wrapped copy. Irreversible,
+       audited, gated behind the password and typing the account's email.
+    ✅ goal_service - savings goals and progress
+    ✅ ★ Goal contributions are REAL TRANSFERS into the linked account
+       (GOA-06). Progress is DERIVED from the account's balance, never
+       stored as its own number.
+    ✅ Consequence surfaced in the UI: a goal REQUIRES a linked account
+    ✅ Extended status (key version, sessions, row counts, key fingerprints)
+       at /admin/status - deliberately not /health, which is unauthenticated
 
 ```
 
@@ -1437,32 +1435,30 @@ Verify:
        device, restore (fresh | merge | verify), last backup time
     ✅ CSV import/export screens with the plaintext warning on export
 
-8b - Settings:
-    ☐ Theme: light / dark / system
-    ☐ Budget defaults, week and month start day, carry-over toggle
-    ☐ Alert thresholds (warn %, pace on/off)
-    ☐ Security: change password, change PIN, auto-lock delay
+8b - Settings:   (ticked 2026-09-15 - built in 8b)
+    ✅ Theme: light / dark / system
+    ✅ Budget defaults, week and month start day, carry-over toggle
+    ✅ Alert thresholds (warn %, pace on/off)
+    ✅ Security: change password, change PIN, auto-lock delay
     ✗ Re-view the recovery phrase (SEC-16) - never built; OUT 2026-09-14
     ✗ REGENERATE the phrase (SEC-22) - built, then OUT 2026-09-14; the
        Settings row removed 2026-09-14
-    ☐ ★ Revoke all OTHER sessions on password change and DEK rotation (SEC-24)
-    ☐ ★ The UI must be honest about the limit of 'Rotate my encryption
-       key' (SEC-23): it does not reach data already exported, or older
-       backups. See FEATURES §17.
-    ☐ ★ "About your encryption" screen - what is protected, what is not,
-       and the key-backup reminder. Plain language, no security theatre.
+    ✅ ★ Revoke all OTHER sessions on password change and DEK rotation (SEC-24)
+    ✅ ★ The UI is honest about the limit of 'Rotate my encryption key'
+       (SEC-23): it does not reach data already exported, or older backups.
+    ✅ ★ "About your encryption" screen - what is protected, what is not,
+       who holds the key, what happens if something is lost.
 
 8b - PWA:
-    ☐ manifest.webmanifest - name, icons, standalone, theme colour
-    ☐ Service worker - cache the shell, network-first for API
-    ☐ iOS splash screens + apple-touch-icon
-    ☐ "Add to Home Screen" prompt
-    ☐ ★ Offline shows the app shell and says OFFLINE - no figures (UX-10).
-       Do not imply writes work offline. They do not, in v1.
-    ☐ ★ Nothing decrypted in localStorage, IndexedDB or the service-
-       worker cache; clear caches on lock and logout (SEC-29). Every app
-       on delca.noahapplication.com can read that storage.
-    ☐ Savings goals UI
+    ✅ manifest.webmanifest - name, icons, standalone, theme colour
+    ✅ Service worker - caches the shell only, never /api/
+    ◐ iOS splash screens - apple-touch-icon done; splash images not made
+    ✅ "Install the app" button (Android/desktop) + iPhone Share -> Add to
+       Home Screen instructions, on the About screen
+    ✅ ★ Offline shows the app shell and says OFFLINE - no figures (UX-10).
+    ✅ ★ Nothing decrypted in localStorage, IndexedDB or the service-
+       worker cache; caches cleared on lock and logout (SEC-29).
+    ✅ Savings goals UI
 ```
 
 ---
@@ -1821,10 +1817,13 @@ Found while building Phase 1 (2026-09-11):
     paths (CSV import, backup restore - Phase 8a), which should batch.
 
 Found while building Phase 2 (2026-09-11):
-  - Two tabs refreshing at the same instant with the same refresh token look
-    like a replay, and the session ends. One tab shares a single refresh
-    (lib/api.ts), but tabs do not coordinate. Rare on a phone PWA; the fix
-    if it ever bites is a BroadcastChannel lock or a few seconds' grace.
+  - RESOLVED 2026-09-15: two tabs refreshing at the same instant with the
+    same refresh token looked like a replay and ended the session. lib/api.ts
+    now takes a Web Locks lock ('zbdgt-session-refresh') around the refresh;
+    a tab that had to wait retries with the cookies the other tab set before
+    refreshing itself. Server-side replay detection is unchanged - no grace
+    window was added. Browsers without Web Locks (iOS < 15.4) keep the old
+    one-tab behaviour.
   - Every authenticated request makes one indexed query to check its session
     has not been revoked. Negligible at this scale, and it is what lets
     sign-out end a 30-minute access token immediately.
@@ -1836,13 +1835,27 @@ Found while building Phase 2 (2026-09-11):
     words.)
 
 Found while building Phase 5b (2026-09-14):
-  - Card banners (bill due, spending limit) arrive with the budget status,
-    so someone with no budget gets none. card_due always worked this way;
-    fix it if anyone tracks cards without a budget.
-  - A statement that differs from the bank shows on the card, but raises no
-    banner on Home.
-  - "A purchase I forgot" opens the ordinary add sheet dated today; the user
-    has to set the date on or before the closing day themselves.
+  - RESOLVED 2026-09-15: card banners (bill due, spending limit) and
+    subscription reminders no longer need a budget. alerts.account_alerts()
+    raises them; GET /budgets/current carries them in `alerts` when there is
+    no budget (budget_service.standalone_alerts), and Home shows them.
+  - RESOLVED 2026-09-15: a last statement whose bank total does not match now
+    raises `statement_differs` on Home until it is explained or corrected.
+  - RESOLVED 2026-09-15: "A purchase I forgot" / "A refund I haven't entered"
+    open the add sheet on that card, dated the closing day, as an expense or
+    income (uiStore.addPreset).
+
+Found while building Phase 10 (2026-09-15):
+  - The main bundle was 873 KB. Stats (recharts) and six rarely visited
+    screens (Recurring, Projection, Backup, Goals, Admin, About) now load on
+    first open (React.lazy); Home and the add sheet stay in the main bundle.
+  - Deploys are copied, not pulled - there is no git remote.
+    scripts/make_release.py zips the last commit; how-to-run.txt lists the
+    server folders to replace and the ones never to touch.
+  - STILL OPEN from Phase 7: a later bill showing a DIFFERENT installment
+    amount does not update the plan through its amount history (REC-29), and
+    interest for several provisional payments is confirmed one statement at a
+    time.
 
 To revisit after Phase 1's benchmark:
   - If cold load > 1500ms, adopt bucket columns (ARCHITECTURE.md §5.7) and
