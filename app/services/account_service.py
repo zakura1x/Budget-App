@@ -214,7 +214,8 @@ def list_accounts(
 ) -> List[AccountView]:
     records = AccountRepository(db, cipher).list()
     by_account = _group_postings(postings)
-    views = [_view(record.id, record.data, by_account.get(record.id, ()), today) for record in records]
+    unpaid = _unpaid_installments(db, cipher)
+    views = [_view(record.id, record.data, by_account.get(record.id, ()), today, unpaid) for record in records]
     if not include_archived:
         views = [v for v in views if not v.archived]
     return sorted(views, key=lambda v: (v.archived, v.sort_order, v.name.lower(), v.id))
@@ -231,7 +232,8 @@ def get_account(
     record = AccountRepository(db, cipher).get(account_id)
     if record is None:
         raise NotFoundException("Account not found")
-    return _view(record.id, record.data, _group_postings(postings).get(account_id, ()), today)
+    return _view(record.id, record.data, _group_postings(postings).get(account_id, ()), today,
+                 _unpaid_installments(db, cipher))
 
 
 def cash_on_hand(views: Iterable[AccountView]) -> CashOnHand:
@@ -469,6 +471,18 @@ def record_statement_check(
 # ---------------------------------------------------------------- internals
 
 
+def _unpaid_installments(db: Session, cipher: UserCipher) -> Mapping[int, Decimal]:
+    """
+    REC-14. The unpaid remainder of every open installment, per account -
+    derived from the plans and the payments posted against them, never stored.
+    Imported here, not at the top: recurring_service imports transaction_service,
+    which imports this module.
+    """
+    from app.services import recurring_service
+
+    return recurring_service.unpaid_by_account(db, cipher)
+
+
 def _group_postings(postings: Sequence[Posting]) -> Dict[int, List[Posting]]:
     grouped: Dict[int, List[Posting]] = {}
     for posting in postings:
@@ -481,6 +495,7 @@ def _view(
     data: Mapping[str, Any],
     postings: Sequence[Posting],
     today: Optional[date],
+    unpaid: Optional[Mapping[int, Decimal]] = None,
 ) -> AccountView:
     kind = str(data.get("type", "cash"))
     opening = money(data.get("opening_balance", ZERO))
@@ -513,7 +528,8 @@ def _view(
         current_value=current_value,
     )
     if kind == "credit":
-        view = replace(view, credit=_credit_view(account_id, data, opening, view.balance, postings, today))
+        view = replace(view, credit=_credit_view(account_id, data, opening, view.balance, postings, today,
+                                                 (unpaid or {}).get(account_id, ZERO)))
     return view
 
 
@@ -524,6 +540,7 @@ def _credit_view(
     balance: Decimal,
     postings: Sequence[Posting],
     today: Optional[date],
+    unpaid: Decimal = ZERO,
 ) -> CreditView:
     when = today or date.today()
     closing_day, due_day = _card_days(data)
@@ -547,7 +564,6 @@ def _credit_view(
 
     owed = -balance if balance < 0 else ZERO
     limit = money(data["credit_limit"]) if data.get("credit_limit") is not None else None
-    unpaid = money(data.get("unpaid_installments", ZERO))
     # ACC-14: the bank blocks the whole unpaid remainder on day one, so leaving
     # it out would tell you that you can spend money the card will refuse.
     available = (limit - owed - unpaid).quantize(ZERO) if limit is not None else None

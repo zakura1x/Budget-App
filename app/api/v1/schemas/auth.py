@@ -1,7 +1,7 @@
 """Request and response shapes for /auth. Strings are length-capped so a
-request cannot make bcrypt or BIP-39 chew on megabytes."""
+request cannot make bcrypt chew on megabytes."""
 
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,9 +31,19 @@ class SetPinRequest(BaseModel):
     current_password: Optional[str] = Field(default=None, max_length=256)
 
 
-class RecoverRequest(BaseModel):
-    phrase: str = Field(min_length=1, max_length=400)
-    new_password: str = Field(min_length=1, max_length=256)
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class ResetRequestedOut(BaseModel):
+    """The same whether or not the address has an account."""
+
+    link_minutes: int
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=128)
+    password: str = Field(min_length=1, max_length=256)
 
 
 class UserOut(BaseModel):
@@ -50,11 +60,6 @@ class SessionOut(BaseModel):
     auto_lock_minutes: int
 
 
-class RegisterOut(SessionOut):
-    # Shown ONCE. Nothing on the server keeps a copy.
-    recovery_phrase: List[str]
-
-
 class PasswordPolicy(BaseModel):
     min_length: int
     require_upper: bool
@@ -66,5 +71,6 @@ class AuthConfigOut(BaseModel):
     registration_open: bool
     pin_enabled: bool
     pin_length: int
-    recovery_words: int
+    password_reset_enabled: bool
+    reset_link_minutes: int
     password_policy: PasswordPolicy

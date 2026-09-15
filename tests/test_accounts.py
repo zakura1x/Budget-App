@@ -196,12 +196,15 @@ def test_available_credit_subtracts_the_installment_remainder(session, owner):
     account_service.update_account(
         session, owner, card.id, {**CARD, "counts_in_cash_on_hand": True}
     )
-    # The remainder is written by Phase 7; the derivation is what is tested.
-    record = account_service.AccountRepository(session, owner).get(card.id)
-    data = dict(record.data)
-    data["unpaid_installments"] = "36000.00"
-    account_service.AccountRepository(session, owner).update(card.id, data)
-    session.commit()
+    # Since Phase 7 the remainder is derived from the installment plans on the
+    # card - here one that has not posted a payment yet.
+    from app.services import category_service, recurring_service
+
+    gadgets = category_service.create_category(session, owner, {"name": "Gadgets"})
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "name": "Phone", "account_id": card.id, "category_id": gadgets.id,
+        "frequency": "monthly", "start": "2026-10-01", "price": "36000.00", "payments": 12,
+    }, today=date(2026, 9, 13))
 
     postings = [Posting(card.id, date(2026, 9, 10), Decimal("-4000.00"))]
     view = account_service.get_account(session, owner, card.id, postings=postings, today=date(2026, 9, 13))

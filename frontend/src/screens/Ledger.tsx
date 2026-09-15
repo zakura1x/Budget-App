@@ -120,7 +120,7 @@ function FilterSheet({
     if (open) setDraft(filters);
   }, [open, filters]);
 
-  const pick = (key: 'account' | 'category', id: number) =>
+  const pick = (key: 'account' | 'category' | 'tag', id: number) =>
     setDraft((d) => ({ ...d, [key]: d[key] === id ? undefined : id }));
   const chip = (selected: boolean) =>
     `min-h-tap rounded-xl px-3 text-footnote font-medium transition ${selected ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2'}`;
@@ -161,6 +161,18 @@ function FilterSheet({
           </div>
           <p className="mt-2 text-footnote text-ink-3">A main category includes its sub-categories.</p>
         </div>
+        {lookups.tags.length > 0 && (
+          <div>
+            <p className="mb-2 text-footnote font-semibold text-ink-2">Tag</p>
+            <div className="flex flex-wrap gap-2">
+              {lookups.tags.map((t) => (
+                <button key={t.id} type="button" className={chip(draft.tag === t.id)} onClick={() => pick('tag', t.id)}>
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <label className="text-footnote font-semibold text-ink-2">
             From
@@ -234,7 +246,7 @@ export function Ledger() {
     else groups.push({ on: row.txn_date, rows: [row] });
   }
 
-  const activeFilters = [filters.type, filters.account, filters.category, filters.from, filters.to].filter(
+  const activeFilters = [filters.type, filters.account, filters.category, filters.tag, filters.from, filters.to].filter(
     (v) => v !== undefined,
   ).length;
 

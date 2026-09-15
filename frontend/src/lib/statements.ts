@@ -9,7 +9,7 @@ import type { Statement } from './accounts';
 import { api } from './api';
 import { localToday, type Transaction } from './transactions';
 
-export type Suggestion = 'charge' | 'posted_next' | 'forgot';
+export type Suggestion = 'charge' | 'posted_next' | 'forgot' | 'installment_interest';
 
 export interface StatementCheck {
   statement: Statement;
@@ -19,6 +19,8 @@ export interface StatementCheck {
   late_candidates: Transaction[];
   /** Likeliest first. Leaving it is always allowed. */
   suggestions: Suggestion[];
+  /** REC-29 - installments on this statement whose interest is not known yet. */
+  installments: { rule_id: number; name: string; per_payment: string }[];
 }
 
 const path = (accountId: number, closes: string, action = '') =>
@@ -36,6 +38,13 @@ export const recordCharge = (
   closes: string,
   charge: { amount: string; category_id: number; note?: string | null },
 ) => api<StatementCheck>(path(accountId, closes, '/resolve'), { method: 'POST', body: { choice: 'charge', ...charge } });
+
+/** REC-29. The bank added interest to this plan's payment - confirms its terms. */
+export const confirmInstallmentInterest = (accountId: number, closes: string, ruleId: number, amount: string) =>
+  api<StatementCheck>(path(accountId, closes, '/resolve'), {
+    method: 'POST',
+    body: { choice: 'installment_interest', rule_id: ruleId, amount },
+  });
 
 /** The bank posted this purchase on the next statement. Its budget period does not move. */
 export const markPostedNext = (accountId: number, closes: string, transactionId: number) =>

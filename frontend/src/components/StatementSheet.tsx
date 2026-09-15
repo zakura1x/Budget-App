@@ -13,7 +13,9 @@
  *
  * A lower total is never offered as interest. A difference can be explained in
  * parts: each answer comes back as the statement now stands, with what is left.
- * Installment interest joins the choices with installments (Phase 7).
+ * When a higher total sits on a statement with an installment whose interest
+ * is not known yet, "interest on this installment" comes first (REC-29): it
+ * confirms the plan's terms and posts payment 1's interest on the closing date.
  */
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
@@ -21,7 +23,14 @@ import type { Account } from '../lib/accounts';
 import { ApiError } from '../lib/api';
 import { flatten, listCategories, type Category } from '../lib/categories';
 import { formatPHP, sanitizeAmount, toDecimalString } from '../lib/money';
-import { checkStatement, getStatement, markPostedNext, recordCharge, type StatementCheck } from '../lib/statements';
+import {
+  checkStatement,
+  confirmInstallmentInterest,
+  getStatement,
+  markPostedNext,
+  recordCharge,
+  type StatementCheck,
+} from '../lib/statements';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
 import { Button } from './ui/Button';
@@ -64,6 +73,8 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [note, setNote] = useState('');
+  const [interestFor, setInterestFor] = useState<number | null>(null);
+  const [interestAmount, setInterestAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -75,6 +86,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
     setError(null);
     setBusy(false);
     setCharging(false);
+    setInterestFor(null);
     setNote('');
     const controller = new AbortController();
     Promise.all([getStatement(account.id, closes, controller.signal), listCategories(controller.signal)])
@@ -103,6 +115,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
     try {
       accept(await call());
       setCharging(false);
+      setInterestFor(null);
       if (recorded) {
         onChanged();
         void useLedgerStore.getState().load();
@@ -179,6 +192,42 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
 
                 {higher && (
                   <>
+                    {data.installments.map((plan) => (
+                      <div key={plan.rule_id} className="space-y-2">
+                        <Choice
+                          title={`Interest on the ${plan.name} installment`}
+                          hint={`Confirms the plan: ${formatPHP(plan.per_payment)} plus this interest on every payment from now on.`}
+                          onClick={() => {
+                            setInterestFor((v) => (v === plan.rule_id ? null : plan.rule_id));
+                            setInterestAmount(gap);
+                          }}
+                          disabled={busy}
+                        />
+                        {interestFor === plan.rule_id && (
+                          <div className="space-y-3 rounded-2xl border border-line p-3">
+                            <TextField
+                              label="Interest on this payment"
+                              value={interestAmount}
+                              onChange={(e) => setInterestAmount(sanitizeAmount(e.target.value))}
+                              inputMode="decimal"
+                              hint={`Up to ${formatPHP(gap)}. Posts on ${day(statement.closes)}, linked to the plan.`}
+                            />
+                            <Button
+                              block
+                              disabled={busy || !interestAmount.trim()}
+                              onClick={() =>
+                                void run(
+                                  () => confirmInstallmentInterest(account.id, closes, plan.rule_id, toDecimalString(interestAmount)),
+                                  true,
+                                )
+                              }
+                            >
+                              Confirm interest
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                     <Choice
                       title="A fee or interest"
                       hint={`Recorded on the card on ${day(statement.closes)}, so it lands on this statement.`}

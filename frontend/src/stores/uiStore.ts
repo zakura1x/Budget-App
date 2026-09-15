@@ -10,13 +10,16 @@ interface UiState {
   addSheetOpen: boolean;
   /** The transaction the sheet is editing, or null when adding a new one. */
   editing: Transaction | null;
-  openAddSheet: (editing?: Transaction) => void;
+  /** The date a new entry starts on - a day tapped in the calendar - or null for today. */
+  addOn: string | null;
+  openAddSheet: (editing?: Transaction, on?: string) => void;
   closeAddSheet: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   addSheetOpen: false,
   editing: null,
-  openAddSheet: (editing) => set({ addSheetOpen: true, editing: editing ?? null }),
-  closeAddSheet: () => set({ addSheetOpen: false, editing: null }),
+  addOn: null,
+  openAddSheet: (editing, on) => set({ addSheetOpen: true, editing: editing ?? null, addOn: on ?? null }),
+  closeAddSheet: () => set({ addSheetOpen: false, editing: null, addOn: null }),
 }));

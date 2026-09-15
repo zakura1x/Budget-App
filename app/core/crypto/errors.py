@@ -4,11 +4,11 @@ Crypto errors.
 Kept free of FastAPI so the crypto package can be imported by scripts and
 tests without the web stack. app/core/exceptions.py maps these to responses.
 
-None of these messages ever carries key material, plaintext, or the words of a
-recovery phrase. They may reach a log line, and a log line is not a safe place.
+None of these messages ever carries key material or plaintext. They may reach a
+log line, and a log line is not a safe place.
 """
 
-from typing import Optional, Sequence
+from typing import Optional
 
 
 class CryptoError(Exception):
@@ -41,17 +41,3 @@ class KeyNotAvailableError(CryptoError):
             f"Master key version {version} is not loaded. If a rotation is in "
             f"progress, add it to BUDGET_RETIRED_KEYS"
         )
-
-
-class InvalidRecoveryPhraseError(CryptoError):
-    """
-    The phrase is malformed: wrong word count, unknown words, or bad checksum.
-
-    Raised BEFORE any unwrap is attempted, so a typo gets a clear message
-    instead of looking like the wrong phrase. `positions` holds the 1-based
-    positions of unrecognised words; the words themselves are never included.
-    """
-
-    def __init__(self, message: str, positions: Sequence[int] = ()):
-        self.positions = tuple(positions)
-        super().__init__(message)

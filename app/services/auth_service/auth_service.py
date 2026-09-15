@@ -50,8 +50,9 @@ from app.services.auth_service.pin_service import hash_pin, verify_pin
 
 logger = logging.getLogger(__name__)
 
-# Password-checking kinds that share one lockout per email.
-PASSWORD_KINDS = ("login", "unlock")
+# Password-checking kinds that share one lockout per email. A successful
+# password reset (SEC-30) counts as a success, so it clears the lockout.
+PASSWORD_KINDS = ("login", "unlock", "reset")
 
 _dummy_hash: Optional[str] = None
 
@@ -183,10 +184,17 @@ def _warm(db: Session, session_id: str) -> None:
     so the first screen after it is a warm read (ARCHITECTURE.md 5.6). Never
     fatal: a failed warm-up only means the first read loads it instead.
     """
-    if not settings.CACHE_WARM_ON_LOGIN:
-        return
     cipher = get_session_keyring().cipher_for(session_id)
     if cipher is None:
+        return
+    try:
+        # DAT-08: a backup at sign-in when the newest is over BACKUP_INTERVAL_HOURS old.
+        from app.services.backup_service.scheduler import get_scheduler
+
+        get_scheduler().on_sign_in(cipher.user_id)
+    except Exception:
+        logger.exception("Could not check the backup age at sign-in")
+    if not settings.CACHE_WARM_ON_LOGIN:
         return
     try:
         transaction_service.warm(db, cipher)

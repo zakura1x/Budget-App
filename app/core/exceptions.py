@@ -33,7 +33,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.crypto.errors import (
     CryptoError,
     DecryptionError,
-    InvalidRecoveryPhraseError,
     KeyNotAvailableError,
 )
 
@@ -195,15 +194,6 @@ def setup_exception_handlers(app: FastAPI) -> None:
             ref, exc.table, exc.row_id, request.url.path,
         )
         return problem(500, "Internal Server Error", "INTERNAL_ERROR", ref=ref)
-
-    @app.exception_handler(InvalidRecoveryPhraseError)
-    async def _bad_phrase(request: Request, exc: InvalidRecoveryPhraseError):
-        # The message names positions, never words (crypto/errors.py), so it is
-        # safe to return - and it is what makes a typo fixable.
-        return problem(
-            422, "Invalid Recovery Phrase", "INVALID_RECOVERY_PHRASE", str(exc),
-            positions=list(exc.positions) or None,
-        )
 
     @app.exception_handler(KeyNotAvailableError)
     async def _key_missing(request: Request, exc: KeyNotAvailableError):

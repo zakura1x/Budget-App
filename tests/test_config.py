@@ -68,7 +68,6 @@ def test_missing_or_short_pepper_refused():
         ({"BUDGET_CIPHER": "AES-128-CBC"}, "fixed by the envelope"),
         ({"BUDGET_NONCE_BYTES": 16}, "fixed by the envelope"),
         ({"BUDGET_AAD_BIND_ROW": False}, "must be True"),
-        ({"RECOVERY_PHRASE_WORDS": 13}, "RECOVERY_PHRASE_WORDS"),
         ({"DB_SCHEMA": "ZBDGT; DROP TABLE x"}, "plain SQL identifier"),
         ({"BUDGET_RETIRED_KEYS": "1:" + GOOD_KEY}, "must not contain the current"),
         ({"BUDGET_RETIRED_KEYS": "one:" + GOOD_KEY}, "version:base64key"),

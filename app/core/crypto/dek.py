@@ -2,14 +2,11 @@
 Per-user Data Encryption Keys - generate, wrap, unwrap.
 
 Each user has one 32-byte DEK. It encrypts every row they own, and it is
-stored only wrapped:
+stored only wrapped, in users.dek_wrapped, under the master key.
 
-    users.dek_wrapped            under the master key (this module)
-    users.dek_wrapped_recovery   under the recovery phrase (recovery.py)
-
-Both wraps use the standard envelope, and both bind the user id into the AAD.
-That stops a DBA copying one user's wrapped key onto another user's row: it
-fails to unwrap rather than handing Bob's login Alice's key.
+The wrap uses the standard envelope and binds the user id into the AAD. That
+stops a DBA copying one user's wrapped key onto another user's row: it fails to
+unwrap rather than handing Bob's login Alice's key.
 
 A plaintext DEK is a bytearray, never bytes, so it can be zeroed in place when
 a session locks (session_keys.py). Python cannot promise no copy survives
@@ -30,9 +27,10 @@ from app.core.crypto.envelope import (
 from app.core.crypto.errors import DecryptionError
 from app.core.crypto.keyring import MasterKeyring
 
-# The key_ver byte written on a recovery-phrase wrap. Master key versions are
-# 1-255 (config.py enforces it), so 0 can never be mistaken for one.
-RECOVERY_KEY_VERSION = 0
+# Never a master key version (config.py enforces 1-255). The removed
+# recovery-phrase wrap used it, and backups made before 2026-09-14 still carry
+# one: it must never be taken for a master wrap.
+RESERVED_KEY_VERSION = 0
 
 
 def generate_dek() -> bytearray:
@@ -48,10 +46,6 @@ def zero(buffer: bytearray) -> None:
 
 def dek_wrap_aad(user_id: int) -> bytes:
     return f"{AAD_NAMESPACE}.users:{user_id}:dek-wrap".encode("ascii")
-
-
-def dek_recovery_aad(user_id: int) -> bytes:
-    return f"{AAD_NAMESPACE}.users:{user_id}:dek-recovery".encode("ascii")
 
 
 def wrap_dek(dek: bytearray, keyring: MasterKeyring, user_id: int) -> bytes:
@@ -70,8 +64,8 @@ def unwrap_dek(wrapped: bytes, keyring: MasterKeyring, user_id: int) -> bytearra
     loaded, DecryptionError if it is loaded and the unwrap fails.
     """
     version = envelope_key_version(wrapped)
-    if version == RECOVERY_KEY_VERSION:
-        # A recovery wrap presented as a master wrap: never valid here.
+    if version == RESERVED_KEY_VERSION:
+        # An old recovery wrap presented as a master wrap: never valid here.
         raise DecryptionError("users", user_id)
     try:
         dek = bytearray(decrypt(keyring.wrapping_key(version), wrapped, aad=dek_wrap_aad(user_id)))
@@ -91,7 +85,7 @@ def rewrap_dek(wrapped: bytes, keyring: MasterKeyring, user_id: int) -> bytes:
 
 
 def wrapped_key_version(wrapped: bytes) -> int:
-    """Which master-key version wrapped this DEK (0 = a recovery wrap)."""
+    """Which master-key version wrapped this DEK."""
     return envelope_key_version(wrapped)
 
 

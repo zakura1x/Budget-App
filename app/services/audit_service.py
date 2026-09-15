@@ -27,8 +27,6 @@ UNLOCK_FAILED = "UNLOCK_FAILED"
 PIN_SET = "PIN_SET"
 PIN_LOCKOUT = "PIN_LOCKOUT"
 REFRESH_REUSE = "REFRESH_REUSE"
-RECOVERY = "RECOVERY"
-RECOVERY_FAILED = "RECOVERY_FAILED"
 
 # Data mutations, from Phase 3 on. The verb and the table stay plaintext so the
 # trail is readable; the name, the amount and anything else identifying goes in
@@ -45,6 +43,26 @@ REORDER = "REORDER"
 # user accepts; fixing the opening balance instead writes no such entry.
 BALANCE_ADJUST = "BALANCE_ADJUST"
 STATEMENT_CHECK = "STATEMENT_CHECK"  # ACC-24 - the bank's total for one statement
+# Phase 7 - the recurring engine.
+EXPAND = "EXPAND"  # REC-04/05 - occurrences posted, with the count
+PAUSE = "PAUSE"
+RESUME = "RESUME"
+SKIP = "SKIP"  # REC-15
+PAYOFF = "PAYOFF"  # REC-13
+CONFIRM_TERMS = "CONFIRM_TERMS"  # REC-29 - interest from the first statement
+# Phase 8a - data in and out.
+BACKUP = "BACKUP"  # DAT-06 - "Back up now"; automatic ones are logged, not audited
+RESTORE = "RESTORE"  # DAT-07 - mode, how it was unlocked, counts
+EXPORT = "EXPORT"  # DAT-02 - plaintext left the boundary on purpose
+IMPORT = "IMPORT"  # DAT-03
+# Phase 8b - the account's own security, and the admin.
+PASSWORD_CHANGE = "PASSWORD_CHANGE"
+PASSWORD_RESET_REQUEST = "PASSWORD_RESET_REQUEST"  # SEC-30 - a link was mailed
+PASSWORD_RESET = "PASSWORD_RESET"  # SEC-30 - the link was used
+DEK_ROTATE = "DEK_ROTATE"  # SEC-23
+ACCOUNT_DELETE = "ACCOUNT_DELETE"  # SEC-21 - no detail: its key is gone
+USER_DISABLE = "USER_DISABLE"  # UX-20
+USER_ENABLE = "USER_ENABLE"
 
 
 def record(

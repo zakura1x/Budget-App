@@ -35,14 +35,12 @@ def signed_up(api, **kw):
 # ============================================================== sign-up
 
 
-def test_register_returns_the_phrase_once_and_signs_in(api):
+def test_register_signs_in(api):
     body = signed_up(api)
-    assert len(body["recovery_phrase"]) == 12
+    assert "recovery_phrase" not in body  # there is no phrase (ARCHITECTURE.md 5.2.1)
     assert body["locked"] is False and body["pin_set"] is False
     assert body["user"]["email"] == "noah@example.com" and body["user"]["display_name"] == "Noah"
     assert body["user"]["is_admin"] is True  # first account
-    me = api.get("/auth/me").json()
-    assert "recovery_phrase" not in me  # never again
     assert api.get("/settings/preferences").json()["carry_over"] is False
 
 

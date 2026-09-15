@@ -8,8 +8,8 @@
 *.pem
 backups/
 
-# The placeholder admin account's credentials and recovery phrase, written
-# by scripts/create_admin_account.py. Either line in it opens that account.
+# The placeholder admin account's credentials, written by
+# scripts/create_admin_account.py. The password in it opens that account.
 admin-account.txt
 
 # ============================================

@@ -31,6 +31,7 @@ from app.core.exceptions import (
     ValidationException,
 )
 from app.db.repositories.category_repository import CategoryRepository
+from app.db.repositories.recurring_repository import RecurringRuleRepository
 from app.db.repositories.transaction_repository import TransactionRepository
 from app.services import audit_service
 
@@ -198,7 +199,12 @@ def delete_category(
     doomed: Set[int] = {category_id} | {child.id for child in _children_of(existing, category_id)}
 
     usage = _usage_counts(db, cipher)
-    in_use = sum(usage.get(cid, 0) for cid in doomed)
+    # Recurring rules name categories too (REC-03): a rule left pointing at a
+    # deleted one could never post again, so rules count as usage and move too.
+    rules = RecurringRuleRepository(db, cipher)
+    rule_refs = [r for r in rules.list()
+                 if {r.data.get("category_id"), r.data.get("interest_category_id")} & doomed]
+    in_use = sum(usage.get(cid, 0) for cid in doomed) + len(rule_refs)
 
     if in_use:
         if reassign_to is None:
@@ -216,6 +222,12 @@ def delete_category(
             # every report that reads it.
             raise BusinessRuleException("Move them to a category of the same kind")
         moved = _reassign(db, cipher, doomed, reassign_to)
+        for rule in rule_refs:
+            data = dict(rule.data)
+            for key in ("category_id", "interest_category_id"):
+                if data.get(key) in doomed:
+                    data[key] = reassign_to
+            rules.update(rule.id, data)
     else:
         moved = 0
 

@@ -163,8 +163,9 @@ This project adds one rule of its own, and it is absolute:
 | `recurring_service` | Rule expansion — daily/weekly/monthly/custom. The one engine behind standard rules, subscriptions and installments |
 | `subscription_service` | Your recurring merchant charges (Netflix, gym). A **view over** `recurring_rules`, never a second expansion engine |
 | `projection_service` | The months ahead: salary, bills, installments and card statements laid out from the rules (§4.5). **Read-only** — it never posts a transaction |
-| `stats_service` | Every chart series; all aggregation, since SQL cannot |
-| `calendar_service` | Day-by-day spending heatmap |
+| `stats_service` | Every chart series; all aggregation, since SQL cannot. One overview per range: category shares from splits, trend, comparison, merchants, accounts, tags and the forecast. Transfers, balance adjustments and revaluations never count |
+| `calendar_service` | Day-by-day spending heatmap, shaded against the budget per day (or a typical day) |
+| `tag_service` | Tags (name, colour). Transactions carry `tag_ids`, checked on write; deleting a tag removes its id from every transaction in the same commit |
 | `goal_service` | Savings goals and progress |
 | `import_export_service` | CSV in and out, encrypted attachments |
 | `audit_service` | Records who changed what, with encrypted detail |
@@ -242,9 +243,9 @@ stays inside the ciphertext.
 
 | Shape | Table | Holds |
 |---|---|---|
-| A | `users` | `email_bidx`, `profile_enc` (email + display name, sealed under the user's own DEK), `password_hash`, `key_version`, `dek_wrapped`, **`dek_wrapped_recovery`**, `pin_hash`, lockout state |
+| A | `users` | `email_bidx`, `profile_enc` (email + display name, sealed under the user's own DEK), `password_hash`, `key_version`, `dek_wrapped`, `pin_hash`, lockout state. (`dek_wrapped_recovery` was dropped on 2026-09-14, §5.2.1) |
 | A | `refresh_tokens` | Hashed token, family id, parent id, expiry, revocation |
-| A | `login_attempts` | `kind` (login / pin / recovery / register), `email_bidx`, success flag, keyed hash of the IP, timestamp |
+| A | `login_attempts` | `kind` (login / pin / register / reset; `recovery` on rows from before 2026-09-14), `email_bidx`, success flag, keyed hash of the IP, timestamp |
 | A | `audit_log` | user_id, action, entity, entity_id, encrypted detail blob |
 | B | `accounts` | name, type, opening balance, colour, archived, `counts_in_cash_on_hand`, manual value (investment), statement/due day + credit limit + optional own `spending_limit` + `statement_checks` — the bank's total per statement (credit) |
 | B | `categories` | name, parent_id, icon, colour, kind, sort order |
@@ -313,7 +314,16 @@ motorcycle, never ₱180,000 at once. The asset-and-debt alternative is out
 
 **Credit-card installments** post the monthly amount to the card each month.
 `available credit` still subtracts the whole unpaid remainder, because the bank
-blocks it from your limit on day one.
+blocks it from your limit on day one. That remainder is derived per card from
+the open plans (`recurring_service.unpaid_by_account`), never stored on the
+account.
+
+**Posted occurrences carry `recurring_id` and `recurring_on`** (the occurrence
+date; null for a payment against a plan, such as its confirmed interest or an
+early payoff). Catch-up posts what is dated after the rule's `posted_through`
+and not already present as that pair, then advances `posted_through` in the
+same commit - so it is idempotent, and a charge the user deleted is not posted
+again.
 
 **Card bills (FEATURES.md ACC-19, ACC-20)** are derived from postings, never
 stored:
@@ -488,101 +498,160 @@ The master key never encrypts a row. It wraps a per-user Data Encryption Key,
 and the DEK encrypts rows.
 
 ```
-BUDGET_MASTER_KEY                    12-word recovery phrase
-(.env, never in the database)        (paper, never anywhere digital)
-        │                                        │
-        │ HKDF-SHA256                            │ BIP-39 → seed
-        │ info="budget:dek-wrap:v{ver}"          │ → HKDF-SHA256
-        ▼                                        ▼
-   wrapping key                            recovery key
-        │                                        │
-        │ AES-256-GCM                            │ AES-256-GCM
-        ▼                                        ▼
-  users.dek_wrapped                users.dek_wrapped_recovery
-        │                                        │
-        └──────────────┬─────────────────────────┘
-                       │  either one opens it
-                       ▼
-              user DEK (32 bytes)
-              unwrapped at login, memory only
-                       │
-                       │  AES-256-GCM per row
-                       ▼
-              transactions.payload
+BUDGET_MASTER_KEY
+(.env on the server, plus the owner's offline copy — never in the database)
+        │
+        │ HKDF-SHA256, info="budget:dek-wrap:v{ver}"
+        ▼
+   wrapping key
+        │
+        │ AES-256-GCM
+        ▼
+  users.dek_wrapped
+        │
+        ▼
+  user DEK (32 bytes)
+  unwrapped at login, memory only
+        │
+        │  AES-256-GCM per row
+        ▼
+  transactions.payload
 ```
 
-Why the indirection, when there is only one user? Two reasons.
+Why the indirection? Two reasons.
 
 **Rotation stays survivable.** Rotating the master key rewraps **one row per
 user** — a few milliseconds — instead of decrypting and re-encrypting every
 transaction you have ever recorded. Rotation you can afford to perform is
 rotation that actually happens.
 
-**Two independent keys can open the same data.** The DEK is wrapped twice, under
-two unrelated keys. Lose `.env` and the recovery phrase still opens it; lose the
-phrase and `.env` still does. Neither wrapped copy is useful on its own, and a
-DBA holding both learns nothing.
+**A password never touches the data.** The password authenticates you; it does
+not wrap the key. Changing it, or resetting it by email (FEATURES SEC-30), updates one
+hash and no ciphertext.
 
-### 5.2.1 The recovery phrase
+### 5.2.1 Losing `.env` — the offline copy
 
-A 12-word BIP-39 mnemonic (128 bits of entropy), generated at registration and
-displayed once, with an explicit acknowledgement before you can continue.
+**Decided 2026-09-14: there is no recovery phrase.** Phases 1–2 built a second
+wrap of every DEK under a 12-word BIP-39 phrase (`users.dek_wrapped_recovery`),
+so that losing `.env` would be survivable. It was removed from the code the same
+day (FEATURES SEC-14). The reasoning:
+
+- Only the server side can lose `.env`. The phrase made every *user* keep
+  insurance, on paper, against a failure none of them could cause or prevent.
+- One offline copy of `.env` insures every account at once and asks users for
+  nothing.
+- The phrase was a second complete path to the data: each sheet of paper was
+  exactly as sensitive as the master key.
+
+What replaces it is operational, not cryptographic: the server owner keeps an
+**offline copy of the whole `.env`** (FEATURES SEC-31).
+
+| Secret in `.env` | Lost without a copy |
+|---|---|
+| `BUDGET_MASTER_KEY` | No DEK unwraps. **Every row of every user is unreadable** |
+| `BUDGET_RETIRED_KEYS` | Backups and wraps from before a master-key rotation are unreadable |
+| `BUDGET_BLIND_INDEX_PEPPER` | No email finds its account, so nobody signs in until a script rebuilds every index from `profile_enc` (possible, because the master key still opens each DEK) |
+| `PIN_PEPPER`, `JWT_SECRET_KEY`, `SESSION_SECRET` | Everyone is signed out and PINs are set again. Nothing is lost |
+
+Rules for the copy (the runbook is `how-to-run.txt`):
+
+- **The whole file, in at least two places**, none of them the app server or
+  the repository.
+- **Never beside the `.budgetbak` files.** A backup is safe anywhere on its own
+  (§12); a backup plus the copy is the data.
+- **Refreshed the same day any key changes** — `generate_keys.py`,
+  `rotate_keys.py`. A stale copy cannot open what was wrapped under a newer key.
+- **Checked, not trusted.** `scripts/env_fingerprint.py` (Phase 9) prints a
+  non-secret HKDF fingerprint per key, so the copy and the server can be
+  compared without displaying either.
+
+**What this costs, stated plainly.** Losing `.env` *and* every copy destroys
+every account at once, where the phrase made that loss survivable per user. And
+whoever holds `.env` and can reach the database can read every account. That
+was already true (§5.1 puts the app server out of scope), but a second door is
+gone, and the burden sits entirely with the server owner.
+
+**A forgotten password is reset by an emailed link** (SEC-30, built
+2026-09-14), since the recovery flow is what used to do it:
 
 ```
-phrase ──► BIP-39 seed (PBKDF2-HMAC-SHA512, 2048 rounds)
-       ──► HKDF-SHA256, info="budget:recovery-wrap"
-       ──► 32-byte recovery key ──► unwraps dek_wrapped_recovery
+/forgot  email typed ──► blind index ──► active account?
+                         (same 202 answer either way; 3 mails/address/hour)
+             yes ──► token = 32 random bytes
+                     users.reset_token_hash = SHA-256(token), expires in 30 min
+                     mail to the typed address, AFTER the response:
+                     {APP_PUBLIC_URL}{BASE_URL}/reset#token=...
+/reset   fragment read by the page, wiped from the address bar
+         POST /auth/reset-password {token, password}
+             ──► hash matches, not expired ──► new bcrypt hash, token cleared,
+                 every session ended, signed in, audited
 ```
 
-The recovery flow does two things, and it needs both to be useful: it unwraps
-your DEK **and** it authorises a password reset. A phrase that recovered the key
-but left you unable to log in would be an ornament.
+- The address mailed is the one typed. It matched the blind index, so it is
+  the account's email; nothing is decrypted to send it.
+- The token is in the **fragment**, which a browser never sends to the server,
+  so it cannot land in the IIS access log. Only its hash is stored.
+- The link's origin is `APP_PUBLIC_URL`, never the request's `Host` header:
+  otherwise anyone could make the app mail a real user a link to their site.
+- No ciphertext changes: the password never wrapped the DEK.
+- The email carries nothing from the budget. SMTP settings live in `.env`;
+  an empty `SMTP_HOST` turns the feature off.
 
-Be clear-eyed about what this costs. It is a **second complete path to your
-data**. The database now holds two wrapped keys instead of one — both still
-inert without `.env` or the phrase — but the paper those twelve words are
-written on is now exactly as sensitive as the master key. Store it the way you
-would store the master key, which is to say: not on this machine, not in this
-repository, and not in the same place as your `.env` backup.
+The honest cost: **the mailbox is now part of the account.** Whoever can read
+a user's email can reset their password and, signed in, read their budget.
 
-In exchange, the single largest risk in the project stops being fatal.
+**Removed from the code on 2026-09-14:**
+- The sign-up words screen (`RecoveryPhraseSetup`).
+- `/auth/recover`, `RecoveryPhraseEnter` and `recovery_service`.
+- `security_service.regenerate_phrase` and the "New recovery words" row.
+- The recovery wrap in `provisioning.py` and in DEK rotation.
+- Phrase unlock in `restore_service` and in `restore.py --phrase`.
+- `crypto/recovery.py`, `lib/bip39.ts` and the `mnemonic` dependency, with their tests.
+- `users.dek_wrapped_recovery` and `recovery_created_at`, dropped by migration
+  `20260914_0002` (applied to ZBDGT the same day).
 
-**Recovering with no `.env` at all.** Losing `.env` loses the blind-index
-pepper as well as the master key, and a new pepper computes different
-indexes, so an email address can no longer find its user row. The phrase finds
-it instead: its derived key is tried against each user's
-`dek_wrapped_recovery`, and only the owner's authenticates (the slow PBKDF2
-step runs once; each try after it is one 62-byte AES-GCM open). The recovered
-DEK then opens `users.profile_enc`, which holds the email, so the email index is
-rebuilt under the new pepper and `dek_wrapped` under the new master key.
-`tests/test_recovery.py::test_total_env_loss_recover_by_phrase_alone` does
-exactly this.
+Backups written before then still carry the recovery wrap, and the reader
+ignores it. Key version 0 stays reserved, so such a wrap can never be taken for
+a master-key wrap.
 
 ### 5.2.2 Rotating after a suspected compromise
 
 Two operations exist, and the difference between them is the whole point.
 
-**Regenerate the phrase (SEC-22)** — new twelve words, the *same* DEK re-wrapped
-under a new recovery key. One row update, instant, no data touched. The old
-phrase dies immediately.
+**Rotate the master key** (`scripts/rotate_keys.py`, Phase 9) — a new key in
+`.env`, every user's *same* DEK re-wrapped under it, the old key kept in
+`BUDGET_RETIRED_KEYS` so older backups still open. Milliseconds per user, no
+data touched.
 
 **Rotate the DEK (SEC-23)** — a *new* DEK, with every row decrypted under the old
-one and re-encrypted under the new one, then wrapped under both the master key
-and a fresh phrase.
+one and re-encrypted under the new one, then wrapped under the master key.
 
-The distinction matters because **the phrase does not protect your data; it
-unwraps the key that does.** If someone read your twelve words and used them,
-they hold a copy of your DEK — a 32-byte value they keep forever. Regenerating
-the phrase after that changes the lock while they walk away with a cut key. Only
-SEC-23 actually revokes them.
+The distinction matters because **the master key does not protect your data; it
+unwraps the key that does.** Someone who held `.env` and the `users` table could
+unwrap your DEK — a 32-byte value they keep forever. Rotating the master key
+after that changes the lock while they walk away with a cut key. Only SEC-23
+actually revokes them. After a leaked `.env`: rotate the master key first, so
+no new DEK is wrapped under the leaked key, then every user's DEK, then replace
+the offline copy.
 
 Rotation is cheaper here than it sounds: row `id`s do not change, so AAD stays
 valid and it is a straight decrypt-old / encrypt-new per row. At personal scale
 it runs in **one database transaction** — it completes or nothing changed, so
 there is no half-rotated state to reason about and no `dek_version` column.
 
-Both require a password re-prompt, are audited, and revoke every other session
-(SEC-24). Neither reaches data someone already exported and kept.
+DEK rotation requires a password re-prompt, is audited, and revokes every other
+session (SEC-24); master-key rotation is a script the server owner runs, dry run
+first. Neither reaches data someone already exported and kept.
+
+**As built (Phase 8b, `auth_service/security_service.py`).** Rotation re-seals
+every Shape B row, every audit detail, the sealed profile and every receipt
+file (`rotation_repository.py`); receipts are written beside the originals and
+swapped in only after COMMIT, so a failed rotation changes nothing. The current
+session is re-keyed in place and every other ends. Rotation also writes a fresh
+backup and deletes the account's older server-side backups, because an older
+backup opens the old DEK.
+**FEATURES §13-A is closed as moot.** The phrase was never re-viewable, because
+the words were never stored, and the phrase itself is being removed.
 
 ### 5.3 The ciphertext envelope
 
@@ -661,11 +730,9 @@ gets a blind index, because none of them needs to be found before login.
 | Secret | Lives in | Lifetime |
 |---|---|---|
 | `BUDGET_MASTER_KEY` | `.env` on disk | Until rotated |
-| **Recovery phrase** | **Paper, off this machine** | Forever — it never expires |
+| **Offline copy of `.env`** | **The owner's password manager + encrypted USB, off the server, apart from backups** | Replaced the same day any key changes |
 | Wrapping key | Derived on demand, never stored | One call |
-| Recovery key | Derived on demand during recovery only | One call |
 | `dek_wrapped` | `users` table | Until rotation |
-| `dek_wrapped_recovery` | `users` table | Until the phrase is regenerated |
 | **User DEK (plaintext)** | **Process memory only** | Session, then zeroed |
 | Working set (decrypted) | Process memory only | `CACHE_TTL_SECONDS` |
 
@@ -841,6 +908,16 @@ the phone layout, never a separate design.
   offline writes are a Phase 9 item, deliberately deferred because merging
   offline edits into an encrypted store is genuinely hard.
 
+  As built: `app/web/static/sw.js` is hand-written and committed (Vite does not
+  touch it) and served at `/ZBDGT/sw.js` with `Service-Worker-Allowed: /ZBDGT/`
+  and a worker CSP of `default-src 'self'` — a worker runs under its own
+  script's CSP, and `'none'` would stop it fetching anything. It caches the
+  shell network-first and the hashed bundle cache-first, and returns before any
+  cache is consulted for `/api/`. `/ZBDGT/manifest.webmanifest` is served by
+  the web router; icons are PNGs drawn by `scripts/generate_icons.py` and
+  committed. The page clears `zbdgt-*` caches on lock and sign-out, and shows
+  an offline screen with no figures while the browser reports no connection.
+
 ---
 
 ## 8. Cross-cutting concerns
@@ -947,7 +1024,8 @@ Production runs in `C:\inetpub\wwwroot\FAST-PYTHON\.venv`, the same venv QUOT
 uses, so installing `requirements.txt` there changes packages QUOT also depends
 on. Wherever the two files overlap, this app's minimum versions match QUOT's
 floors, so nothing here forces an upgrade QUOT didn't ask for. The packages this
-app adds are `argon2-cffi`, `mnemonic` and `pillow`, plus `hypothesis` and `ruff`
+app adds are `argon2-cffi`, `mnemonic` (removed with the recovery phrase in
+Phase 9) and `pillow`, plus `hypothesis` and `ruff`
 for development. Preview the effect before installing with
 `pip install -r requirements.txt --dry-run`.
 
@@ -1007,7 +1085,7 @@ a complete, portable, **encrypted** copy of itself.
 | Entry | Contents |
 |---|---|
 | `manifest.json` | **Plaintext** — format version, app version, key version, timestamp, per-table row counts, checksums |
-| `keys.enc` | `dek_wrapped` **and** `dek_wrapped_recovery` |
+| `keys.enc` | `dek_wrapped`, under the master key version in the manifest. Files written before 2026-09-14 also carry `dek_wrapped_recovery`, which the reader ignores |
 | `<table>.enc` | One entry per data table: every row exactly as stored — the ciphertext plus its `id`, `user_id` and `key_version` |
 | `attachments/<id>.enc` | Receipt images, still encrypted |
 
@@ -1015,10 +1093,12 @@ The manifest is deliberately readable so a restore tool can validate the file �
 version, completeness, corruption — before asking for a key. It contains counts
 and hashes, never values.
 
-Because `keys.enc` carries both wrapped DEKs, **the file is standalone**: a new
-server, an empty database, and either `.env` or your twelve words is enough.
-That is what makes it a real second copy rather than a dump that only works
-against the machine that produced it.
+Because `keys.enc` carries the wrapped DEK, **the file is standalone** wherever
+the same master key exists: a new server, an empty database, and the offline
+`.env` copy (§5.2.1) are enough. That is what makes it a real second copy rather
+than a dump that only works against the machine that produced it. Keep the file
+and the `.env` copy apart: each is harmless alone, and together they are the
+data.
 
 ### 12.2 Only the import re-encrypts
 
@@ -1033,7 +1113,7 @@ The fix only involves the import side:
 ```
 EXPORT — needs no key                 IMPORT — needs your key
 ─────────────────────                 ───────────────────────
-copy each row exactly as stored:      unwrap the DEK (master key or phrase)
+copy each row exactly as stored:      unwrap the DEK (master key)
   id, user_id, key_version,           for each entry:
   payload (ciphertext, untouched)       rebuild the ORIGINAL AAD from the
 copy keys.enc and attachments             stored id, user_id, key_version
@@ -1048,8 +1128,8 @@ everything the importer needs to rebuild the original AAD.
 
 Because **writing a backup needs no key**, it can run with nobody logged in
 (§12.6). Nothing is decrypted to write the file, so it is exactly as safe as the
-rows it copies, and it opens with the same two keys: the master key or the
-recovery phrase.
+rows it copies, and it opens with the same key: the master key, current or
+retired.
 
 An earlier version of this design decrypted on export and re-encrypted under a
 backup key derived from the DEK. That required a key to be present for every
@@ -1058,40 +1138,75 @@ backup and bought nothing.
 ### 12.3 ID remapping — where the bugs will be
 
 Every cross-reference lives *inside* ciphertext, so the database cannot help.
-The importer builds an `export_id → new_id` map per entity and rewrites:
+The importer builds an `export_id → new_id` map per entity and rewrites every
+reference listed in **one place**, `app/services/backup_service/references.py`:
 
-- `transactions.account_id`, `.splits[].category_id`, `.tag_ids[]`,
-  `.recurring_id`, `.attachment_id`
+- `transactions.account_id`, `.counter_account_id`, `.splits[].category_id`,
+  `.tag_ids[]`, `.recurring_id`, `.pair_id`, `.attachment_id`
 - `categories.parent_id`
 - `budget_allocations.budget_id`, `.category_id`
 - `savings_goals.account_id`
-- `recurring_rules` template: `.account_id`, `.splits[].category_id`, `.tag_ids[]`
+- `recurring_rules.account_id`, `.counter_account_id`, `.category_id`,
+  `.interest_category_id`, `.tag_ids[]`
 - `subscriptions.recurring_rule_id`
+- `attachments.transaction_id`
 
-The last two were missing from the first version of this list. Without them,
-every recurring rule would restore still pointing at the old account and
-category ids and then post payments to the wrong place.
+The recurring and subscription lines were missing from the first version of
+this list, and the transfer, installment-interest and receipt references from
+the second; building it found them. Without them a rule restores still
+pointing at the old account and posts to the wrong place, and a transfer's legs
+lose each other.
 
 Insert order is fixed by those dependencies:
 
 ```
-accounts → categories (parents before children) → tags → budgets
-  → budget_allocations → recurring_rules → subscriptions
-  → savings_goals → transactions → attachments
+accounts → categories → tags → budgets → budget_allocations
+  → recurring_rules → subscriptions → savings_goals → user_preferences
+  → transactions → attachments
 ```
 
+A reference to a table at or after a row's own position — a category's parent,
+a transfer's other leg, a transaction's receipt — is **deferred**: the row is
+inserted with it cleared and it is filled in once every row exists, inside the
+same database transaction. Rows are inserted in their original id order within
+each table, so their relative order survives and two exports compare position
+by position. A reference that resolves to nothing aborts the restore before
+commit.
+
 Get it wrong and you get silent orphans that no constraint will catch. **Any new
-entity added later must be added to this map**, or it will restore broken.
+entity or reference added later must be added to that map**; a test fails if
+the insert order stops covering every encrypted table.
 
 ### 12.4 Modes and proof
 
 | Mode | Behaviour |
 |---|---|
-| `fresh` | Target must be empty for this user |
-| `merge` | Adds to existing, skipping duplicates by content hash |
-| `verify` | Restores into a scratch schema and diffs. Touches nothing live |
+| `fresh` | Target account must hold no data (its preferences excepted) |
+| `merge` | Adds to existing, skipping rows whose content is already there; one budget and one preferences row per account, so an existing one is kept |
+| `verify` | A dry restore in memory: every row opened, every reference resolved, the result compared with the live data. **Writes nothing** |
 
-`verify` is what makes testing backups routine instead of frightening.
+`verify` is what makes testing backups routine instead of frightening. It was
+first planned as a restore into a scratch schema; done in memory it proves the
+same things without extra database rights or anything to clean up.
+
+**A restore always targets an existing account.** On a new server you put the
+offline `.env` copy in place and sign up first, which gives the account its own
+DEK. The backup's rows are opened with the key they were made under and
+re-sealed under the target's. Which path may open a backup:
+
+| Path | Allowed for |
+|---|---|
+| The app's Restore screen | Only the signed-in account's **own** backup: the file's user id and `email_bidx` must match |
+| `scripts/restore.py`, run on the server | Any backup whose master key (current or retired) is in `.env` |
+
+Without the first rule a stolen `.budgetbak` plus any login on the server would
+turn the app into a decryption oracle for it. The script is not bound by it,
+because whoever holds `.env` can read everything anyway (§5.1). A restore onto a
+new server therefore always goes through the script: the new account's user id
+differs from the file's.
+
+Backups written before 2026-09-14 also carry a recovery wrap; nothing reads it
+any more (§5.2.1).
 
 The acceptance test, and it is not optional:
 
@@ -1161,14 +1276,20 @@ outstanding invitation at once. Because that code is the only gate on signup,
 registration attempts are rate-limited hard, compared in constant time, audited
 on failure, and additionally capped by `MAX_USERS`.
 
-### 13.2 There is no administrator who can read your data
+### 13.2 No administrator can read your data in the app
 
 Worth stating explicitly, because it is unusual and it is deliberate:
 
-> An admin can create, disable and delete accounts. They **cannot decrypt one.**
-> No key exists that opens everything, and adding one would defeat the entire
-> design. If a user forgets their password *and* loses their recovery phrase,
-> nobody — including you — can recover their data.
+> An admin can create, disable and delete accounts. They **cannot decrypt an
+> account** from the app, and cannot reset anyone's password: a reset link goes
+> only to the account's own email (FEATURES SEC-30), so whoever controls that
+> mailbox is the one who can.
+
+Be precise about the limit. There is no admin *role* that decrypts, but the
+master key opens every DEK, so whoever holds `.env` and can reach the database
+(the server owner) can read everything (§5.1). With the recovery phrase gone
+(§5.2.1) there is no per-user secret that stands outside that. If `.env` and
+every offline copy are lost, nobody can recover anyone's data.
 
 That is the correct behaviour for this system, not a missing feature.
 
@@ -1235,8 +1356,10 @@ from Phase 3 on is still design. The things most likely to need revision:
   now lives inside an array inside the ciphertext. `verify_integrity.py` and the
   category-delete path must both walk splits, and a bug in either is invisible
   to the database. Test these specifically.
-- **The recovery phrase is a second attack surface**, accepted deliberately
-  (§5.2.1). The paper it is written on is equivalent to the master key.
+- **`.env` is the single point of failure** (§5.2.1). The recovery phrase was
+  removed on 2026-09-14, so the offline copy is the only protection against
+  losing `.env`, and a loss takes every account at once. Check the copy by
+  fingerprint; do not trust it.
 - **The backup importer's ID remapping (§12.3) is the highest-risk code in the
   project.** Every cross-reference it misses becomes a silent orphan that no
   database constraint can catch, and you will not find out until a restore. The

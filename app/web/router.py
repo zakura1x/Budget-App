@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.core.config import PROJECT_ROOT, settings
@@ -87,6 +87,48 @@ async def root():
 @router.get(settings.BASE_URL_CLEAN + "/", response_class=HTMLResponse)
 async def shell(request: Request):
     return _render_shell(request)
+
+
+@router.get(settings.BASE_URL_CLEAN + "/manifest.webmanifest")
+async def manifest():
+    """UX-09 - what "Add to Home Screen" reads. Figures never appear in it."""
+    base = settings.BASE_URL_CLEAN
+    icons = f"{base}/static/icons"
+    return JSONResponse(
+        {
+            "name": settings.APP_NAME,
+            "short_name": "Budget",
+            "id": f"{base}/",
+            "start_url": f"{base}/",
+            "scope": f"{base}/",
+            "display": "standalone",
+            "orientation": "portrait",
+            "background_color": "#f5f6f1",
+            "theme_color": "#2c9669",
+            "icons": [
+                {"src": f"{icons}/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": f"{icons}/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                {"src": f"{icons}/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            ],
+        },
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@router.get(settings.BASE_URL_CLEAN + "/sw.js")
+async def service_worker():
+    """
+    The service worker, served from the app's root so its scope is the whole
+    app - a worker under /static/dist/ could only control /static/dist/.
+    app/web/static/sw.js is hand-written and committed; it caches the shell
+    and the bundle, and never an API response (SEC-29).
+    """
+    return FileResponse(
+        STATIC_DIR / "sw.js",
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": f"{settings.BASE_URL_CLEAN}/"},
+    )
 
 
 @router.get(settings.BASE_URL_CLEAN + "/{path:path}", response_class=HTMLResponse)

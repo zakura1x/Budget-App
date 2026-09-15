@@ -5,7 +5,8 @@
 - **Model**: Budget App — Spending Tracker (iOS, id1525179720)
 - **Duration**: 13–15 weeks (re-estimated 2026-09-11; was 9–11 when v1 had
   ~100 features — it now has 184, after projection, card bills, the statement check and
-  balance adjustments were added 2026-09-13)
+  balance adjustments were added 2026-09-13; 181 after the recovery phrase came out
+  on 2026-09-14)
 - **Planned**: Sep 14 – Dec 20, 2026 (98 days), plus ~2 weeks of buffer
 - **Built so far**: Phases 1 and 2, both on 2026-09-11 — crypto core, database,
   schema `ZBDGT` created, sign-in / lock / recovery. 212 tests
@@ -19,6 +20,14 @@
 > **Scope per phase comes from [FEATURES.md](FEATURES.md).** Feature IDs there
 > (TXN-01, BUD-06, …) map onto the tasks below. All scope decisions are settled;
 > §13 of that file records what was chosen and why.
+
+> **Decided 2026-09-14: no recovery phrase.** The 12-word phrase built in
+> Phases 1–2 (FEATURES SEC-14/15/16/20/22) is replaced by an offline copy of
+> `.env` kept by the server owner (SEC-31), and a forgotten password becomes an
+> reset by an emailed link (SEC-30). Entries below that built the phrase are kept as
+> history and marked *superseded*; the code and the database columns
+> were removed the same day (Phase 9, "REMOVE THE RECOVERY PHRASE", done
+> early). See ARCHITECTURE §5.2.1.
 
 > **Phase 1 is not optional and cannot be reordered.** Everything else in this
 > plan writes through the crypto layer. Getting it wrong later means decrypting
@@ -165,7 +174,7 @@ Config:
   ✅ self_test.py    wrap/unwrap/seal/open at startup, or the app will not start
   ✅ NO caller-supplied nonce anywhere - a test inspects every signature
 
-★ RECOVERY PHRASE (SEC-14):
+★ RECOVERY PHRASE (SEC-14):   # SUPERSEDED - removed 2026-09-14
   ✅ recovery.py - BIP-39 generate / validate / derive (`mnemonic` package)
   ✅ 12 words, 128-bit entropy
   ✅ phrase -> BIP-39 seed -> HKDF("budget:recovery-wrap") -> recovery key
@@ -297,6 +306,8 @@ tests/                                      # 168 tests, 12 files + conftest
   stored somewhere readable by the DEK, recovery would restore the data and
   lose the login. Recovery now: phrase finds the user -> DEK -> email -> new
   index under the new pepper. test_total_env_loss_recover_by_phrase_alone.
+  (Superseded 2026-09-14: with the offline .env copy the pepper is restored,
+  not replaced. profile_enc stays - it is where the email lives.)
 - The envelope's two header bytes are part of the AAD, so key_ver cannot be
   rewritten to steer decryption.
 - The AAD namespace is the constant "ZBDGT", never the configured DB_SCHEMA -
@@ -328,7 +339,7 @@ Crypto correctness:                                    (tests/test_crypto.py)
   ✅ DEK wrap -> unwrap round-trips under the master key; retired key works
   ✅ Blind index is deterministic, and differs with a different pepper
 
-Recovery phrase (SEC-14):                              (tests/test_recovery.py)
+Recovery phrase (SEC-14):   # SUPERSEDED 2026-09-14    (tests/test_recovery.py)
   ✅ Generated phrase is exactly 12 valid BIP-39 words
   ✅ phrase -> recovery key -> unwraps the SAME DEK as the master key does
   ✅ ★ Total .env loss simulated - master key AND pepper replaced - phrase
@@ -415,7 +426,8 @@ Auth core:
        the limit survives a restart
      - every failure audited (REGISTER_REJECTED, hashed IP)
      - MAX_USERS enforced (SEC-26); empty REGISTRATION_CODE = sign-up closed
-  ✅ recovery_service.py - the SEC-15 flow:
+  ✅ recovery_service.py - the SEC-15 flow (SUPERSEDED 2026-09-14; removed in
+     Phase 9, replaced by the SEC-30 email reset):
        phrase -> finds the account (no email needed) -> unwraps the DEK
        -> re-wraps it under the CURRENT master key -> rebuilds the email
        index under the CURRENT pepper -> new password, PIN cleared
@@ -475,7 +487,7 @@ Session & lock:
 Auth screens:
   ✅ Login - email + password, links to sign-up and recovery
   ✅ Register - invitation code, live checklist against the server's policy
-  ✅ ★ Recovery phrase screen, shown once:
+  ✅ ★ Recovery phrase screen, shown once (SUPERSEDED 2026-09-14):
       ✅ 12 words, large, numbered, 2 columns
       ✅ the warning (paper, away from this machine and the .env backup)
       ✅ acknowledge checkbox before Continue
@@ -512,7 +524,7 @@ Contract (all under /ZBDGT/api/v1):
   POST /auth/pin/verify  -> 200, unlocked
   POST /auth/unlock      -> 200, unlocked by password
   GET  /auth/me          -> who, locked?, PIN set? (email only while unlocked)
-  POST /auth/recover     -> phrase + new password, returns a session
+  POST /auth/recover     -> phrase + new password, returns a session  (removed 2026-09-14)
   GET  /settings/preferences -> the first endpoint that needs an unlocked session
 
 Verify:
@@ -520,7 +532,7 @@ Verify:
   ✅ Replaying a used refresh token kills every session - tested, twice:
      SQLite and SQL Server
   ✅ Locking drops keys: the data call answers SESSION_LOCKED until the PIN
-  ✅ ★ END-TO-END RECOVERY REHEARSAL - tests/test_auth_recovery.py: data
+  ✅ ★ END-TO-END RECOVERY REHEARSAL (SUPERSEDED 2026-09-14) - tests/test_auth_recovery.py: data
      written, master key AND pepper replaced, recovered with only the 12
      words, data read back, signed in with the new password
 ```
@@ -1018,40 +1030,50 @@ Verify:
 
 ### 🎯 Objective: Everything SQL would normally compute, computed in Python
 
+> **Status 2026-09-14: BUILT.** Everything below is done. Two changes from the
+> plan: the four `/stats/*` endpoints became ONE `GET /stats/overview`
+> (`from`/`to`, or `span` = budget | month | year around `on`) because the
+> screen always needs all of it and it is one pass over the working set; and
+> the heatmap shades a day against the budget per day (or the month's median
+> spending day with no budget), not against the month's largest day. The
+> calendar's day sheet can add an entry on that day. A year of data (3,650
+> transactions) overviews in ~21 ms warm. 506 tests pass (14 SQL Server tests
+> skipped by default).
+
 ### Backend Tasks
 
 ```yaml
 Days 1-3:
   Calendar:
-    ☐ calendar_service - per-day totals for a month
-    ☐ Heatmap intensity buckets
-    ☐ Day detail - that day's transactions
+    ✅ calendar_service - per-day totals for a month
+    ✅ Heatmap intensity buckets
+    ✅ Day detail - that day's transactions (GET /transactions?from=&to=)
 
 Days 4-5:
   Stats:
-    ☐ stats_service - EVERY aggregation lives here
-    ☐ ★ Aggregate over SPLITS, not transactions. A ₱3,500 receipt split
+    ✅ stats_service - EVERY aggregation lives here
+    ✅ ★ Aggregate over SPLITS, not transactions. A ₱3,500 receipt split
        ₱2,800/₱700 contributes to two categories. Transaction count and
        split count are different numbers - be deliberate about which
        one each chart reports.
-    ☐ ★ Exclude investment revaluations from income/spending (ACC-12)
-    ☐ ★ Exclude balance adjustments too (ACC-29) - losses and gains show
+    ✅ ★ Exclude investment revaluations from income/spending (ACC-12)
+    ✅ ★ Exclude balance adjustments too (ACC-29) - losses and gains show
        only as their own Adjustments total, never as spending or income
-    ☐ Category breakdown (pie), with sub-category drill-down
-    ☐ Spending trend over time (line)
-    ☐ Month-over-month comparison
-    ☐ Top merchants, average daily spend, income vs expense
-    ☐ ★ All of it over the warm cache - profile it, keep it under 50ms
+    ✅ Category breakdown (pie), with sub-category drill-down
+    ✅ Spending trend over time (line)
+    ✅ Month-over-month comparison
+    ✅ Top merchants, average daily spend, income vs expense
+    ✅ ★ All of it over the warm cache - profile it, keep it under 50ms
 
 Days 8-9:
   Tags (TXN-10, moved here 2026-09-14):
-    ☐ tag_service + repository - name, colour. The `tags` table has existed
+    ✅ tag_service + repository - name, colour. The `tags` table has existed
        since Phase 1; every payload has carried an empty tag_ids since Phase 4.
-    ☐ transaction_service validates tag_ids against the user's tags - no
+    ✅ transaction_service validates tag_ids against the user's tags - no
        foreign key is possible, the same rule as category_id
-    ☐ ★ Deleting a tag walks every transaction and drops the id (CAT-08's
+    ✅ ★ Deleting a tag walks every transaction and drops the id (CAT-08's
        rule: no FK can protect it, so the service must)
-    ☐ Ledger filter by tag; spending by tag in stats
+    ✅ Ledger filter by tag; spending by tag in stats
 ```
 
 ### Frontend Tasks
@@ -1059,43 +1081,41 @@ Days 8-9:
 ```yaml
 Days 1-3:
   Calendar tab:
-    ☐ Month grid with spending heatmap
-    ☐ Swipe between months
-    ☐ Tap a day -> bottom sheet with that day's list
-    ☐ Month total in the header
+    ✅ Month grid with spending heatmap
+    ✅ Swipe between months
+    ✅ Tap a day -> bottom sheet with that day's list
+    ✅ Month total in the header
 
 Days 4-5:
   Stats tab:
-    ☐ Donut chart by category (recharts), tap to drill down
-    ☐ Trend line with a period selector
-    ☐ Comparison bars vs previous period
-    ☐ ★ Forecast / projected period-end (STA-11, pulled into v1)
+    ✅ Donut chart by category (recharts), tap to drill down
+    ✅ Trend line with a period selector
+    ✅ Comparison vs previous period (figures, "by this point", per category)
+    ✅ ★ Forecast / projected period-end (STA-11, pulled into v1)
        "At this rate you finish the month at PHP 43,200."
        Same trend data as the line chart - a calculation, not plumbing.
-    ☐ Top merchants list
-    ☐ Consistent chart palette - same category colour everywhere in the app
+    ✅ Top merchants list
+    ✅ Consistent chart palette - same category colour everywhere in the app
 
 Days 8-9:
   Tags:
-    ☐ Tag chips in the add sheet, one tap away beside "Add note" - never in
+    ✅ Tag chips in the add sheet, one tap away beside "Add note" - never in
        the way of two taps and a number
-    ☐ Tag manager under More; tag filter in the ledger
+    ✅ Tag manager under More; tag filter in the ledger
 ```
 
 ### 🔗 Integration Points
 
 ```yaml
   GET /api/v1/calendar/{year}/{month}
-  GET /api/v1/stats/categories   ?from&to
-  GET /api/v1/stats/trend        ?from&to&granularity
-  GET /api/v1/stats/comparison   ?period
-  GET /api/v1/stats/tags         ?from&to
+  GET /api/v1/stats/overview     ?from&to | ?span&on, &granularity&today
   GET/POST/PATCH/DELETE /api/v1/tags
+  GET /api/v1/transactions       ?tag=
 
 Verify:
-  ☐ Category colours match between the pie, the ledger and the budget bars
-  ☐ Stats over a full year of data stay under 50ms warm
-  ☐ Deleting a tag leaves no transaction pointing at it
+  ✅ Category colours match between the pie, the ledger and the budget bars
+  ✅ Stats over a full year of data stay under 50ms warm (~21 ms)
+  ✅ Deleting a tag leaves no transaction pointing at it
 ```
 
 ---
@@ -1104,93 +1124,111 @@ Verify:
 
 ### 🎯 Objective: Money that moves without you touching the app
 
+> **Status 2026-09-14: BUILT.** One engine (`recurring_service`) for standard
+> rules, subscriptions and installments; `occurrences()` is the single pure
+> schedule that expansion posts and projection reads. Catch-up runs when Home
+> opens (`POST /recurring/expand`, the client's `today`) and is idempotent two
+> ways: `posted_through` on the rule plus `(recurring_id, recurring_on)` on the
+> posted rows - a deleted charge never comes back. A new rule posts nothing
+> dated before its creation unless `post_past`. Available credit now derives
+> the unpaid installment remainder from the plans (the stored
+> `unpaid_installments` field is gone). Category and tag deletion also walk
+> rules. Subscription reminders arrive as a `subscription_due` alert. The
+> endpoints are as listed below plus `/recurring/preview`, `/expand`,
+> `/{id}/skip` and `/{id}/payoff`. 541 tests pass (14 SQL Server skipped).
+> Gaps, for Phase 10: a later bill that shows a DIFFERENT installment amount
+> does not yet update the plan through the amount history (REC-29's last
+> sentence); interest for more than one provisional payment is confirmed one
+> statement at a time; subscription reminders show on Home only when a budget
+> exists, like the card banners.
+
 ### Backend Tasks
 
 ```yaml
 Days 1-3:
   Recurring:
-    ☐ recurring_service - daily/weekly/monthly/yearly/custom interval
-    ☐ Rule stores a template transaction + schedule
-    ☐ Expansion into real transactions on the due date
-    ☐ Catch-up on login for missed days (server may have been down)
-    ☐ IDEMPOTENCY: expanding twice must not double-charge. Test this.
-    ☐ End conditions: never / after N / until date
-    ☐ Semi-monthly schedule (REC-19): two days a month, e.g. 15th + 30th;
+    ✅ recurring_service - daily/weekly/monthly/yearly/custom interval
+    ✅ Rule stores a template transaction + schedule
+    ✅ Expansion into real transactions on the due date
+    ✅ Catch-up on login for missed days (server may have been down)
+    ✅ IDEMPOTENCY: expanding twice must not double-charge. Test this.
+    ✅ End conditions: never / after N / until date
+    ✅ Semi-monthly schedule (REC-19): two days a month, e.g. 15th + 30th;
        a day past month-end clamps to the last day
-    ☐ Dated amount history on the rule (REC-20) - "PHP 48,000 from Jan".
+    ✅ Dated amount history on the rule (REC-20) - "PHP 48,000 from Jan".
        Posted transactions keep the amount they posted with.
-    ☐ ★ occurrences(rule, start, end) is ONE pure function. Expansion posts
+    ✅ ★ occurrences(rule, start, end) is ONE pure function. Expansion posts
        it; projection only reads it. Build it first, test it alone.
 
 Days 4-5:
   ★ INSTALLMENTS (REC-08..17) - e.g. a motorcycle, PHP 5,000 x 36:
-    ☐ recurring_rules.kind = 'installment' - the SAME engine again.
+    ✅ recurring_rules.kind = 'installment' - the SAME engine again.
        kind is an enum: standard | subscription | installment.
-    ☐ Terms in the rule payload: total, payments, amount, start.
+    ✅ Terms in the rule payload: total, payments, amount, start.
        No new table.
-    ☐ ★ Remaining balance = total - sum(payments POSTED against this
+    ✅ ★ Remaining balance = total - sum(payments POSTED against this
        rule). DERIVED from the working set, never a stored counter -
        a counter drifts the first time a payment is edited or deleted.
-    ☐ Payments count as spending: budget + daily allowance (REC-11)
-    ☐ ★ NEVER post the full price up front (REC-12). Balances drop
+    ✅ Payments count as spending: budget + daily allowance (REC-11)
+    ✅ ★ NEVER post the full price up front (REC-12). Balances drop
        PHP 5,000 a month. This is the cash view - FEATURES S19.
-    ☐ Early payoff (REC-13): pay the remainder, plan closes
-    ☐ Skip a payment (REC-15): balance unchanged, payoff date +1 period.
+    ✅ Early payoff (REC-13): pay the remainder, plan closes
+    ✅ Skip a payment (REC-15): balance unchanged, payoff date +1 period.
        Skipping must never make debt disappear.
-    ☐ Final payment absorbs rounding (REC-16): 100,000 / 36 is not
+    ✅ Final payment absorbs rounding (REC-16): 100,000 / 36 is not
        exact; the last payment makes the total exact to the centavo
-    ☐ Credit-card installments (REC-14): monthly amount posts to the
+    ✅ Credit-card installments (REC-14): monthly amount posts to the
        card; available credit subtracts the WHOLE unpaid remainder
-    ☐ Installments screen: progress card per plan + total still owed
+    ✅ Installments screen: progress card per plan + total still owed
        across every plan (REC-17)
-    ☐ Price + months only (REC-28): terms = provisional, amount =
+    ✅ Price + months only (REC-28): terms = provisional, amount =
        price / payments, "Terms not confirmed" on the card
-    ☐ Statement check gains "interest on this installment" (REC-29).
+    ✅ Statement check gains "interest on this installment" (REC-29).
        Suggested only when ONE unconfirmed plan is on that statement.
        Posts payment 1's interest on the closing date WITH recurring_id,
        sets interest/total/amount, terms = confirmed. A later differing
        bill updates from that month via the amount history (REC-20).
-    ☐ ★ Two splits per payment (REC-30): price/payments in the purchase's
+    ✅ ★ Two splits per payment (REC-30): price/payments in the purchase's
        category, interest/payments in Financial > Interest. EACH split's
        last payment absorbs its own rounding. 0% -> one split.
-    ☐ Test: PHP 40,000 x 6, first bill +400 -> 7,066.67 x 5 + 7,066.65,
+    ✅ Test: PHP 40,000 x 6, first bill +400 -> 7,066.67 x 5 + 7,066.65,
        price exactly 40,000.00, interest exactly 2,400.00
-    ☐ Test: 36 payments posted -> remaining exactly 0, plan closed,
+    ✅ Test: 36 payments posted -> remaining exactly 0, plan closed,
        37th never generated, catch-up after a gap never double-posts
 
   Subscriptions (YOUR Netflix/gym charges - nothing to do with
   billing for this app, which is free and always will be):
-    ☐ ★ A SUBSCRIPTION IS A FLAGGED RECURRING RULE, NOT A SECOND
+    ✅ ★ A SUBSCRIPTION IS A FLAGGED RECURRING RULE, NOT A SECOND
        SYSTEM. recurring_rules.kind = 'subscription', plus a
        subscriptions row for the extra metadata.
        ONLY recurring_service creates transactions. Two engines both
        expanding Netflix would DOUBLE-CHARGE you, and you would not
        notice until a month-end total looked wrong.
-    ☐ subscription_service - a VIEW over recurring rules + metadata
-    ☐ Detection: scan past transactions, PROPOSE candidates. Confirming
+    ✅ subscription_service - a VIEW over recurring rules + metadata
+    ✅ Detection: scan past transactions, PROPOSE candidates. Confirming
        creates a flagged recurring rule - never start charging silently.
-    ☐ Price-change history (SUB-08) - record the old amount on edit
-    ☐ Upcoming charges view, reminder lead days
-    ☐ Monthly subscription total, and its share of the budget
+    ✅ Price-change history (SUB-08) - record the old amount on edit
+    ✅ Upcoming charges view, reminder lead days
+    ✅ Monthly subscription total, and its share of the budget
 
 Days 11-13:
   ★ PROJECTION (REC-21..26) - ARCHITECTURE §4.5, FEATURES §20:
-    ☐ projection_service - READ-ONLY. Never posts, never stores.
+    ✅ projection_service - READ-ONLY. Never posts, never stores.
        Imports recurring/account/budget services; nothing imports it.
-    ☐ Per month: income, committed, max(budget, committed), closing cash
+    ✅ Per month: income, committed, max(budget, committed), closing cash
        on hand carried into the next month (REC-21, REC-23)
-    ☐ Current month = remaining budget + occurrences AFTER today only
-    ☐ Budget month respects the custom start day; weekly budgets are
+    ✅ Current month = remaining budget + occurrences AFTER today only
+    ✅ Budget month respects the custom start day; weekly budgets are
        pro-rated by days, Decimal to the centavo
-    ☐ Lowest running balance and its date per month (REC-24)
-    ☐ Card look-ahead (REC-25): next 6 statements per card, grouped by the
+    ✅ Lowest running balance and its date per month (REC-24)
+    ✅ Card look-ahead (REC-25): next 6 statements per card, grouped by the
        ACC-09 cycle. The bill is shown, NEVER subtracted a second time.
-    ☐ Paused rules shown but excluded from totals (REC-26)
-    ☐ Test: projected occurrences == what expansion posts when the clock
+    ✅ Paused rules shown but excluded from totals (REC-26)
+    ✅ Test: projected occurrences == what expansion posts when the clock
        is moved forward over the same dates. Same dates, same amounts.
-    ☐ Test: 36-payment installment stops in the projection at payment 36,
+    ✅ Test: 36-payment installment stops in the projection at payment 36,
        and the final amount absorbs the rounding
-    ☐ Test: calling the projection leaves the transaction count unchanged
+    ✅ Test: calling the projection leaves the transaction count unchanged
 ```
 
 ### Frontend Tasks
@@ -1198,25 +1236,25 @@ Days 11-13:
 ```yaml
 Days 1-3:
   Recurring UI:
-    ☐ Rule list with next-occurrence dates
-    ☐ Create/edit sheet with a frequency picker
-    ☐ Pause / resume / end
-    ☐ Preview: "next 5 occurrences" before saving
+    ✅ Rule list with next-occurrence dates
+    ✅ Create/edit sheet with a frequency picker
+    ✅ Pause / resume / end
+    ✅ Preview: "next 5 occurrences" before saving
 
 Days 4-5:
   Subscriptions UI:
-    ☐ Subscription cards with merchant, cycle, next charge
-    ☐ "Detected subscriptions" suggestion list, one-tap confirm
-    ☐ Upcoming-charges timeline
-    ☐ Monthly total banner
+    ✅ Subscription cards with merchant, cycle, next charge
+    ✅ "Detected subscriptions" suggestion list, one-tap confirm
+    ✅ Upcoming-charges timeline
+    ✅ Monthly total banner
 
 Days 11-13:
   Projection UI:
-    ☐ Month strip (3 / 6 / 12): closing cash on hand per month, low point
+    ✅ Month strip (3 / 6 / 12): closing cash on hand per month, low point
        in danger when below zero, overcommitted months flagged
-    ☐ Tap a month -> bottom sheet of every projected item, by account
-    ☐ Card look-ahead: statement cards with total and due date
-    ☐ Amount-change and semi-monthly options in the rule sheet
+    ✅ Tap a month -> bottom sheet of every projected item, by account
+    ✅ Card look-ahead: statement cards with total and due date
+    ✅ Amount-change and semi-monthly options in the rule sheet
 ```
 
 ### 🔗 Integration Points
@@ -1230,9 +1268,9 @@ Days 11-13:
   GET  /api/v1/projection/cards   ?today&statements
 
 Verify:
-  ☐ Log in after 10 days away -> exactly the right catch-up transactions, once
-  ☐ Recurring charges reduce the daily allowance on their due date
-  ☐ Next month's projection matches what actually posts once it arrives
+  ✅ Log in after 10 days away -> exactly the right catch-up transactions, once
+  ✅ Recurring charges reduce the daily allowance on their due date
+  ✅ Next month's projection matches what actually posts once it arrives
 ```
 
 ---
@@ -1248,55 +1286,82 @@ Verify:
 > | Half | Dates | Covers |
 > |---|---|---|
 > | **8a — Backup & restore** | Nov 27 – Dec 3 · 7 days | CSV import/export, attachments, the full encrypted backup, ID remapping, automatic backup, the round-trip test, the backup screen |
-> | **8b — Settings, goals & PWA** | Dec 4 – Dec 10 · 7 days | Settings, recovery-phrase screens, savings goals, account deletion, PWA and offline |
+> | **8b — Settings, goals & PWA** | Dec 4 – Dec 10 · 7 days | Settings, security screens, savings goals, account deletion, PWA and offline |
 >
 > **8a goes first** because the round-trip test (DAT-14) must pass before the
 > app holds data you would hate to lose, and it should not share its slot
 > with PWA polish.
+
+> **Status 2026-09-14: 8a BUILT.** The round-trip test (DAT-14) passes, into an
+> empty account in the same database and into a brand-new database under a
+> DIFFERENT master key opened with the recovery phrase alone (DAT-16).
+> *(Since 2026-09-14 DAT-16 means a new server with the offline `.env` copy,
+> through `scripts/restore.py`; the phrase path was removed the same day.)*
+> Decisions made while building, recorded in ARCHITECTURE §12:
+>
+> - A restore targets an EXISTING account (on a new server: sign up first).
+>   Rows are opened with the backup's key and re-sealed under that account's.
+> - The master key opens only the signed-in account's OWN backup (same user
+>   id and email_bidx); any other file needs its 12 words (after Phase 9:
+>   scripts/restore.py on the server) - otherwise a stolen
+>   file plus any login would make the app a decryption oracle.
+> - `verify` is a dry restore in memory: every row opened, every reference
+>   resolved, the result diffed against live data. It writes nothing, so it
+>   needs no ZBDGT_VERIFY schema and no extra database rights.
+> - The reference map gained what the list below missed: `counter_account_id`
+>   and `pair_id` on transactions, `counter_account_id` and
+>   `interest_category_id` on recurring rules, `attachments.transaction_id`.
+> - Uploads (receipts, backups to restore) are raw request bodies: no
+>   multipart parser was added to the server.
+>
+> Receipts (TXN-15) landed here too. Not done: DAT-20 (a Task Scheduler job) is
+> Phase 9 as planned.
 
 ### Backend Tasks
 
 ```yaml
 8a - Backup & restore:
   Import / Export:
-    ☐ import_export_service
-    ☐ CSV export - DECRYPTED on the way out, streamed, never staged on disk
-    ☐ ★ Export warning: the file is plaintext. Say so, loudly, in the UI.
-    ☐ CSV import with column mapping + dry-run preview
-    ☐ Duplicate detection on import
-    ☐ ★ Splits round-trip (DAT-11): ONE ROW PER SPLIT, sharing a txn_id
+    ✅ import_export_service
+    ✅ CSV export - DECRYPTED on the way out, streamed, never staged on disk
+    ✅ ★ Export warning: the file is plaintext. Say so, loudly, in the UI.
+    ✅ CSV import with column mapping + dry-run preview
+    ✅ Duplicate detection on import
+    ✅ ★ Splits round-trip (DAT-11): ONE ROW PER SPLIT, sharing a txn_id
        and carrying a split_index. An export must re-import identically.
        Note the consequence: row count != transaction count, which will
        surprise you in Excel. Say so in the export screen.
-    ☐ Attachments: receipt images, AES-GCM encrypted on disk
-    ☐ ★ Per-user attachment paths (DAT-19): uploads/<user_id>/<id>.enc
+    ✅ Attachments: receipt images, AES-GCM encrypted on disk
+    ✅ ★ Per-user attachment paths (DAT-19): uploads/<user_id>/<id>.enc
        The single-user layout would let two users' receipts collide.
-    ☐ NO plaintext full archive (DAT-18) - you chose encrypted-only.
+    ✅ NO plaintext full archive (DAT-18) - you chose encrypted-only.
       CSV export stays the ONE deliberate opening in the boundary.
 
   ★ FULL ENCRYPTED BACKUP (DAT-06/12..17) - the "DB is not my only
     copy" feature. Pulled into Phase 8; this is the real deliverable.
-    ☐ backup_service.py + scripts/backup.py
-    ☐ .budgetbak zip: manifest.json (PLAINTEXT - version, key_version,
+    ✅ backup_service.py + scripts/backup.py
+    ✅ .budgetbak zip: manifest.json (PLAINTEXT - version, key_version,
       row counts, checksums, NO values) + keys.enc + one .enc per
       table + attachments/
-    ☐ keys.enc carries dek_wrapped AND dek_wrapped_recovery, so the
+    ✅ keys.enc carries dek_wrapped AND dek_wrapped_recovery, so the
       file is STANDALONE - new server + empty DB + 12 words is enough
-    ☐ ★ Export needs NO KEY: copy each row exactly as stored -
+      (2026-09-14: new server + empty DB + the offline .env copy; the
+      recovery wrap was dropped from new backups the same day)
+    ✅ ★ Export needs NO KEY: copy each row exactly as stored -
       id, user_id, key_version, and the payload ciphertext untouched.
       Nothing is decrypted to write a backup.
-    ☐ ★ Import re-encrypts: unwrap DEK -> rebuild the ORIGINAL AAD
+    ✅ ★ Import re-encrypts: unwrap DEK -> rebuild the ORIGINAL AAD
       from the stored id/user_id/key_version -> decrypt -> INSERT
       (NEW id) -> re-encrypt with AAD = new id.
       Reason: AAD is bound to row id, so rows cannot simply be
       reloaded into a database that assigns different ids.
-    ☐ ★ Automatic backup, triggered by USE (DAT-08) - never a clock:
+    ✅ ★ Automatic backup, triggered by USE (DAT-08) - never a clock:
       - 5 minutes after the last write (BACKUP_DEBOUNCE_MINUTES)
       - at login, if the newest backup is older than 24 hours
       IIS idle-stops the app after 20 minutes, so a 02:00 schedule
       would rarely fire. The 5-minute delay always falls inside the
       20 minutes IIS keeps the process alive after a request.
-    ☐ ★ ID REMAPPING (DAT-13) - the highest-risk code in the project.
+    ✅ ★ ID REMAPPING (DAT-13) - the highest-risk code in the project.
       Build export_id -> new_id maps and rewrite:
         transactions.account_id, .splits[].category_id, .tag_ids[],
         .recurring_id, .attachment_id
@@ -1306,31 +1371,51 @@ Verify:
         recurring_rules template .account_id, .splits[].category_id,
           .tag_ids[]                       <- was missing
         subscriptions.recurring_rule_id    <- was missing
-    ☐ ★ FIXED INSERT ORDER (dependencies live inside ciphertext, so
+    ✅ ★ FIXED INSERT ORDER (dependencies live inside ciphertext, so
       nothing will catch a mistake):
         accounts -> categories (parents first) -> tags -> budgets
         -> budget_allocations -> recurring_rules -> subscriptions
         -> savings_goals -> transactions -> attachments
-    ☐ Import modes (DAT-15): fresh | merge (dedupe by content hash) |
+    ✅ Import modes (DAT-15): fresh | merge (dedupe by content hash) |
       verify (restore into a scratch schema and diff, touch nothing live)
-    ☐ ★ The verify schema is ZBDGT_VERIFY - created and dropped by
+    ✅ ★ The verify schema is ZBDGT_VERIFY - created and dropped by
       restore.py itself. Covered by the same login rights as ZBDGT
       (confirmed in Phase 0).
-    ☐ Backup button in Settings (SEC-13) - not just a CLI script
+    ✅ Backup button in Settings (SEC-13) - not just a CLI script
 
   ★ THE TEST THAT PROVES PORTABILITY (DAT-14) - not optional:
-    ☐ export -> restore into an EMPTY database -> export again
-    ☐ The two exports must be SEMANTICALLY IDENTICAL: same entities,
+    ✅ export -> restore into an EMPTY database -> export again
+    ✅ The two exports must be SEMANTICALLY IDENTICAL: same entities,
       same values, same relationships. Row ids may differ; nothing else.
-    ☐ Until this passes you have a file, not a backup.
-    ☐ Also test: restore using ONLY the recovery phrase (no .env)
+    ✅ Until this passes you have a file, not a backup.
+    ✅ Also test: restore using ONLY the recovery phrase (no .env)
+      (superseded 2026-09-14 - becomes: restore into a new database
+      under the same .env, via restore.py)
 
 8b - Settings, goals & PWA:
+  # Status 2026-09-14: BUILT. Decisions made while building:
+  #  - SEC-16 "re-view the phrase" is NOT built: the words are shown once and
+  #    no copy exists anywhere (the design since Phase 1), so there is nothing
+  #    to show. Settings offers new words instead (SEC-22). Storing an
+  #    encrypted copy would make it viewable - an open question for the user.
+  #    CLOSED 2026-09-14: the user chose to remove the phrase altogether and
+  #    rely on an offline .env copy (SEC-14 reversed, SEC-30/31 added).
+  #  - SEC-23 (DEK rotation, planned for Phase 9) was built here, because the
+  #    plan puts its button beside SEC-22. One DB transaction; receipts swapped
+  #    in after commit; the current session keeps working under the new key.
+  #  - Both phrase operations replace the account's server-side backups: an
+  #    older backup still opens with the old words.
+  #  - A goal's progress is its linked account's balance; one goal per account
+  #    (cash, debit or savings) so no two goals claim the same pesos.
+  #  - Extended status (key version, sessions, row counts) is /admin/status,
+  #    not /health, which stays unauthenticated and says yes/no only.
+  #  - The admin screen (UX-20) landed here too: disable, enable, delete - no
+  #    emails or figures, by construction.
   Settings & goals:
     ☐ user_preferences - theme, week/month start, carry-over toggle,
        alert thresholds  (NO currency - PHP only)
     ☐ ★ Account deletion cascade (SEC-21): destroys the user's rows,
-       attachments, DEK and BOTH wrapped copies. Irreversible, audited,
+       attachments, DEK and its wrapped copy. Irreversible, audited,
        and gated behind typing the account name. There is no undo and
        no server-side backup - say so in the dialog.
     ☐ goal_service - savings goals and progress
@@ -1348,23 +1433,22 @@ Verify:
 
 ```yaml
 8a - Backup & data screens:
-    ☐ Backup screen (SEC-13): Back up now, download a copy to this
+    ✅ Backup screen (SEC-13): Back up now, download a copy to this
        device, restore (fresh | merge | verify), last backup time
-    ☐ CSV import/export screens with the plaintext warning on export
+    ✅ CSV import/export screens with the plaintext warning on export
 
 8b - Settings:
     ☐ Theme: light / dark / system
     ☐ Budget defaults, week and month start day, carry-over toggle
     ☐ Alert thresholds (warn %, pace on/off)
     ☐ Security: change password, change PIN, auto-lock delay
-    ☐ ★ Re-view the recovery phrase (SEC-16), behind a password re-prompt
-    ☐ ★ REGENERATE the phrase (SEC-22): new 12 words, same DEK re-wrapped,
-       old phrase dead instantly. One row update, no data re-encrypted.
-    ☐ ★ Revoke all OTHER sessions on either rotation (SEC-24)
-    ☐ ★ The UI must be honest about the limit: regenerating the phrase
-       does NOT lock out anyone who already USED the old one - they hold
-       your DEK. Offer 'Rotate my encryption key' (SEC-23) next to it,
-       and say plainly which problem each one solves. See FEATURES §17.
+    ✗ Re-view the recovery phrase (SEC-16) - never built; OUT 2026-09-14
+    ✗ REGENERATE the phrase (SEC-22) - built, then OUT 2026-09-14; the
+       Settings row removed 2026-09-14
+    ☐ ★ Revoke all OTHER sessions on password change and DEK rotation (SEC-24)
+    ☐ ★ The UI must be honest about the limit of 'Rotate my encryption
+       key' (SEC-23): it does not reach data already exported, or older
+       backups. See FEATURES §17.
     ☐ ★ "About your encryption" screen - what is protected, what is not,
        and the key-backup reminder. Plain language, no security theatre.
 
@@ -1402,17 +1486,71 @@ Days 1-3:
     ☐ Row ids do not change, so AAD stays valid - no id juggling
     ☐ ONE TRANSACTION, all-or-nothing. At personal scale this is fine
       and it avoids a half-rotated state and a dek_version column.
-    ☐ Re-wrap under master key AND issue a fresh recovery phrase
+    ☐ Re-wrap under the master key (no recovery phrase any more)
     ☐ Revoke every session
     ☐ Be honest in the docs: this does NOT reach data already exported.
 
-    ☐ ★ Master-key rotation must NOT invalidate the recovery phrase. dek_wrapped and
-       dek_wrapped_recovery wrap the SAME DEK under two independent keys;
-       rotating the master key touches only the first. Test that the
-       phrase still works after a full rotation.
+    ☐ ★ Master-key rotation must keep OLDER BACKUPS openable: the old key
+       goes into BUDGET_RETIRED_KEYS, and a test restores a backup written
+       before the rotation.
+    ☐ ★ Refresh the offline .env copy the same day, and check it with
+       env_fingerprint.py. A rotation without a new copy leaves the only
+       insurance unable to open anything.
     ☐ Resumable and idempotent - it must survive being interrupted
     ☐ DRY RUN MODE, and test a full rotation on a copy before ever running it
     ☐ scripts/verify_integrity.py - orphaned refs, undecryptable rows
+
+  ★ REMOVE THE RECOVERY PHRASE (decided 2026-09-14, SEC-14/15/16/20/22 out)
+    - DONE EARLY, 2026-09-14:
+    ✅ Sign-up: no words screen; /auth/register returns the session only and
+       goes straight to the PIN offer
+    ✅ Gone: POST /auth/recover, recovery_service, RecoveryPhraseEnter,
+       RecoveryPhraseSetup, lib/bip39.ts, the "Use your 12 words" link
+    ✅ Gone: regenerate_phrase, POST /security/phrase, the "New recovery
+       words" row; Settings keeps "Rotate my encryption key" (RotateKeySheet)
+    ✅ provisioning.py and DEK rotation wrap under the master key ONLY
+    ✅ restore_service: master key only; the app refuses another account's
+       file (other_account), restore.py opens any file with .env; new backups
+       write dek_wrapped only, older files with a recovery wrap still read
+    ✅ crypto/recovery.py, the `mnemonic` dependency, RECOVERY_* settings,
+       test_recovery.py, test_auth_recovery.py; the BIP-39 log redaction went
+       with `mnemonic` (the `phrase=` named-secret rule stays)
+    ✅ ★ users.dek_wrapped_recovery + recovery_created_at dropped by migration
+       20260914_0002, applied to ZBDGT on the user's go-ahead
+    ✅ AboutEncryption.tsx and Login.tsx: one key, held by the server owner
+    ✅ The forgotten-password gap closed the same day by SEC-30 (below)
+
+  ★ PASSWORD RESET BY EMAIL (SEC-30) - DONE EARLY, 2026-09-14. Chosen by the
+    user over an admin-issued code: nobody has to type a code.
+    ✅ "Forgot your password?" (Login) -> /forgot -> POST /auth/forgot-password.
+       Same 202 answer whether or not the address has an account
+    ✅ Link = APP_PUBLIC_URL + BASE_URL + /reset#token=... - the token in the
+       FRAGMENT (never sent to the server, never in IIS logs); origin from
+       config, never the Host header (a forged Host would phish the user)
+    ✅ 32 random bytes; only SHA-256 on users.reset_token_hash, with
+       reset_expires_at (30 min). One use; a newer request replaces it
+    ✅ /reset reads the token, wipes it from the address bar, POSTs it to
+       /auth/reset-password with the new password -> signed in, every other
+       session ended, lockout cleared, audited (PASSWORD_RESET_REQUEST /
+       PASSWORD_RESET). No ciphertext touched
+    ✅ Caps: 3 mails per address per hour (silently), 10 requests per IP
+       (429), 5 bad tokens per IP; both paths in the credential rate limit
+    ✅ Email sent AFTER the response (BackgroundTasks) so a real address is
+       not slower; plain-text + HTML; never a figure from the budget
+    ✅ SMTP from .env (Gmail, STARTTLS 587). Empty SMTP_HOST = feature off,
+       and the Login screen says to ask the server owner instead
+    ✅ Migration 20260914_0003 (two nullable columns) applied to ZBDGT
+    ✅ tests/test_password_reset.py - 11 tests; no test can send mail
+       (conftest blanks SMTP, email_service refuses under ENVIRONMENT=test)
+    ☐ Send one real reset email end to end once deployed over HTTPS
+
+  ★ OFFLINE .env COPY (SEC-31):
+    ☐ scripts/env_fingerprint.py - HKDF fingerprint per key (never the key),
+       run against .env or a named file, so copy and server can be compared
+    ☐ health / admin status shows the master key fingerprint for the same check
+    ☐ how-to-run.txt runbook (written 2026-09-14): what, where, when to
+       refresh, how to check, what to do if it leaks
+    ☐ ★ Rehearse: move .env aside, restore it from the offline copy, sign in
 
 Days 4-6:
   Testing:
@@ -1429,7 +1567,8 @@ Days 7-8:
   Deployment:
     ☐ web.config - already written, following QUOT's. ★ ONE worker
        (QUOT runs 2; this app cannot - per-process keys and cache)
-    ☐ Copy .env to C:\inetpub\wwwroot\ZBDGT\ BY HAND - it is not in git
+    ☐ Copy .env to C:\inetpub\wwwroot\ZBDGT\ BY HAND - it is not in git -
+       and confirm by fingerprint that it matches the offline copy
     ☐ BASE_URL=/ZBDGT, API_PREFIX=/ZBDGT/api/v1 as env vars
     ☐ ★ MASTER KEY STAYS IN .env - never in web.config, which is committed
     ☐ HTTPS (already - same host as QUOT) + SESSION_COOKIE_SECURE=True
@@ -1442,7 +1581,7 @@ Days 7-8:
     ☐ ★ Practise a restore from backup. A backup you have never restored
        is not a backup, and here the cost of finding out is everything.
     ☐ ★ Multi-user rotation: rotate_keys.py must iterate EVERY user's
-       DEK, and must not invalidate anyone's recovery phrase.
+       DEK, and must leave every user's older backups openable.
     ☐ misc/how-to-run.txt + README.md
 ```
 
@@ -1451,6 +1590,7 @@ Days 7-8:
 ```
 scripts/
 ├── generate_keys.py       # all secrets in one run
+├── env_fingerprint.py     # compare the offline .env copy with the server (SEC-31)
 ├── rotate_keys.py         # master key rotation, resumable, dry-run first
 ├── verify_integrity.py    # catches what FKs cannot
 ├── decrypt_query.py       # the only window into the data
@@ -1485,10 +1625,11 @@ scripts/
 
 ### Phase 1 · Sep 14 – Sep 23 · 10 days: Foundation & Crypto — built 2026-09-11
 - ✅ Folder structure, venv, dependencies
-- ☐ .env backed up OFF the company network  <- do this before bootstrap_user.py
+- ☐ Offline .env copy made: whole file, two places, off the server, apart from
+  the backups  <- do this before your sign-up (SEC-31)
 - ✅ 15 tables created in schema ZBDGT (2026-09-11)
 - ✅ **Crypto core passing every Phase 1 exit test**
-- ✅ **Recovery phrase unwraps the same DEK as the master key**
+- ✅ **Recovery phrase unwraps the same DEK as the master key** *(superseded 2026-09-14)*
 - ◐ **Benchmark: 224 ms SQLite; 2346 ms SQL Server from the dev PC (network-bound);
   server-side run pending - scripts/benchmark_fetch.py**
 - ✅ Vite building into app/web/static/dist/, first bundle committed
@@ -1496,12 +1637,12 @@ scripts/
 ### Phase 2 · Sep 24 – Oct 3 · 10 days: Auth — built 2026-09-11
 - ✅ Registration gated by REGISTRATION_CODE, rate limited
 - ✅ Register/login working, DEK unwraps at login
-- ✅ Recovery phrase shown once, confirmed (3 words), acknowledged
+- ✅ Recovery phrase shown once, confirmed (3 words), acknowledged *(superseded 2026-09-14)*
 - ✅ Refresh rotation + family revocation on reuse
 - ✅ PIN lock and auto-lock drop keys (the cache arrives in Phase 4)
 - ✅ Restarting uvicorn mid-session shows the PIN screen, not an error
 - ✅ Cookies scoped to /ZBDGT
-- ✅ **End-to-end recovery rehearsal: destroy the master key, recover by phrase**
+- ✅ **End-to-end recovery rehearsal: destroy the master key, recover by phrase** *(superseded 2026-09-14 - the rehearsal is now restoring .env from the offline copy, Phase 9)*
 - ✅ Admin slot taken by a placeholder account (2026-09-13, user 11) so that
   yours is an ordinary user - `scripts/create_admin_account.py`, credentials
   in the gitignored `admin-account.txt`
@@ -1536,34 +1677,40 @@ scripts/
 - ✅ Enter the bank's total, explain the difference, statement shows ✅ Checked
 - ✅ Editing a balance asks first; the audit trail exists only when accepted
 
-### Phase 6 · Nov 5 – Nov 13 · 9 days: Calendar, Stats & Tags
-- ☐ Heatmap, charts and forecast over the warm cache
-- ☐ Consistent category colours app-wide
-- ☐ Tags: add, assign, filter, delete without leaving orphans
+### Phase 6 · Nov 5 – Nov 13 · 9 days: Calendar, Stats & Tags — built 2026-09-14
+- ✅ Heatmap, charts and forecast over the warm cache - a year (3,650 rows) in ~21 ms warm
+- ✅ Consistent category colours app-wide
+- ✅ Tags: add, assign, filter, delete without leaving orphans
 
-### Phase 7 · Nov 14 – Nov 26 · 13 days: Recurring, Subscriptions, Installments & Projection
-- ☐ Catch-up expansion idempotent across a 10-day gap
-- ☐ One engine for all three kinds - nothing ever posts twice
-- ☐ Installment: 36 payments -> remaining exactly 0, no 37th
-- ☐ 12-month projection and card look-ahead, from the same occurrence
+### Phase 7 · Nov 14 – Nov 26 · 13 days: Recurring, Subscriptions, Installments & Projection — built 2026-09-14
+- ✅ Catch-up expansion idempotent across a 10-day gap
+- ✅ One engine for all three kinds - nothing ever posts twice
+- ✅ Installment: 36 payments -> remaining exactly 0, no 37th
+- ✅ 12-month projection and card look-ahead, from the same occurrence
   function expansion uses - and it never writes
-- ☐ Installment from price + months, interest confirmed by the first bill,
+- ✅ Installment from price + months, interest confirmed by the first bill,
   every payment split into price and interest
 
-### Phase 8a · Nov 27 – Dec 3 · 7 days: Backup & Restore
-- ☐ **Round-trip test passes: export -> empty DB -> export, identical**
-- ☐ Restore works with the recovery phrase alone (no .env)
-- ☐ Automatic backup fires 5 minutes after a change
-- ☐ CSV round-trip, with the plaintext export warning
+### Phase 8a · Nov 27 – Dec 3 · 7 days: Backup & Restore — built 2026-09-14
+- ✅ **Round-trip test passes: export -> empty DB -> export, identical**
+- ✅ Restore works with the recovery phrase alone (no .env) *(superseded 2026-09-14 - DAT-16 is now a new server with the offline .env copy)*
+- ✅ Automatic backup fires 5 minutes after a change
+- ✅ CSV round-trip, with the plaintext export warning
 
-### Phase 8b · Dec 4 – Dec 10 · 7 days: Settings, Goals & PWA
-- ☐ Recovery phrase view / regenerate, DEK rotation offered honestly
-- ☐ Savings goals, progress derived from real transfers
-- ☐ Installed to iPhone home screen, standalone
-- ☐ Offline shows no figures; nothing decrypted in browser storage
+### Phase 8b · Dec 4 – Dec 10 · 7 days: Settings, Goals & PWA — built 2026-09-14
+- ✅ Recovery phrase regenerate, DEK rotation offered honestly (re-VIEWING is not
+  possible - the server never kept the words; see the 8b status note)
+  *(the phrase half superseded 2026-09-14; DEK rotation stays)*
+- ✅ Savings goals, progress derived from real transfers
+- ◐ Installable standalone (manifest, service worker, icons) - still to try on a
+  real iPhone once deployed over HTTPS
+- ✅ Offline shows no figures; nothing decrypted in browser storage
 
 ### Phase 9 · Dec 11 – Dec 20 · 10 days: Hardening & Deploy
 - ☐ Master-key rotation rehearsed on a copy
+- ✅ Recovery phrase gone from code, API, UI and the users table (2026-09-14)
+- ☐ Admin password reset works, and leaves every row readable
+- ☐ **Offline .env copy checked by fingerprint, and a .env restore rehearsed**
 - ☐ **Backup restored successfully at least once**
 - ☐ Deployed at https://delca.noahapplication.com/ZBDGT, one worker
 - ☐ Lighthouse mobile 90+
@@ -1590,10 +1737,12 @@ Encryption:
     users, memory = N active users x their data (CACHE_MAX_USERS bounds it).
     Fine for a handful of people; this does not scale to hundreds and does
     not need to.
-  - NO ADMIN CAN READ ANOTHER USER'S DATA, by construction. If a user loses
-    both their password and their recovery phrase, their data is gone and
-    nobody can help. This is correct, not a gap - but say it plainly to
-    anyone you add as a user.
+  - NO ADMIN CAN READ ANOTHER USER'S DATA IN THE APP, by construction. A
+    forgotten password is reset by a link mailed to the account's own
+    address (SEC-30); an admin cannot reset anyone. Outside the
+    app, whoever holds .env and the database can read every account; with
+    no recovery phrase, no per-user secret stands outside that. Say it
+    plainly to anyone you add as a user.
   - Shared budgets remain OUT. Separate users is a config flag; two people
     on ONE budget needs per-budget keys wrapped via public-key crypto
     (~2-3 weeks, changes ARCHITECTURE §5). See ARCHITECTURE §13.4.
@@ -1657,7 +1806,8 @@ Found while building Phase 2 (2026-09-11):
     (wrong passwords, codes, phrases) are in login_attempts and survive.
   - The 12 words travel once, in the /auth/register response over TLS. There
     is no way to show them without sending them; they are never logged
-    (redaction covers phrases) and never stored.
+    (redaction covers phrases) and never stored. (Moot after Phase 9 - no
+    words.)
 
 Found while building Phase 5b (2026-09-14):
   - Card banners (bill due, spending limit) arrive with the budget status,
@@ -1682,13 +1832,22 @@ To revisit after Phase 1's benchmark:
     Until there is a second location, use 'Back up now' -> download
     to keep a copy on your own phone or PC once in a while. The file
     is encrypted, so it is safe there.
-  - LOSING BOTH .env AND THE RECOVERY PHRASE DESTROYS ALL DATA. Either one
-    alone opens your data (SEC-14), so back up both, in DIFFERENT places.
-    Downgraded from "fatal" to "survivable" - but only if the phrase is
-    actually written down somewhere off this machine.
-  - The recovery phrase is a second complete path to the data. The paper it
-    is written on is equivalent to the master key. Not in this repo, not in
-    a note on the same laptop, not beside the .env backup.
+  - LOSING .env AND EVERY OFFLINE COPY DESTROYS ALL DATA, FOR EVERY USER.
+    Since 2026-09-14 there is no recovery phrase: .env is the single key,
+    and the offline copy (SEC-31) is the only insurance. Two places, off
+    the server, refreshed whenever a key changes, checked by fingerprint.
+    Upgraded back from "survivable per user" to "fatal for everyone" - the
+    price of users carrying nothing.
+  - The offline copy is as sensitive as the server itself. With the database
+    or any .budgetbak it opens every account. Never in this repo, never on
+    the app server, never beside the backup files. If it leaks: rotate the
+    master key, then every DEK, then replace the copy (how-to-run.txt).
+  - THE MAILBOX IS NOW PART OF THE ACCOUNT (SEC-30). Whoever can read a
+    user's email can reset their password and read their budget. Say so to
+    anyone you add. If SMTP stops working (an App Password revoked, Gmail
+    blocking the sender), nobody can reset a password until it is fixed.
+  - The SMTP App Password lives in .env - it belongs in the offline copy too,
+    and if it leaks, revoke it in the Google account and put a new one in.
   - A rotation interrupted halfway leaves DEKs split across key versions.
     rotate_keys.py must be resumable, and BUDGET_RETIRED_KEYS must be
     populated before the rotation starts, not after.

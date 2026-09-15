@@ -22,6 +22,7 @@ import { TextField } from '../components/ui/TextField';
 import { useLookups } from '../hooks/useLookups';
 import { ApiError } from '../lib/api';
 import { createBudget, getBudget, ratio, updateBudget, type Budget as BudgetShape, type PeriodKind } from '../lib/budgets';
+import { usePreferencesStore } from '../stores/preferencesStore';
 import type { Category } from '../lib/categories';
 import { centavos, formatPHP, fromCentavos, sanitizeAmount, toDecimalString } from '../lib/money';
 import { localToday } from '../lib/transactions';
@@ -73,7 +74,16 @@ export function Budget() {
   const hydrate = (b: BudgetShape | null) => {
     setBudget(b);
     setLoaded(true);
-    if (!b) return;
+    if (!b) {
+      // A first budget starts from the defaults chosen in Settings.
+      const prefs = usePreferencesStore.getState().prefs;
+      if (prefs) {
+        setPeriod(prefs.budget_period);
+        setMonthStart(String(prefs.month_start_day));
+        setWeekStart(prefs.week_start_day);
+      }
+      return;
+    }
     setPeriod(b.period);
     setAmount(typedFrom(b.amount));
     setMonthStart(String(b.month_start_day));

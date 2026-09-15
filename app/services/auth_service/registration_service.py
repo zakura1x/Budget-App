@@ -5,8 +5,7 @@ Phase 1 needs this for scripts/bootstrap_user.py; Phase 2 wraps it in the
 registration-code gate, the rate limit and the audit trail (SEC-19/25/26).
 The part that must be right from the first account onward is here already:
 
-  * the DEK and its recovery phrase are created together - no DEK ever
-    exists without its second wrap (SEC-14)
+  * the DEK is created and wrapped under the master key in the same insert
   * MAX_USERS is enforced
   * the first account becomes admin when FIRST_USER_IS_ADMIN is set
   * the user's preferences row is written encrypted, through the same
@@ -14,7 +13,7 @@ The part that must be right from the first account onward is here already:
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -36,8 +35,6 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 class CreatedAccount:
     user_id: int
     is_admin: bool
-    # Shown ONCE, then gone. Nothing stores it.
-    recovery_phrase: str = field(repr=False)
 
 
 def default_preferences() -> dict:
@@ -84,7 +81,7 @@ def create_account(
         raise ConflictException("An account with that email already exists")
 
     is_admin = settings.FIRST_USER_IS_ADMIN and existing == 0
-    keys = provision_user_keys(settings.RECOVERY_PHRASE_WORDS, settings.RECOVERY_PHRASE_LANGUAGE)
+    keys = provision_user_keys()
     try:
         user = users.create(
             email=email,
@@ -97,10 +94,9 @@ def create_account(
         )
         cipher = UserCipher(user.id, keys.dek, keyring.current_version)
         PreferencesRepository(session, cipher).create(default_preferences())
-        phrase = keys.phrase
     finally:
         keys.wipe()
-    return CreatedAccount(user_id=user.id, is_admin=is_admin, recovery_phrase=phrase)
+    return CreatedAccount(user_id=user.id, is_admin=is_admin)
 
 
 # ======================================================================
@@ -125,8 +121,7 @@ def register(
     failures per IP per window, and every failure audited. MAX_USERS still
     caps the total, so a leaked code cannot create unlimited accounts.
 
-    Returns (CreatedAccount, IssuedSession). The caller sets the cookies and
-    shows the phrase - once.
+    Returns (CreatedAccount, IssuedSession). The caller sets the cookies.
     """
     import hmac
 

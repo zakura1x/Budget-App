@@ -4,9 +4,7 @@ Create an account from the command line - the first one, usually.
     python scripts/bootstrap_user.py
 
 Asks for an email, display name and password, creates the user with its own
-DEK, wraps that DEK under the master key AND under a freshly generated 12-word
-recovery phrase, writes the encrypted preferences row, and shows the phrase
-ONCE.
+DEK wrapped under the master key, and writes the encrypted preferences row.
 
 Runs on the server with direct database access, so it skips the registration
 code (whoever can run this can already read .env). MAX_USERS still applies,
@@ -44,23 +42,8 @@ def main() -> int:
         print(f"Not created: {exc.detail or exc.title}", file=sys.stderr)
         return 1
 
-    words = account.recovery_phrase.split()
-    print(f"\nAccount {account.user_id} created{' (admin)' if account.is_admin else ''}.\n")
-    print("=" * 64)
-    print("  YOUR RECOVERY PHRASE - shown once, never stored anywhere")
-    print("=" * 64)
-    for i in range(0, len(words), 3):
-        print("   " + "".join(f"{n:>2}. {w:<12}" for n, w in enumerate(words[i:i + 3], start=i + 1)))
-    print("=" * 64)
-    print(
-        "  Write these on PAPER. Keep them away from this machine and away\n"
-        "  from your .env backup. Either one opens all of your data - keeping\n"
-        "  them together defeats the point of having two. Lose both and the\n"
-        "  data is gone, permanently, for everyone.\n"
-    )
-    input("Press Enter once the words are written down. The screen will be cleared. ")
-    os.system("cls" if os.name == "nt" else "clear")
-    print(f"Account {account.user_id} is ready.")
+    print(f"\nAccount {account.user_id} created{' (admin)' if account.is_admin else ''}.")
+    print("Its key is wrapped under the master key in .env - keep the offline copy of .env current.")
     return 0
 
 

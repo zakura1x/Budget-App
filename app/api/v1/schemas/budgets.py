@@ -102,6 +102,7 @@ class AlertOut(BaseModel):
     message: str
     category_id: Optional[int] = None
     account_id: Optional[int] = None
+    rule_id: Optional[int] = None  # subscription_due (SUB-06)
 
 
 class StatusOut(BaseModel):
@@ -136,3 +137,8 @@ class PreferencesIn(BaseModel):
     daily_allowance_mode: Optional[Literal["remaining_over_days_left", "fixed_daily"]] = None
     alert_warn_threshold_pct: Optional[int] = Field(default=None, ge=50, le=100)
     alert_pace_enabled: Optional[bool] = None
+    theme: Optional[Literal["system", "light", "dark"]] = None  # UX-05
+    budget_period: Optional[PeriodKind] = None  # the default for a new budget
+    month_start_day: Optional[int] = Field(default=None, ge=1, le=31)
+    week_start_day: Optional[int] = Field(default=None, ge=1, le=7)
+    auto_lock_minutes: Optional[int] = Field(default=None, ge=1, le=60)

@@ -5,7 +5,7 @@ Two budgets:
 
   credentials   RATE_LIMIT_LOGIN_REQUESTS per RATE_LIMIT_LOGIN_WINDOW_SECONDS,
                 per IP, on the endpoints that accept a secret: login,
-                register, recover, PIN, password unlock. Per IP, because the
+                register, PIN, password unlock, password reset. Per IP, because the
                 per-account lockout cannot see one IP trying one password
                 against many accounts.
   everything    RATE_LIMIT_REQUESTS per RATE_LIMIT_WINDOW_SECONDS on the API,
@@ -17,7 +17,7 @@ because there is exactly one worker (web.config); QUOT has to divide its
 budget across workers, this app does not.
 
 This is the coarse, fast layer. The durable limits - 5 wrong passwords per
-account, 5 signup codes and 3 recovery phrases per IP - live in the database
+account and 5 signup codes per IP - live in the database
 (login_attempts) and survive a restart.
 """
 
@@ -33,7 +33,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.core.config import settings
 from app.core.middleware.identity import client_host, identify
 
-CREDENTIAL_PATHS = ("/auth/login", "/auth/register", "/auth/recover", "/auth/pin/verify", "/auth/unlock")
+CREDENTIAL_PATHS = ("/auth/login", "/auth/register", "/auth/pin/verify", "/auth/unlock",
+                    "/auth/forgot-password", "/auth/reset-password")
 
 
 class SlidingWindowLimiter:

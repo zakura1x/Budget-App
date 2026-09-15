@@ -6,8 +6,7 @@ Create the FIRST account, so that yours does not have to be the admin one.
 FIRST_USER_IS_ADMIN makes account number one the administrator. If you would
 rather your own account were an ordinary user, this takes that slot: it
 creates a placeholder account with a generated password, and writes its
-credentials - and its recovery phrase, which is shown exactly once - to
-`admin-account.txt` in the repository root. That file is in .gitignore and
+credentials to `admin-account.txt` in the repository root. That file is in .gitignore and
 must stay there.
 
 It REFUSES to run once any account exists. Its whole purpose is to be first;
@@ -91,12 +90,9 @@ def main() -> int:
             "Email     " + EMAIL,
             "Password  " + password,
             "",
-            "Recovery phrase (shown once, stored nowhere on the server):",
-            "  " + account.recovery_phrase,
-            "",
             "=" * 60,
             "This file is gitignored. It is as sensitive as the account is:",
-            "either the password or the phrase opens it. If you do not want",
+            "the password opens it. If you do not want",
             "the file on this machine, copy what you need elsewhere and",
             "delete it - nothing in the app reads it.",
             "",
@@ -105,7 +101,7 @@ def main() -> int:
     )
 
     print(f"Account {account.user_id} created (admin={account.is_admin}).")
-    print(f"Credentials and recovery phrase written to {OUTPUT.name} (gitignored).")
+    print(f"Credentials written to {OUTPUT.name} (gitignored).")
     print("Your own account is next - sign up through the app; it will be an ordinary user.")
     return 0
 

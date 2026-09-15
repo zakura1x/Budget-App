@@ -8,6 +8,7 @@ import { authErrorMessage, useAuthStore } from '../stores/authStore';
 export function Login() {
   const login = useAuthStore((s) => s.login);
   const registrationOpen = useAuthStore((s) => s.config?.registration_open ?? false);
+  const resetEnabled = useAuthStore((s) => s.config?.password_reset_enabled ?? false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -53,10 +54,11 @@ export function Login() {
         </Button>
       </form>
       <p className="mt-6 text-center text-footnote text-ink-2">
-        Forgot your password?{' '}
-        <Link to="/recover" className="font-semibold text-accent">
-          Use your 12 words
-        </Link>
+        {resetEnabled ? (
+          <Link to="/forgot" className="font-semibold text-accent">Forgot your password?</Link>
+        ) : (
+          'Forgot your password? Ask whoever runs this app. Your data isn’t locked to your password, so nothing is lost.'
+        )}
       </p>
     </AuthLayout>
   );

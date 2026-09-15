@@ -11,6 +11,7 @@ from typing import Any, Dict, Mapping
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.crypto.user_cipher import UserCipher
 from app.core.exceptions import ValidationException
 from app.db.repositories.preferences_repository import PreferencesRepository
@@ -18,7 +19,13 @@ from app.services import audit_service
 from app.services.auth_service.registration_service import default_preferences
 from app.services.budget_service.allowance import MODES
 
-EDITABLE = ("carry_over", "daily_allowance_mode", "alert_warn_threshold_pct", "alert_pace_enabled")
+EDITABLE = (
+    "carry_over", "daily_allowance_mode", "alert_warn_threshold_pct", "alert_pace_enabled",
+    # Phase 8b
+    "theme", "budget_period", "month_start_day", "week_start_day", "auto_lock_minutes",
+)
+THEMES = ("system", "light", "dark")
+PERIODS = ("weekly", "monthly", "custom")
 
 
 def get_preferences(db: Session, cipher: UserCipher) -> Dict[str, Any]:
@@ -45,6 +52,21 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         if isinstance(value, bool) or not isinstance(value, int) or not 50 <= value <= 100:
             raise ValidationException("alert_warn_threshold_pct must be 50-100")
         cleaned["alert_warn_threshold_pct"] = value
+    if "theme" in changes:
+        if changes["theme"] not in THEMES:
+            raise ValidationException(f"theme must be one of: {', '.join(THEMES)}")
+        cleaned["theme"] = changes["theme"]
+    if "budget_period" in changes:
+        if changes["budget_period"] not in PERIODS:
+            raise ValidationException(f"budget_period must be one of: {', '.join(PERIODS)}")
+        cleaned["budget_period"] = changes["budget_period"]
+    for key, low, high in (("month_start_day", 1, 31), ("week_start_day", 1, 7)):
+        if key in changes:
+            cleaned[key] = _int(changes[key], key, low, high)
+    if "auto_lock_minutes" in changes:
+        # The server's own idle limit is the ceiling: a longer choice would be a promise it cannot keep.
+        cleaned["auto_lock_minutes"] = _int(changes["auto_lock_minutes"], "auto_lock_minutes", 1,
+                                            settings.PIN_AUTO_LOCK_MINUTES)
 
     repo = PreferencesRepository(db, cipher)
     record = repo.current()
@@ -59,6 +81,12 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
     )
     db.commit()
     return data
+
+
+def _int(value: Any, name: str, low: int, high: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValidationException(f"{name} must be {low}-{high}")
+    return value
 
 
 def _bool(value: Any, name: str) -> bool:

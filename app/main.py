@@ -41,6 +41,7 @@ from app.core.middleware.logging_middleware import LoggingMiddleware  # noqa: E4
 from app.core.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
 from app.core.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
 from app.db.connection import check_database, dispose_engine  # noqa: E402
+from app.services.backup_service.scheduler import get_scheduler  # noqa: E402 - registers the after-commit trigger (DAT-08)
 from app.web.router import STATIC_DIR, router as web_router  # noqa: E402
 
 logger = logging.getLogger("app")
@@ -69,6 +70,8 @@ async def lifespan(app: FastAPI):
 
     # Nothing to zero here: the session keyring lives in memory and dies with
     # the process. Dispose the pool so IIS recycles do not leave connections.
+    # A pending automatic backup is dropped: the next sign-in catches up (DAT-08).
+    get_scheduler().cancel_all()
     dispose_engine()
     logger.info("Shutdown complete")
 
@@ -95,6 +98,7 @@ app.add_middleware(
     SecurityHeadersMiddleware,
     api_prefix=settings.API_PREFIX,
     csp_exempt_paths=(f"{settings.API_PREFIX}/docs", f"{settings.API_PREFIX}/openapi.json") if docs_enabled else (),
+    worker_paths=(f"{settings.BASE_URL_CLEAN}/sw.js",),
 )
 if not settings.is_production:
     # Only the Vite dev server needs this. In production the bundle and the API

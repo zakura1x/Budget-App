@@ -36,6 +36,10 @@ from app.core.crypto.envelope import PLACEHOLDER
 from app.core.crypto.user_cipher import UserCipher
 from app.db.types import utcnow
 
+# Users whose data this session changed. Read after COMMIT by the backup
+# scheduler (DAT-08): a backup follows five minutes after the last change.
+CHANGED_USERS = "zbdgt_changed_users"
+
 
 @dataclass(frozen=True)
 class Record:
@@ -78,6 +82,7 @@ class EncryptedRepository:
         self.session.flush()  # INSERT -> the identity id now exists
         row.payload = self.cipher.seal(self.table, row.id, data)
         self.session.flush()  # UPDATE, same transaction
+        self._changed()
         return Record(row.id, dict(data), row.row_created, row.row_updated, False)
 
     def update(self, row_id: int, data: Mapping[str, Any]) -> Optional[Record]:
@@ -93,6 +98,7 @@ class EncryptedRepository:
         row.payload = self.cipher.seal(self.table, row.id, data)
         row.row_updated = utcnow()
         self.session.flush()
+        self._changed()
         return Record(row.id, dict(data), row.row_created, row.row_updated, row.is_deleted)
 
     def soft_delete(self, row_id: int) -> bool:
@@ -101,7 +107,12 @@ class EncryptedRepository:
             .where(self.model.id == row_id, self.model.user_id == self.cipher.user_id)
             .values(is_deleted=True, row_updated=utcnow())
         )
+        if result.rowcount == 1:
+            self._changed()
         return result.rowcount == 1
+
+    def _changed(self) -> None:
+        self.session.info.setdefault(CHANGED_USERS, set()).add(self.cipher.user_id)
 
     # ------------------------------------------------------------------- read
 

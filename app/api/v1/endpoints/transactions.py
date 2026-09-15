@@ -40,6 +40,7 @@ def list_transactions(
     category: Optional[int] = Query(default=None),
     account: Optional[int] = Query(default=None),
     type: Optional[str] = Query(default=None, pattern="^(expense|income|transfer|adjustment)$"),
+    tag: Optional[int] = Query(default=None),
     q: Optional[str] = Query(default=None, max_length=80),
     cursor: Optional[str] = Query(default=None, max_length=40),
     limit: int = Query(default=50, ge=1, le=200),
@@ -48,7 +49,7 @@ def list_transactions(
 ) -> PageOut:
     page = transaction_service.list_transactions(
         db, ctx.cipher, date_from=date_from, date_to=date_to, category_id=category,
-        account_id=account, type=type, q=q, cursor=cursor, limit=limit,
+        account_id=account, type=type, tag_id=tag, q=q, cursor=cursor, limit=limit,
     )
     return PageOut.model_validate(page)
 

@@ -37,7 +37,9 @@ Budget App/
 │   │       │   ├── transactions.py
 │   │       │   ├── budgets.py
 │   │       │   ├── calendar.py
-│   │       │   ├── stats.py
+│   │       │   ├── stats.py             # GET /stats/overview - one response per range
+│   │       │   ├── calendar.py          # GET /calendar/{year}/{month}
+│   │       │   ├── tags.py
 │   │       │   ├── recurring.py
 │   │       │   ├── subscriptions.py
 │   │       │   ├── projection.py        # months ahead + card look-ahead (read-only)
@@ -52,7 +54,8 @@ Budget App/
 │   │           ├── category.py
 │   │           ├── transaction.py       # also defines the encrypted payload shape
 │   │           ├── budget.py
-│   │           ├── stats.py
+│   │           ├── stats.py             # calendar + stats shapes
+│   │           ├── tags.py
 │   │           ├── recurring.py
 │   │           ├── subscription.py
 │   │           ├── projection.py
@@ -70,8 +73,7 @@ Budget App/
 │   │   │   ├── envelope.py              # AES-256-GCM, fmt|ver|nonce|ct|tag
 │   │   │   ├── dek.py                   # per-user DEK wrap / unwrap
 │   │   │   ├── blind_index.py           # HMAC email lookup (the one exception)
-│   │   │   ├── recovery.py              # ★ BIP-39 phrase -> 2nd DEK wrap (SEC-14)
-│   │   │   ├── provisioning.py          # a new user's DEK + phrase, made together
+│   │   │   ├── provisioning.py          # a new user's DEK, wrapped under the master key
 │   │   │   ├── user_cipher.py           # ★ the facade: seals/opens one user's rows,
 │   │   │   │                            #   never gives its key back
 │   │   │   ├── session_keys.py          # in-memory DEK store, zeroed on lock
@@ -101,7 +103,7 @@ Budget App/
 │   │   ├── models/                      # 15 tables, schema ZBDGT
 │   │   │   ├── encrypted_row.py         # the Shape B mixin every data table uses
 │   │   │   ├── user.py                  # A: email_bidx, profile_enc, password_hash,
-│   │   │   │                            #    pin_hash, dek_wrapped + dek_wrapped_recovery
+│   │   │   │                            #    pin_hash, dek_wrapped
 │   │   │   ├── refresh_token.py         # A: hashed, family_id, parent_id
 │   │   │   ├── login_attempt.py         # A: email_bidx, hashed IP
 │   │   │   ├── audit_log.py             # A: plaintext verb, encrypted detail
@@ -125,14 +127,16 @@ Budget App/
 │   │       ├── user_repository.py
 │   │       ├── account_repository.py
 │   │       ├── category_repository.py
+│   │       ├── tag_repository.py
 │   │       ├── transaction_repository.py   # subclasses EncryptedRepository
 │   │       ├── budget_repository.py
-│   │       ├── recurring_repository.py
-│   │       ├── subscription_repository.py
+│   │       ├── recurring_repository.py  # rules AND the subscriptions metadata rows
 │   │       ├── goal_repository.py
 │   │       ├── backup_repository.py     # bulk read/write for export & import
+│   │       ├── attachment_repository.py # receipts: sealed files per user
+│   │       ├── rotation_repository.py   # re-seal under a new DEK; purge a user
 │   │       ├── token_repository.py      # refresh-token families, revocation
-│   │       ├── attempt_repository.py    # the lockout / signup / recovery ledger
+│   │       ├── attempt_repository.py    # the lockout / signup / reset ledger
 │   │       └── audit_repository.py      # detail sealed under the user's DEK
 │   │
 │   ├── services/                        # ALL business logic. Plaintext only.
@@ -142,10 +146,12 @@ Budget App/
 │   │   │   ├── tokens.py                # access JWT, refresh token + hash
 │   │   │   ├── session_service.py       # start / rotate / end - keyring and DB together
 │   │   │   ├── pin_service.py
-│   │   │   ├── recovery_service.py      # phrase -> unwrap DEK + reset password
+│   │   │   ├── password_reset_service.py # SEC-30 emailed link: #fragment token,
+│   │   │   │                            #   SHA-256 stored, 30 min, one use, audited
+│   │   │   ├── security_service.py      # password, DEK rotation, deletion
 │   │   │   ├── registration_service.py   # create_account + the code gate,
 │   │   │   │                             #   rate limit, MAX_USERS
-│   │   │   └── rotation_service.py       # SEC-22 re-wrap · SEC-23 new DEK
+│   │   │   └── rotation_service.py       # SEC-23 new DEK
 │   │   ├── budget_service/
 │   │   │   ├── budget_service.py
 │   │   │   ├── allowance.py             # ★ the daily allowance calculation
@@ -163,14 +169,20 @@ Budget App/
 │   │   │                                 # occurrences() expansion uses (§4.5)
 │   │   ├── statement_service.py         # bank total vs the app's statement;
 │   │   │                                 # resolutions are ordinary transactions
-│   │   ├── stats_service.py             # every aggregation SQL cannot do
-│   │   ├── calendar_service.py
+│   │   ├── stats_service.py             # every aggregation SQL cannot do - one
+│   │   │                                 # overview: categories, trend, forecast
+│   │   ├── calendar_service.py          # per-day totals + heatmap level
+│   │   ├── tag_service.py               # delete walks every transaction's tag_ids
 │   │   ├── goal_service.py
 │   │   ├── import_export_service.py     # CSV in/out (the one warned opening)
+│   │   ├── attachment_service.py        # receipts: sniffed, sealed, per-user files
 │   │   ├── backup_service/              # ★ full encrypted .budgetbak
-│   │   │   ├── exporter.py              #   copies rows as stored - needs no key
-│   │   │   ├── importer.py              #   decrypt -> INSERT -> re-encrypt
-│   │   │   └── id_remap.py              #   ★ highest-risk code in the project
+│   │   │   ├── references.py            #   ★ every in-ciphertext reference + insert order
+│   │   │   ├── bundle.py                #   write (no key) / read + checksums / prune
+│   │   │   ├── restore_service.py       #   unlock (master key: own backup in the app),
+│   │   │   │                            #   fresh | merge | verify (in memory)
+│   │   │   └── scheduler.py             #   5 min after a change; at sign-in if stale
+│   │   ├── email_service.py             # SMTP. Reset links only - never a figure
 │   │   ├── admin_service.py             # create/disable accounts. NEVER decrypt.
 │   │   └── audit_service.py
 │   │
@@ -203,12 +215,13 @@ Budget App/
 │       ├── App.tsx
 │       │
 │       ├── hooks/
-│       │   └── useAutoLock.ts           # idle 5 min, or hidden > 1 min
+│       │   ├── useAutoLock.ts           # idle 5 min, or hidden > 1 min
+│       │   ├── useLookups.ts            # accounts, categories, tags by id
+│       │   └── useThemeColours.ts       # theme.css tokens for recharts' SVG attributes
 │       │
 │       ├── lib/
 │       │   ├── api.ts                   # single fetch wrapper, 401 -> refresh
 │       │   ├── auth.ts                  # the /auth endpoints, typed
-│       │   ├── bip39.ts                 # the 2,048 words - its own lazy chunk
 │       │   ├── config.ts                # BASE_URL / API_PREFIX from the shell's meta tags
 │       │   ├── money.ts                 # PHP formatting by string arithmetic - no floats
 │       │   └── dates.ts
@@ -239,27 +252,26 @@ Budget App/
 │       ├── screens/
 │       │   ├── Login.tsx
 │       │   ├── Register.tsx
-│       │   ├── RecoveryPhraseSetup.tsx  # ★ 12 words, shown once + confirm 3
-│       │   ├── RecoveryPhraseEnter.tsx  # ★ recover access + reset password
+│       │   ├── ForgotPassword.tsx       # SEC-30: email in, same answer either way
+│       │   ├── ResetPassword.tsx        # SEC-30: #token from the link + new password
 │       │   ├── PinLock.tsx              # PIN or password; after a restart too
-│       │   ├── PinSetup.tsx             # after sign-up and recovery, skippable
+│       │   ├── PinSetup.tsx             # after sign-up and a reset, skippable
 │       │   ├── Home.tsx                 # the ring + daily allowance
-│       │   ├── Calendar.tsx
-│       │   ├── Stats.tsx
+│       │   ├── Calendar.tsx             # heatmap month, day sheet
+│       │   ├── Stats.tsx                # forecast, donut drill-down, trend, lists
+│       │   ├── Tags.tsx
 │       │   ├── Transactions.tsx
 │       │   ├── Accounts.tsx
 │       │   ├── Budgets.tsx
 │       │   ├── Categories.tsx
-│       │   ├── Recurring.tsx
-│       │   ├── Subscriptions.tsx
-│       │   ├── Installments.tsx         # progress cards + total still owed
+│       │   ├── Recurring.tsx            # tabs: bills & pay · subscriptions (+ detected)
+│       │   │                            #   · installments (progress + total still owed)
 │       │   ├── Projection.tsx           # month strip, low points, card look-ahead
 │       │   ├── Goals.tsx
 │       │   ├── ImportExport.tsx
 │       │   ├── BackupRestore.tsx        # ★ download / restore / verify
 │       │   ├── Admin.tsx                # accounts only - no financial data
-│       │   ├── RecoveryPhraseRotate.tsx # regenerate vs rotate - explain both
-│       │   ├── Settings.tsx
+│       │   ├── RecoveryPhraseRotate.tsx # DEK rotation, and what it does not reach│       │   ├── Settings.tsx
 │       │   └── AboutEncryption.tsx      # what is protected, what is not
 │       │
 │       └── styles/
@@ -268,6 +280,8 @@ Budget App/
 │
 ├── scripts/
 │   ├── generate_keys.py                 # every secret in one run; --fill never overwrites
+│   ├── env_fingerprint.py               # SEC-31: non-secret fingerprint per key, to
+│   │                                    #   check the offline .env copy (Phase 9)
 │   ├── generate_int_tables.py           # int_tables.sql FROM the migrations
 │   ├── benchmark_fetch.py               # READ-ONLY cold-load estimate; run on the server
 │   ├── backup.py                        # ★ full encrypted export
@@ -287,7 +301,6 @@ Budget App/
 │   ├── test_crypto.py                   # ★ NEVER SKIPPED IN CI
 │   ├── test_crypto_performance.py       # ★ produces the real benchmark number
 │   ├── test_blind_index.py
-│   ├── test_recovery.py                 # ★ wipe the master key, recover by phrase
 │   ├── test_session_keys.py             # empty keyring = locked; auto-lock
 │   ├── test_repository.py               # two-step insert, DB-level tampering
 │   ├── test_config.py                   # refuses to start on a bad key
@@ -296,29 +309,35 @@ Budget App/
 │   ├── test_migration.py                # migration == models, column by column
 │   ├── test_scripts.py
 │   ├── test_db_mssql.py                 # SQL Server only; skipped by default
-│   ├── test_key_rotation.py             #   ...and prove rotation keeps the phrase
+│   ├── test_key_rotation.py             #   ...and older backups still open (retired key)
 │   ├── test_dek_rotation.py             # ★ old DEK dead, all rows readable
 │   ├── test_registration_code.py        # wrong code rejected + rate limited
 │   ├── test_auth.py                     # tokens, replay, lock, PIN, restart = lock
-│   ├── test_auth_recovery.py            # ★ new .env, recover by phrase, via the API
+│   ├── test_password_reset.py           # SEC-30: same answer, one use, expiry, Host ignored
 │   ├── test_middleware.py               # rate limits, request log, CSRF header
 │   ├── test_db_mssql_auth.py            # the whole auth flow on SQL Server
 │   ├── test_budget_periods.py           # custom start days, year boundaries
 │   ├── test_allowance.py
 │   ├── test_carry_over.py               # symmetric, incl. compounding deficits
 │   ├── test_splits.py                   # amount == sum(splits), Decimal-exact
-│   ├── test_backup_roundtrip.py         # ★ export -> wipe -> import -> export
-│   ├── test_id_remap.py                 # every cross-reference survives
+│   ├── test_backup.py                   # ★ export -> restore -> export identical;
+│   │                                    #   restore into a new database with the same .env
+│   ├── test_csv.py                      # one row per split; export re-imports identically
+│   ├── test_attachments.py              # receipts encrypted per user, bound to their id
 │   ├── test_multi_user_isolation.py     # ★ Bob must never see Alice's rows
 │   ├── test_recurring.py                # idempotent catch-up
 │   ├── test_installments.py             # remaining hits 0, never a 37th
-│   ├── test_projection.py               # projected == what later posts; writes nothing
+│   ├── test_recurring.py                # the engine, installments, subscriptions and
+│   │                                    #   projection: projected == what later posts
 │   ├── test_card_bills.py               # paid bill clears; limit per statement cycle
 │   ├── test_statement_check.py          # difference -> 0 after each resolution;
 │   │                                    #   late posting moves statement, not budget
 │   ├── test_balance_adjustment.py       # asked first; audit ONLY when accepted;
 │   │                                    #   never touches budget or stats
 │   ├── test_transactions.py
+│   ├── test_tags.py                     # delete leaves no transaction pointing at it
+│   ├── test_calendar.py                 # heatmap against the budget, not the max day
+│   ├── test_stats.py                    # splits, exclusions, forecast; a year < 50 ms warm
 │   └── test_api_integration.py
 │
 ├── logs/                                # gitignored
@@ -349,12 +368,12 @@ Three rules this tree encodes:
      restart. .gitignore excludes frontend/node_modules/ but explicitly
      keeps dist/.
 
-  3. There are TWO keys to the data, and you need one of them:
-     .env (BUDGET_MASTER_KEY) and your 12-word recovery phrase on paper.
-     Each independently unwraps the same DEK. Back up both, in different
-     places - keeping them together defeats the point of having two.
-     Lose both and every row above is permanently unreadable by anyone,
-     including you.
+  3. There is ONE key to the data: .env (BUDGET_MASTER_KEY). The 12-word
+     recovery phrase was removed on 2026-09-14 (its code and columns went the same day).
+     The server owner keeps an OFFLINE COPY of the whole .env - two places,
+     off the server, never beside the backups, refreshed whenever a key
+     changes. Lose .env and every copy and every row above is permanently
+     unreadable by anyone, for every user.
 
   4. Every transaction payload carries a `splits` array, even single-
      category ones. category_id therefore lives one level deeper inside

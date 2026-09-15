@@ -1,5 +1,5 @@
 """
-/auth - sign-up, sign-in, lock, unlock, refresh, recovery.
+/auth - sign-up, sign-in, lock, unlock, refresh, password reset by email.
 
 Endpoints validate and delegate; the services decide. What this file owns is
 the cookies, because they are an HTTP concern:
@@ -12,18 +12,19 @@ unscoped cookie would be sent to every app on it. Secure comes from
 SESSION_COOKIE_SECURE (true in production, via web.config).
 """
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.auth import (
     AuthConfigOut,
+    ForgotPasswordRequest,
     LoginRequest,
     PasswordPolicy,
     PasswordRequest,
     PinRequest,
-    RecoverRequest,
-    RegisterOut,
     RegisterRequest,
+    ResetPasswordRequest,
+    ResetRequestedOut,
     SessionOut,
     SetPinRequest,
     UserOut,
@@ -39,7 +40,8 @@ from app.core.deps import (
 from app.core.exceptions import AppException, problem
 from app.db.models import User
 from app.db.session import get_db
-from app.services.auth_service import auth_service, recovery_service, registration_service, session_service
+from app.services import email_service
+from app.services.auth_service import auth_service, password_reset_service, registration_service, session_service
 from app.services.auth_service.session_service import IssuedSession
 from app.services.auth_service.tokens import decode_access_token, TokenExpired, TokenInvalid
 
@@ -96,7 +98,8 @@ def auth_config() -> AuthConfigOut:
         registration_open=settings.registration_open,
         pin_enabled=settings.PIN_ENABLED,
         pin_length=settings.PIN_LENGTH,
-        recovery_words=settings.RECOVERY_PHRASE_WORDS,
+        password_reset_enabled=settings.email_enabled,
+        reset_link_minutes=settings.PASSWORD_RESET_LINK_MINUTES,
         password_policy=PasswordPolicy(
             min_length=settings.PASSWORD_MIN_LENGTH,
             require_upper=settings.PASSWORD_REQUIRE_UPPER,
@@ -106,16 +109,15 @@ def auth_config() -> AuthConfigOut:
     )
 
 
-@router.post("/register", response_model=RegisterOut, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
 def register(body: RegisterRequest, response: Response, db: Session = Depends(get_db),
-             ip_hash: str = Depends(get_ip_hash)) -> RegisterOut:
-    account, issued = registration_service.register(
+             ip_hash: str = Depends(get_ip_hash)) -> SessionOut:
+    _, issued = registration_service.register(
         db, email=body.email, password=body.password, registration_code=body.registration_code,
         display_name=(body.display_name or "").strip() or None, ip_hash=ip_hash,
     )
     set_session_cookies(response, issued)
-    session = _session_out(db, db.get(User, issued.user_id), issued.session_id)
-    return RegisterOut(**session.model_dump(), recovery_phrase=account.recovery_phrase.split())
+    return _session_out(db, db.get(User, issued.user_id), issued.session_id)
 
 
 @router.post("/login", response_model=SessionOut)
@@ -194,9 +196,21 @@ def set_pin(body: SetPinRequest, ctx: UnlockedContext = Depends(get_unlocked_con
     return _session_out(db, ctx.user, ctx.session_id)
 
 
-@router.post("/recover", response_model=SessionOut)
-def recover(body: RecoverRequest, response: Response, db: Session = Depends(get_db),
-            ip_hash: str = Depends(get_ip_hash)) -> SessionOut:
-    issued = recovery_service.recover(db, phrase=body.phrase, new_password=body.new_password, ip_hash=ip_hash)
+@router.post("/forgot-password", response_model=ResetRequestedOut, status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(body: ForgotPasswordRequest, background: BackgroundTasks, db: Session = Depends(get_db),
+                    ip_hash: str = Depends(get_ip_hash)) -> ResetRequestedOut:
+    """SEC-30. The same answer whether or not the address has an account."""
+    message = password_reset_service.request_reset(db, body.email, ip_hash=ip_hash)
+    if message is not None:
+        # After the response is sent, so an address with an account does not answer slower.
+        background.add_task(email_service.send, message)
+    return ResetRequestedOut(link_minutes=settings.PASSWORD_RESET_LINK_MINUTES)
+
+
+@router.post("/reset-password", response_model=SessionOut)
+def reset_password(body: ResetPasswordRequest, response: Response, db: Session = Depends(get_db),
+                   ip_hash: str = Depends(get_ip_hash)) -> SessionOut:
+    """SEC-30. The token from the emailed link, in the body - never in a URL. Signs the user in."""
+    issued = password_reset_service.complete_reset(db, body.token, body.password, ip_hash=ip_hash)
     set_session_cookies(response, issued)
     return _session_out(db, db.get(User, issued.user_id), issued.session_id)

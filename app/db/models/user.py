@@ -1,16 +1,11 @@
 """
-users - Shape A. Operational columns, plus the two wrapped copies of the DEK.
+users - Shape A. Operational columns, plus the DEK wrapped under the master key.
 
 Nothing here is personal financial data, and the one personal identifier - the
 email address - is present only as a blind index (email_bidx) and inside
-profile_enc, which is sealed under the user's own DEK.
-
-Why profile_enc exists: total loss of .env takes the blind-index pepper with
-it, and a new pepper computes different indexes, so no email would find its
-row again. Recovery finds the user by the phrase instead (crypto/recovery.py),
-unwraps the DEK, reads the email back out of profile_enc, and rebuilds
-email_bidx under the new pepper. Without it, recovery would restore the data
-and lose the login.
+profile_enc, which is sealed under the user's own DEK. profile_enc is what the
+app reads the email back from, and what would let every email_bidx be rebuilt
+if the pepper ever had to change.
 """
 
 from datetime import datetime
@@ -35,11 +30,9 @@ class User(Base):
 
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # The DEK, wrapped twice (section 5.2). Either one opens it.
+    # The DEK, wrapped under the master key (section 5.2)
     key_version: Mapped[int] = mapped_column(TinyInt, nullable=False)
     dek_wrapped: Mapped[bytes] = mapped_column(EncryptedPayload(128), nullable=False)
-    dek_wrapped_recovery: Mapped[Optional[bytes]] = mapped_column(EncryptedPayload(128), nullable=True)
-    recovery_created_at: Mapped[Optional[datetime]] = mapped_column(UtcDateTime, nullable=True)
 
     # The PIN guards the SESSION only; it never derives a key (section 6).
     pin_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -52,6 +45,10 @@ class User(Base):
     locked_until: Mapped[Optional[datetime]] = mapped_column(UtcDateTime, nullable=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(UtcDateTime, nullable=True)
     password_changed_at: Mapped[Optional[datetime]] = mapped_column(UtcDateTime, nullable=True)
+    # SEC-30: the pending password-reset link. Only the SHA-256 of its token is
+    # kept; a newer request replaces it and using it clears both.
+    reset_token_hash: Mapped[Optional[str]] = mapped_column(CHAR(64), nullable=True)
+    reset_expires_at: Mapped[Optional[datetime]] = mapped_column(UtcDateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=utcnow, onupdate=utcnow)

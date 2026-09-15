@@ -25,6 +25,7 @@ import { Ring, toneFor, type Tone } from '../components/ui/Ring';
 import { useLookups, type Lookups } from '../hooks/useLookups';
 import { ratio, type Alert, type BudgetStatus } from '../lib/budgets';
 import { formatPHP } from '../lib/money';
+import { expandRecurring } from '../lib/recurring';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useLedgerStore } from '../stores/ledgerStore';
@@ -207,8 +208,23 @@ export function Home() {
     const filtered = Object.values(filters).some((v) => v !== undefined);
     if (filtered || items.length === 0) void load({});
     void loadBudget(null);
+    // REC-05. Post whatever recurring charges fell due since the last open -
+    // idempotent on the server - and refresh the figures only if any did.
+    const catchUp = () =>
+      expandRecurring()
+        .then((result) => {
+          if (result.posted === 0) return;
+          useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+          void load({});
+          void loadBudget(null);
+        })
+        .catch(() => {
+          /* a failed catch-up retries on the next open; nothing is half-posted */
+        });
+    void catchUp();
     // Coming back to the app on a new day must not show yesterday's allowance.
-    const onVisible = () => document.visibilityState === 'visible' && (setTick((n) => n + 1), void loadBudget(null));
+    const onVisible = () =>
+      document.visibilityState === 'visible' && (setTick((n) => n + 1), void loadBudget(null), void catchUp());
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps

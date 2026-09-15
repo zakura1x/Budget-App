@@ -42,7 +42,8 @@ export function TransactionRow({ row, lookups }: { row: Transaction; lookups: Lo
   } else {
     const label = split ? `Split · ${row.splits.length} categories` : category?.name ?? 'Uncategorised';
     title = row.merchant ?? (split ? 'Split' : category?.name ?? 'Transaction');
-    subtitle = [row.merchant ? label : null, account?.name, row.notes].filter(Boolean).join(' · ');
+    const tags = (row.tag_ids ?? []).map((id) => lookups.tagById.get(id)?.name).filter(Boolean).join(', ');
+    subtitle = [row.merchant ? label : null, account?.name, tags || null, row.notes].filter(Boolean).join(' · ');
   }
 
   const amount =

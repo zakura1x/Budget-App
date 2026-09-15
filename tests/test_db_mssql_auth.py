@@ -46,7 +46,6 @@ def mssql_api(monkeypatch):
 
         with Session(engine) as db:
             user_ids = db.execute(select(User.id).where(User.email_bidx == bidx)).scalars().all()
-            # Recovery rebuilds the index under the same pepper here, so the bidx still finds it.
             for uid in user_ids:
                 for model in ENCRYPTED_MODELS:
                     db.execute(delete(model).where(model.user_id == uid))
@@ -65,7 +64,6 @@ def test_full_auth_flow_on_sql_server(mssql_api):
     api, email = mssql_api
     reg = api.register(email=email, name="DB Test")
     assert reg.status_code == 201, reg.text
-    phrase = " ".join(reg.json()["recovery_phrase"])
 
     assert api.post("/auth/pin", {"pin": "482913"}).status_code == 200
     assert api.get("/settings/preferences").status_code == 200
@@ -82,8 +80,6 @@ def test_full_auth_flow_on_sql_server(mssql_api):
 
     assert api.login(email=email, password="Wrong-Password-1!").status_code == 401
     assert api.login(email=email).status_code == 200
-
-    recovered = api.post("/auth/recover", {"phrase": phrase, "new_password": "Brand-New-Pass-7!"})
-    assert recovered.status_code == 200 and recovered.json()["user"]["email"] == email
+    assert api.get("/auth/me").json()["user"]["email"] == email
     assert api.get("/settings/preferences").status_code == 200
     assert api.post("/auth/logout").status_code == 204

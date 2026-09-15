@@ -19,13 +19,16 @@ moment you look, and returned in the same response as the figures it is about.
     card_limit_approaching  ALERT_WARN_THRESHOLD_PCT of it is used warn
     card_limit_pace         the card is being spent faster than    warn
                             its statement cycle is passing (ACC-22)
+    subscription_due        a subscription charges within its      warn
+                            reminder days (SUB-06)
 
 The card-limit checks are the budget's own rules applied to a card's statement
 cycle instead of the budget period - same threshold, same pace tolerance.
 
 `over` supersedes `approaching` and `pace` - three banners saying one thing
 is noise - and `card_limit_over` does the same for its card. Messages carry no
-figures; the client formats those from the status.
+figures; the client formats those from the status. A subscription's message
+names it, because nothing else in the status can.
 """
 
 from dataclasses import dataclass
@@ -43,6 +46,17 @@ class Alert:
     message: str
     category_id: Optional[int] = None
     account_id: Optional[int] = None
+    rule_id: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class SubscriptionDue:
+    """SUB-06. A subscription whose next charge is within its reminder days."""
+
+    rule_id: int
+    name: str
+    account_id: int
+    due_in_days: int
 
 
 @dataclass(frozen=True)
@@ -79,6 +93,7 @@ def budget_alerts(
     category_level: bool = True,
     cards_due: Iterable[CardDue] = (),
     card_limits: Iterable[CardLimit] = (),
+    subscriptions_due: Iterable[SubscriptionDue] = (),
 ) -> List[Alert]:
     alerts: List[Alert] = []
     available, spent = allowance.available, allowance.spent
@@ -112,6 +127,11 @@ def budget_alerts(
     for card in cards_due:
         when = "today" if card.due_in_days == 0 else f"in {card.due_in_days} day{'s' if card.due_in_days != 1 else ''}"
         alerts.append(Alert("card_due", "warn", f"A card payment is due {when}", account_id=card.account_id))
+
+    for sub in subscriptions_due:
+        when = "today" if sub.due_in_days == 0 else f"in {sub.due_in_days} day{'s' if sub.due_in_days != 1 else ''}"
+        alerts.append(Alert("subscription_due", "warn", f"{sub.name} charges {when}",
+                            account_id=sub.account_id, rule_id=sub.rule_id))
 
     return alerts
 

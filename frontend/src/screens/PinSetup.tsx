@@ -1,5 +1,5 @@
 /**
- * Choose a PIN - offered right after sign-up and after recovery.
+ * Choose a PIN - offered right after sign-up.
  *
  * The PIN only unlocks this device's session (SEC-07); it is not a password
  * and it never touches the encryption. Skipping is allowed: a locked screen

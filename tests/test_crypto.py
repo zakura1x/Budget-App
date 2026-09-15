@@ -15,7 +15,7 @@ from hypothesis import HealthCheck, given, settings as hsettings, strategies as 
 
 from app.core.crypto import envelope
 from app.core.crypto.dek import (
-    RECOVERY_KEY_VERSION,
+    RESERVED_KEY_VERSION,
     generate_dek,
     rewrap_dek,
     unwrap_dek,
@@ -233,9 +233,9 @@ def test_keyring_repr_never_shows_a_key(keyring):
     assert keyring.wrapping_key().hex() not in text
 
 
-def test_a_recovery_wrap_is_never_accepted_as_a_master_wrap(keyring):
-    # key_ver 0 is reserved for recovery wraps; unwrap_dek refuses it outright.
-    fake = bytes((FORMAT_V1, RECOVERY_KEY_VERSION)) + os.urandom(12 + 32 + 16)
+def test_an_old_recovery_wrap_is_never_accepted_as_a_master_wrap(keyring):
+    # key_ver 0 is reserved (old backups carry recovery wraps under it); unwrap_dek refuses it outright.
+    fake = bytes((FORMAT_V1, RESERVED_KEY_VERSION)) + os.urandom(12 + 32 + 16)
     with pytest.raises(DecryptionError):
         unwrap_dek(fake, keyring, user_id=1)
 

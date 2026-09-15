@@ -332,6 +332,34 @@ INSERT INTO [ZBDGT].alembic_version (version_num) OUTPUT inserted.version_num VA
 
 GO
 
+-- Running upgrade 20260914_0001 -> 20260914_0002
+
+ALTER TABLE [ZBDGT].users DROP COLUMN recovery_created_at;
+
+GO
+
+ALTER TABLE [ZBDGT].users DROP COLUMN dek_wrapped_recovery;
+
+GO
+
+UPDATE [ZBDGT].alembic_version SET version_num='20260914_0002' WHERE [ZBDGT].alembic_version.version_num = '20260914_0001';
+
+GO
+
+-- Running upgrade 20260914_0002 -> 20260914_0003
+
+ALTER TABLE [ZBDGT].users ADD reset_token_hash CHAR(64) NULL;
+
+GO
+
+ALTER TABLE [ZBDGT].users ADD reset_expires_at DATETIME2 NULL;
+
+GO
+
+UPDATE [ZBDGT].alembic_version SET version_num='20260914_0003' WHERE [ZBDGT].alembic_version.version_num = '20260914_0002';
+
+GO
+
 COMMIT;
 
 GO

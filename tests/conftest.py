@@ -30,6 +30,12 @@ _TEST_ENV = {
     "LOG_LEVEL": "DEBUG",
     "LOG_DIR": tempfile.mkdtemp(prefix="zbdgt-test-logs-"),
     "BCRYPT_ROUNDS": "4",
+    # No test may reach a mail server: SMTP is blanked here (env beats .env),
+    # and email_service never sends under ENVIRONMENT=test anyway.
+    "SMTP_HOST": "",
+    "SMTP_USER": "",
+    "SMTP_PASSWORD": "",
+    "APP_PUBLIC_URL": "https://budget.example.test",
 }
 if os.environ.get("ZBDGT_DB_TESTS") != "1":
     # Point the default engine somewhere harmless too, so a test that forgets

@@ -46,8 +46,6 @@ _FIXED_TAG_BYTES = 16
 # be a plain identifier and nothing else.
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 
-_VALID_PHRASE_WORDS = (12, 15, 18, 21, 24)
-
 
 class ConfigurationError(RuntimeError):
     """The application is misconfigured and must not start."""
@@ -103,15 +101,9 @@ class Settings(BaseSettings):
     BUDGET_ENCRYPT_UPLOADS: bool = True
 
     # ============================================
-    # Recovery phrase (SEC-14)
+    # Key rotation (SEC-23/24). There is no recovery phrase (ARCHITECTURE.md
+    # 5.2.1) - the server owner's offline copy of .env is the recovery plan.
     # ============================================
-    RECOVERY_PHRASE_ENABLED: bool = True
-    RECOVERY_PHRASE_WORDS: int = 12
-    RECOVERY_PHRASE_LANGUAGE: str = "english"
-    RECOVERY_MAX_ATTEMPTS: int = 3
-    RECOVERY_LOCKOUT_MINUTES: int = 60
-    RECOVERY_PHRASE_VIEWABLE: bool = True
-    RECOVERY_PHRASE_REGENERATE_ENABLED: bool = True
     DEK_ROTATION_ENABLED: bool = True
     ROTATION_REVOKES_OTHER_SESSIONS: bool = True
 
@@ -162,6 +154,35 @@ class Settings(BaseSettings):
     PIN_MAX_ATTEMPTS: int = 5
     PIN_AUTO_LOCK_MINUTES: int = 5
     BIOMETRIC_WEBAUTHN_ENABLED: bool = False
+
+    # ============================================
+    # Password reset by email (SEC-30)
+    # ============================================
+    # The origin a reset link points at - scheme and host, no path (BASE_URL is
+    # added). Taken from here, NEVER from the request's Host header: a forged
+    # Host would mail a real user a link to someone else's site.
+    APP_PUBLIC_URL: str = "http://localhost:5173"
+    PASSWORD_RESET_LINK_MINUTES: int = Field(default=30, ge=5, le=240)
+    PASSWORD_RESET_WINDOW_MINUTES: int = 60
+    PASSWORD_RESET_MAX_PER_EMAIL: int = 3  # links mailed to one address per window
+    PASSWORD_RESET_MAX_PER_IP: int = 10  # requests from one IP per window
+
+    # ============================================
+    # Outgoing email - SMTP. Empty SMTP_HOST = no email, and no reset by email.
+    # ============================================
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: SecretStr = SecretStr("")
+    # Gmail rewrites From to the authenticated account, so keep this = SMTP_USER.
+    SMTP_FROM: str = ""
+    SMTP_FROM_NAME: str = "Budget App"
+    SMTP_USE_TLS: bool = True
+    SMTP_TIMEOUT_SECONDS: int = 20
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.SMTP_HOST.strip() and self.SMTP_USER.strip() and self.SMTP_PASSWORD.get_secret_value())
 
     # ============================================
     # Application
@@ -294,7 +315,7 @@ class Settings(BaseSettings):
     @field_validator("BUDGET_KEY_VERSION")
     @classmethod
     def _key_version_fits_a_byte(cls, v: int) -> int:
-        # Version 0 is reserved: the recovery-phrase wrap uses it (crypto/dek.py)
+        # Version 0 is reserved: old recovery-phrase wraps used it (crypto/dek.py)
         if not 1 <= v <= 255:
             raise ValueError("BUDGET_KEY_VERSION must be between 1 and 255")
         return v
@@ -332,11 +353,12 @@ class Settings(BaseSettings):
             )
         return v
 
-    @field_validator("RECOVERY_PHRASE_WORDS")
+    @field_validator("APP_PUBLIC_URL")
     @classmethod
-    def _phrase_length_is_bip39(cls, v: int) -> int:
-        if v not in _VALID_PHRASE_WORDS:
-            raise ValueError(f"RECOVERY_PHRASE_WORDS must be one of {_VALID_PHRASE_WORDS}")
+    def _public_url_is_an_origin(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        if not re.match(r"^https?://[^/\s?#]+$", v):
+            raise ValueError("APP_PUBLIC_URL must be a scheme and host only, e.g. https://delca.noahapplication.com")
         return v
 
     @field_validator("DB_SCHEMA")

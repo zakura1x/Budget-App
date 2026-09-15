@@ -1,12 +1,12 @@
 """
-users - lookups, and the one place a user row and its wrapped keys are made.
+users - lookups, and the one place a user row and its wrapped key are made.
 
-Creating a user is a two-step insert like any Shape B row: the wraps bind the
-user id into their AAD (crypto/dek.py), and the id does not exist until the
+Creating a user is a two-step insert like any Shape B row: the wrap binds the
+user id into its AAD (crypto/dek.py), and the id does not exist until the
 INSERT has run.
 """
 
-from typing import Iterable, List, Optional, Tuple
+from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,7 +16,6 @@ from app.core.crypto.dek import unwrap_dek, wrap_dek
 from app.core.crypto.envelope import PLACEHOLDER
 from app.core.crypto.keyring import MasterKeyring
 from app.core.crypto.provisioning import NewUserKeys
-from app.core.crypto.recovery import wrap_dek_with_key
 from app.core.crypto.user_cipher import UserCipher
 from app.db.models import User
 from app.db.types import utcnow
@@ -49,7 +48,7 @@ class UserRepository:
         indexer: BlindIndexer,
         display_name: Optional[str] = None,
     ) -> User:
-        """Insert a user with both DEK wraps and a sealed profile. The caller commits."""
+        """Insert a user with its wrapped DEK and a sealed profile. The caller commits."""
         now = utcnow()
         user = User(
             email_bidx=indexer.email(email),
@@ -63,11 +62,9 @@ class UserRepository:
             updated_at=now,
         )
         self.session.add(user)
-        self.session.flush()  # the id now exists; every wrap below binds it
+        self.session.flush()  # the id now exists; the wrap below binds it
 
         user.dek_wrapped = wrap_dek(keys.dek, keyring, user.id)
-        user.dek_wrapped_recovery = wrap_dek_with_key(keys.dek, keys.recovery_key, user.id)
-        user.recovery_created_at = now
         cipher = UserCipher(user.id, keys.dek, keyring.current_version)
         user.profile_enc = cipher.seal("users", user.id, {"email": email, "display_name": display_name})
         self.session.flush()
@@ -91,8 +88,3 @@ class UserRepository:
         if user.profile_enc is None:
             return {}
         return cipher.open("users", user.id, user.profile_enc, user.key_version)
-
-    def recovery_candidates(self) -> List[Tuple[int, Optional[bytes]]]:
-        """(id, dek_wrapped_recovery) for every user - find_user_by_phrase() input."""
-        rows: Iterable = self.session.execute(select(User.id, User.dek_wrapped_recovery).order_by(User.id))
-        return [(row[0], row[1]) for row in rows]

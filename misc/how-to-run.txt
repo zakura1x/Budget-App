@@ -4,13 +4,13 @@ BUDGET APP - HOW TO RUN
 
 FIRST TIME
 ──────────
-1. Back up .env somewhere off this machine and off the company network.
-   Password manager or encrypted USB. Do this BEFORE the first insert.
-
-   You will ALSO be shown a 12-word recovery phrase when you create your
-   account (step 4). Write it on paper and keep it somewhere DIFFERENT
-   from the .env backup. Either one opens your data; keeping them
-   together defeats the point of having two.
+1. Make the OFFLINE COPY of .env BEFORE the first account exists.
+   .env is the only key to everyone's data. There is no recovery phrase
+   and no other way in (decided 2026-09-14). Keep the whole file in at
+   least two places, off this machine and off the company network - for
+   example a password-manager entry AND an encrypted USB stick, stored
+   apart. Never beside the .budgetbak backups, never in git.
+   See "THE OFFLINE .env COPY" below.
 
 2. python -m venv .venv
    .venv\Scripts\activate
@@ -22,8 +22,7 @@ FIRST TIME
 4. alembic upgrade head                 # DONE 2026-09-11 - schema ZBDGT exists
    Create your account on the sign-up screen: open the app, "Create an
    account", and enter the code from REGISTRATION_CODE in .env. The FIRST
-   account becomes admin - make it yours. Write the 12 words on paper when
-   they appear; you will not see them again.
+   account becomes admin - make it yours.
    python scripts/bootstrap_user.py     # OPTIONAL fallback: same account,
                                         # from the command line
    python scripts/seed_categories.py    # (Phase 3) default categories
@@ -85,16 +84,29 @@ Those create a throwaway inactive user and delete everything they made.
 
 BACKUP  (Phase 8a - so the company DB is not your only copy)
 ────────────────────────────────────────────────────────────
-python scripts/backup.py                  # full encrypted .budgetbak
-python scripts/restore.py --verify FILE   # restore to a scratch schema + diff
-python scripts/restore.py --fresh FILE    # restore into an empty database
-python scripts/restore.py --merge FILE    # add to existing, skip duplicates
-python scripts/verify_backup.py           # round-trip fidelity check
+python scripts/backup.py --user-id 1      # full encrypted .budgetbak (needs no key)
+python scripts/backup.py --all            # every active user
+python scripts/restore.py FILE --target-user-id 3 --verify   # dry run + diff, writes nothing
+python scripts/restore.py FILE --target-user-id 3 --fresh    # into an EMPTY account
+python scripts/restore.py FILE --target-user-id 3 --merge    # add to it, skip duplicates
+   ... restore.py opens the file with the master key in .env (current or
+       retired).python scripts/verify_backup.py --user-id 1                  # round-trip fidelity check
 
-The .budgetbak file is encrypted end to end, so it is safe on a USB
-stick or in cloud storage. It carries both wrapped DEKs, which means
-a new server + an empty database + either your .env OR your 12 words
-is enough to bring everything back.
+Backups are written to BACKUP_DIR/<user_id>/ - automatically 5 minutes
+after a change and at sign-in when the newest is over a day old, or from
+More -> Backup & data -> Back up now. That screen also downloads them,
+restores (Check / Add to mine / Into empty), and exports or imports CSV.
+
+A restore goes INTO AN EXISTING ACCOUNT. On a new server: put the
+offline .env copy in place, sign up, then run scripts/restore.py with
+--target-user-id set to the new account. The app's own Restore button
+opens only the signed-in account's own backups (same user id), so a
+restore onto a new server is always the script.
+
+The .budgetbak file is encrypted end to end, so ON ITS OWN it is safe on
+a USB stick or in cloud storage. It carries the DEK wrapped under the
+master key: a backup file plus the .env copy opens everything. Never
+keep the two in the same place.
 
 Run --verify occasionally. A backup you have never restored is not a
 backup, and here the cost of finding out is everything.
@@ -123,34 +135,85 @@ REGISTRATION_CODE (.env), and MAX_USERS caps the total. Change the code
 to cancel every invitation you have handed out. They sign up at
 /ZBDGT/register. The first account created becomes the admin.
 
-Each user gets their own encryption key and their own recovery phrase.
-Nobody can read anyone else's data - including you, as admin. That is
-cryptographic, not a permission setting. Make sure anyone you add
-understands that losing BOTH their password and their phrase means
-their data is unrecoverable by any person.
+Each user gets their own encryption key, and nobody can read anyone
+else's data from inside the app - including you, as admin. Users keep
+no recovery secret. A user who forgets their password uses "Forgot
+your password?" on the sign-in screen and gets a link by email (SEC-30).
+Their data is untouched, because the password never wrapped their key -
+which also means anyone who can read their mailbox could reset it. Tell anyone you add the honest
+version too: whoever holds .env AND the database can read every
+account. That is the server owner.
+
+
+PASSWORD RESET EMAIL (SMTP)
+───────────────────────────
+Set in .env: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD (for Gmail an
+App Password, not the account password), SMTP_FROM (= SMTP_USER for Gmail),
+SMTP_FROM_NAME. Empty SMTP_HOST turns reset-by-email off, and the sign-in
+screen tells people to ask you instead.
+APP_PUBLIC_URL is where the emailed link points: http://localhost:5173 in
+.env for development, https://delca.noahapplication.com in web.config.
+If a reset email never arrives: logs\app.jsonl says "Email could not be
+sent" with the reason; check the App Password is still valid.
 
 
 ═══════════════════════════════════════════════════════════════════
+THE OFFLINE .env COPY  (SEC-31 - the only insurance against losing .env)
+═══════════════════════════════════════════════════════════════════
+WHAT: the WHOLE .env file, not just the master key.
+  BUDGET_MASTER_KEY          opens every user's key. Without it, ALL
+                             data of ALL users is unreadable
+  BUDGET_RETIRED_KEYS        opens backups made before a master-key
+                             rotation
+  BUDGET_BLIND_INDEX_PEPPER  finds an account by its email. Without it
+                             nobody can sign in until every index is
+                             rebuilt by a script
+  PIN_PEPPER, JWT_SECRET_KEY, SESSION_SECRET
+                             losing these only signs everyone out and
+                             clears PINs - copy them anyway
+  REGISTRATION_CODE, DB_*    convenience
+
+WHERE: at least two places. None of them the app server, none of them
+  in git, none of them beside the .budgetbak files. A password manager
+  plus an encrypted USB stick kept somewhere else is a good pair.
+
+WHEN TO REFRESH IT: the same day .env changes - after generate_keys.py,
+  after rotate_keys.py (the old key moves into BUDGET_RETIRED_KEYS),
+  after any edit. A stale copy cannot open anything written under the
+  newer key.
+
+CHECK IT, DO NOT TRUST IT: (Phase 9) python scripts/env_fingerprint.py
+  prints a non-secret fingerprint of each key. Run it on the server and
+  against the copy and compare. After every refresh, and every few
+  months besides.
+
+
 IF YOU LOSE .env
-═══════════════════════════════════════════════════════════════════
-You are fine, IF you still have the 12-word recovery phrase.
+────────────────
+  1. Copy the offline copy back into the app folder as .env.
+  2. Restart the app. /ZBDGT/api/v1/health should say the master key
+     loaded.
+  3. Everyone signs in as before. Nothing else to do.
 
-  1. Restore .env from backup, or create a fresh one with new keys:
-       copy .env.example .env
-       python scripts/generate_keys.py --fill
-     and put the DB settings back (they are in QUOT's .env).
-  2. Open the app: "Forgot your password? Use your 12 words"
-  3. Enter the 12 words and set a new password, then choose a new PIN
+Do NOT run generate_keys.py to "fix" a missing .env: new keys open
+nothing that already exists.
 
-You do not need to type your email: the phrase itself finds your
-account. It unwraps your DEK, re-wraps it under the new master key,
-and rebuilds your login under the new keys. Your data comes back
-intact. (Proven by tests/test_recovery.py - the headline test.)
+IF THE OFFLINE COPY LEAKS
+─────────────────────────
+Whoever has it plus the database (or any .budgetbak) can read every
+account. In this order:
+  1. Rotate the master key (scripts/rotate_keys.py, Phase 9).
+  2. Rotate every user's DEK (Settings -> Rotate my encryption key).
+     Step 1 comes first so the new keys are not wrapped under the
+     leaked one.
+  3. Make a fresh offline copy, destroy the old copies, and delete
+     backups written before the rotation.
 
-IF YOU LOSE BOTH .env AND THE PHRASE
-────────────────────────────────────
-The data is gone. Permanently. No reset, no support ticket. The DBA
-cannot help - that is the entire point of the design.
+IF YOU LOSE .env AND EVERY COPY
+───────────────────────────────
+All data, for every user, is gone. Permanently. No reset, no support
+ticket, and the DBA cannot help. There is no second key: that is the
+trade for not asking every user to keep 12 words on paper.
 ═══════════════════════════════════════════════════════════════════
 
 
@@ -161,7 +224,8 @@ DEPLOY TO THE SERVER  (IIS, same host as QUOT)
    and commit app/web/static/dist/ - the server has no npm.
 2. On the server, put the code in  C:\inetpub\wwwroot\ZBDGT
 3. Copy .env into that folder BY HAND. It is not in git, and it holds
-   the master key and the database password.
+   the master key and the database password. Check it matches the
+   offline copy (env_fingerprint.py) - they must be the same keys.
 4. Preview what installing would change in the venv QUOT also uses:
      C:\inetpub\wwwroot\FAST-PYTHON\.venv\Scripts\pip install -r requirements.txt --dry-run
    Install for real once the preview looks safe.

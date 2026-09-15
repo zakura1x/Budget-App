@@ -25,7 +25,7 @@
 
 | Group | Prefix | ✅ v1 | 🟡 Deferred | ❌ Out | ❓ Decide | Total |
 |---|---|---|---|---|---|---|
-| 1. Security & Access | `SEC` | 28 | 1 | 0 | 0 | 29 |
+| 1. Security & Access | `SEC` | 25 | 1 | 5 | 0 | 31 |
 | 2. Accounts | `ACC` | 27 | 0 | 3 | 0 | 30 |
 | 3. Categories | `CAT` | 8 | 0 | 0 | 0 | 8 |
 | 4. Transactions | `TXN` | 19 | 0 | 2 | 0 | 21 |
@@ -37,7 +37,11 @@
 | 10. Savings Goals | `GOA` | 6 | 1 | 0 | 0 | 7 |
 | 11. Data In/Out | `DAT` | 16 | 2 | 2 | 0 | 20 |
 | 12. Settings & UX | `UX` | 14 | 3 | 3 | 0 | 20 |
-| **Total** | | **184** | **11** | **12** | **0** | **207** |
+| **Total** | | **181** | **11** | **17** | **0** | **209** |
+
+> **2026-09-14 — the recovery phrase is out.** SEC-14/15/16/20/22 moved to ❌
+> Out and two features came in: password reset by email (SEC-30) and an
+> offline copy of `.env` kept by the server owner (SEC-31). §13 records why.
 
 **All decisions are closed** — §13 records what was chosen and why. Four new
 second-order questions came out of those choices; each has a working default
@@ -71,22 +75,24 @@ shared company database. See ARCHITECTURE.md §5.
 | SEC-11 | Key rotation script | ✅ v1 | 9 | Resumable, dry-run first |
 | SEC-12 | Biometric unlock (WebAuthn / Face ID) | 🟡 Deferred | 9 | `BIOMETRIC_WEBAUTHN_ENABLED=False`. Works on iOS Safari as a passkey; adds a dependency and a fallback path |
 | SEC-13 | Backup UI in Settings | ✅ v1 | 8a | **Promoted from deferred.** The full backup (DAT-06) needs a button, not just a script — a backup you have to open a terminal for is one you will not take |
-| SEC-14 | **12-word recovery phrase** | ✅ v1 | 1 | **DECIDED.** BIP-39 mnemonic wraps a second copy of your DEK, so losing `.env` is survivable. Shown once at registration. See ARCHITECTURE.md §5.5 |
-| SEC-15 | Recovery flow — phrase restores access *and* resets the password | ✅ v1 | 2 | Without the reset, you would hold the key but have no way to log in |
-| SEC-16 | Re-view the recovery phrase in Settings | ✅ v1 | 8b | Behind a password re-prompt. See §13-A — flag if you would rather it be shown once, ever |
+| SEC-14 | ~~12-word recovery phrase~~ | ❌ Out | — | **Removed 2026-09-14** (built in Phase 1). Replaced by an offline copy of `.env` kept by the server owner (SEC-31). The phrase asked every user to keep paper safe against a loss only the server side can cause. See §13 and ARCHITECTURE.md §5.2.1. Code and database columns removed the same day |
+| SEC-15 | ~~Recovery flow — phrase restores access and resets the password~~ | ❌ Out | — | **Removed 2026-09-14** with SEC-14. A forgotten password is reset by an emailed link (SEC-30); a lost `.env` is restored from the offline copy (SEC-31) |
+| SEC-16 | ~~Re-view the recovery phrase in Settings~~ | ❌ Out | — | **Removed 2026-09-14** with SEC-14. It was never built: the words were not stored, so there was nothing to show (§13-A) |
 | SEC-17 | **Multiple independent user accounts** | ✅ v1 | 2 | **DECIDED.** Each user gets their own data and their own DEK. Already the shape of the schema — every table is user-scoped from day one. See §16 |
-| SEC-18 | **No admin can read another user's data** | ✅ v1 | 2 | Structural, not a policy. There is no key that opens everything, so there is no super-user who could read your rows. An admin can create and disable accounts; they can never decrypt one |
+| SEC-18 | **No admin can read another user's data** | ✅ v1 | 2 | Structural, not a policy. There is no key that opens everything, so there is no super-user who could read your rows. An admin can create and disable accounts; they can never decrypt one. An admin cannot reset another user's password either: a reset link goes only to the account's own email (SEC-30). Outside the app, whoever holds `.env` and the database can read everything (ARCHITECTURE.md §5.1) |
 | SEC-19 | **Registration requires a code you control** | ✅ v1 | 2 | **DECIDED.** `REGISTRATION_CODE` in `.env`. No code, no account. Change it any time to invalidate every outstanding invitation at once — it is reusable until you change it |
-| SEC-20 | Per-user recovery phrase | ✅ v1 | 2 | Each user gets their own. Yours cannot recover anyone else's account |
-| SEC-21 | **Account deletion is a full cascade** | ✅ v1 | 8b | Deleting a user destroys their rows, attachments, DEK and both wrapped copies. Irreversible, audited, and requires typing the account name — there is no undo and no backup on our side |
-| SEC-22 | **Regenerate the recovery phrase** | ✅ v1 | 8b | New 12 words, DEK re-wrapped, **old phrase stops working instantly**. Fast — one row update, no data re-encrypted. Gated behind a password re-prompt. See §17 for what this does and does not fix |
-| SEC-23 | **Full DEK rotation** — the real revoke | ✅ v1 | 9 | Generates a *new* DEK and re-encrypts every row under it. The only thing that actually revokes access if your key may already have been used. Slow, and correspondingly rare. See §17 |
-| SEC-24 | Rotating either one ends other sessions | ✅ v1 | 8b | Revokes every refresh-token family but the current one. If you are rotating because of a compromise, leaving other sessions alive defeats the point |
+| SEC-20 | ~~Per-user recovery phrase~~ | ❌ Out | — | **Removed 2026-09-14** with SEC-14. Each user still has their own DEK (SEC-10) |
+| SEC-21 | **Account deletion is a full cascade** | ✅ v1 | 8b | Deleting a user destroys their rows, attachments, DEK and its wrapped copy. Irreversible, audited, and requires typing the account name — there is no undo and no backup on our side |
+| SEC-22 | ~~Regenerate the recovery phrase~~ | ❌ Out | — | **Removed 2026-09-14** with SEC-14. Built in 8b, removed the same day. DEK rotation (SEC-23) stays |
+| SEC-23 | **Full DEK rotation** — the real revoke | ✅ v1 | 9 | Generates a *new* DEK, re-encrypts every row under it, and wraps it under the master key. The only thing that actually revokes access if your key may already have been unwrapped. Slow, and correspondingly rare. Built early, in 8b. See §17 |
+| SEC-24 | Password change and DEK rotation end other sessions | ✅ v1 | 8b | Revokes every refresh-token family but the current one. If you are acting because of a compromise, leaving other sessions alive defeats the point. A password reset by email (SEC-30) ends all of them |
 | SEC-25 | Registration attempts are rate-limited hard | ✅ v1 | 2 | The code is the *only* gate on signup, so it must not be brute-forceable. 5 attempts per hour per IP, constant-time comparison, every failure audited |
 | SEC-26 | `MAX_USERS` cap enforced at registration | ✅ v1 | 2 | A second backstop if the code ever leaks — a leaked code cannot create unlimited accounts |
 | SEC-27 | A server restart looks like an auto-lock | ✅ v1 | 2 | IIS stops the app after 20 idle minutes and restarts it on deploy, emptying the in-memory keys. The next request shows the PIN screen instead of an error, then unlocks and re-warms. Nobody is logged out |
 | SEC-28 | Session cookies scoped to `/ZBDGT` | ✅ v1 | 2 | `Path=/ZBDGT`, named `zbdgt_*`. The host is shared with QUOT and other apps: an unscoped cookie would be sent to all of them, and a common name could overwrite QUOT's |
 | SEC-29 | Nothing decrypted is stored in the browser | ✅ v1 | 8b | No figures in `localStorage`, IndexedDB or the service-worker cache, and caches are cleared on lock and logout. Every app on the host can read that storage |
+| SEC-30 | **Password reset by email** | ✅ v1 | 9 | **Added and built 2026-09-14**, replacing the reset half of SEC-15 (chosen over an admin-issued code, so nobody types a code). "Forgot your password?" mails a one-time link to the address typed, if it has an account — the answer is identical either way. The token rides in the URL fragment (never reaches the server's logs), only its SHA-256 is stored, it works once for 30 minutes, a newer request replaces it, and the link's origin is `APP_PUBLIC_URL`, never the Host header. Using it signs in, ends every other session and touches no data. Sent through the SMTP settings in `.env`. Honest limit: whoever controls the mailbox controls the account |
+| SEC-31 | **Offline copy of `.env`, kept by the server owner** | ✅ v1 | 9 | **Added 2026-09-14**, replacing SEC-14 as the answer to "what if `.env` is lost". The whole file, in at least two places, off the server and apart from the backup files; refreshed the same day any key changes; compared with the server through a non-secret fingerprint (`scripts/env_fingerprint.py`). Losing `.env` and every copy loses every account at once. Runbook: how-to-run.txt |
 
 ---
 
@@ -369,7 +375,7 @@ wrong. One engine makes that bug impossible rather than merely unlikely.
 | DAT-13 | **ID remapping on import** | ✅ v1 | 8a | The hard part. AAD binds ciphertext to its row `id` (ARCHITECTURE.md §5.3), so a restore that changes identity values would break every payload. See §15 |
 | DAT-14 | Round-trip fidelity test | ✅ v1 | 8a | export → wipe → import → export again, and the two must match semantically. This is the test that *proves* portability |
 | DAT-15 | Import modes: fresh / merge / verify | ✅ v1 | 8a | `verify` restores into a scratch schema and diffs, without touching live data |
-| DAT-16 | Backup restorable with the **recovery phrase alone** | ✅ v1 | 8a | The file carries both wrapped DEKs, so it is a genuinely standalone artifact — a new server, an empty database, and 12 words is enough |
+| DAT-16 | Backup restorable on a **new server** with the offline `.env` copy | ✅ v1 | 8a | **Changed 2026-09-14** (was: with the recovery phrase alone). `keys.enc` carries the DEK wrapped under the master key, so the file is standalone wherever that key exists: put the offline `.env` in place, sign up, and run `scripts/restore.py`. Inside the app a backup opens only for its own account. Keep the file and the `.env` copy apart — together they are the data |
 | DAT-17 | Attachments included in the backup | ✅ v1 | 8a | Receipt images, still encrypted. A backup missing them is not a full backup |
 | DAT-18 | Plaintext full archive (JSON + all CSVs) | ❌ Out | — | **DECIDED: not built.** You chose encrypted-only for backups. Per-transaction CSV export (DAT-01) remains for Excel and for moving to another app — so the encryption boundary keeps exactly one deliberate, warned opening rather than two |
 | DAT-19 | Attachments stored per-user | ✅ v1 | 8a | `uploads/<user_id>/<id>.enc`. The single-user layout would have let two users' receipts collide |
@@ -415,7 +421,7 @@ All seven original questions are now closed.
 | **ACC-11** | ✅ **PHP only** | Currency removed from accounts and transactions entirely. No FX source, no rate history. **Closes the ambiguity flagged in ARCHITECTURE.md §12** |
 | **BUD-11** | ↔️ **Promoted to a Settings toggle** | You did not need to decide. It is now a per-user preference, default off. §13-B below explains what it does |
 | **BUD-12** | ✅ **In-app alerts, no push** | Alerts are computed in your own session and rendered as a banner + badge. **Preserves §5.5** — no background service ever holds your keys |
-| **SEC-14** | ✅ **Yes — 12-word recovery phrase** | New `dek_wrapped_recovery` column, a BIP-39 dependency, and a recovery flow. Added to Phase 1 (the wrap) and Phase 2 (the flow). **This was the right call to make now** — it cannot be retrofitted to rows already encrypted without your key |
+| **SEC-14** | ↩️ **Reversed 2026-09-14 — no recovery phrase; an offline `.env` copy instead** | First decided *yes* and built in Phases 1–2 as a second DEK wrap under 12 BIP-39 words. Reversed because only the server side can lose `.env`, so the insurance belongs with the server owner (SEC-31), not on every user's paper. What moves: sign-up loses the words screen, recovery and "New recovery words" go, backups need only the master key, and a forgotten password is reset by an emailed link (SEC-30). The trade: losing `.env` and every copy is fatal for every account at once. The phrase was removed from the code and the database the same day, and the email reset was built with it |
 | **TXN-16** | ✅ **Yes — split transactions** | Transaction payload gains a `splits` array. Locked in *before* Phase 4, so no migration. Ripples into stats, budgets, category delete, and CSV |
 
 Two more settled in the second round:
@@ -468,7 +474,7 @@ below.**
 
 | Ref | Question | What I assumed, and why |
 |---|---|---|
-| **§13-A** | Should the **recovery phrase be re-viewable** in Settings, or shown exactly once at registration? | **Re-viewable, behind a password re-prompt** (SEC-16). Once-only is marginally safer — a phrase that cannot be displayed cannot be shoulder-surfed from a live session — but for a personal app the far likelier disaster is *losing the paper*. If you would rather it be shown once and never again, say so |
+| **§13-A** | ~~Should the recovery phrase be re-viewable in Settings, or shown exactly once?~~ | **Closed as moot, 2026-09-14.** The build (8b) could not re-show it, because the words were never stored, and the phrase itself has since been removed (SEC-14) |
 | **§13-C** | When you put ₱5,000 toward a savings goal, is that a **real transfer** or just a number on the goal? | **A real transfer** into the linked account (GOA-06). If it were only a number, your goal could say ₱50,000 saved while the account holds ₱30,000 — the classic budgeting-app inconsistency. Cost: you must have a savings account to have a goal |
 | **§13-D** | How do **splits survive a CSV export**? | **One row per split**, sharing a `txn_id` and carrying a `split_index` (DAT-11). Exports re-import identically. Trade-off: the row count no longer equals the transaction count, which can surprise you in Excel |
 | **§13-E** | Does updating an **investment balance** count as income? | **No** (ACC-12). A stock account moving ₱100k → ₱105k is a valuation change, recorded on the account and excluded from income and spending stats. Otherwise market swings would pollute every spending report you own |
@@ -520,13 +526,15 @@ alerts you chose (BUD-12/14/15) compute the same figures inside your own
 session, where the key already legitimately is. Same information, no new
 exposure — this was the better answer, not just the cheaper one.
 
-**Recovery phrase (SEC-14) — the one change that adds an attack surface.** It
-creates a *second* complete path to your data. `dek_wrapped_recovery` sits in
-the same database as `dek_wrapped`, so a DBA now sees two wrapped keys instead
-of one — both still useless without either your `.env` or your phrase. The real
-change is physical: **the paper you write those 12 words on is now equivalent to
-the master key.** Treat it that way. In exchange, the single largest risk in the
-project — losing `.env` and everything with it — stops being fatal.
+**Recovery phrase (SEC-14) — added, then removed on 2026-09-14.** It was a
+*second* complete path to your data, and it made a sheet of paper as sensitive
+as the master key for every user who wrote one down. It is replaced by an
+offline copy of `.env` that the server owner keeps (SEC-31). What moves with it:
+one wrapped key per user instead of two, no recovery flow, a password reset by
+email (SEC-30), and backups that open with the master key alone.
+What it costs: `.env` is now a single point of failure. Lose it and every copy,
+and every account is gone at once, so the copy has to be real, current and
+checked.
 
 ---
 
@@ -545,7 +553,7 @@ budget-2026-09-08T1422.budgetbak        (a zip container)
 │                          key_version, timestamp, row counts, checksums.
 │                          Deliberately readable so a restore tool can
 │                          validate the file before asking for your key.
-├── keys.enc               your dek_wrapped AND dek_wrapped_recovery
+├── keys.enc               your dek_wrapped (under the master key)
 ├── accounts.enc
 ├── categories.enc
 ├── tags.enc
@@ -560,9 +568,10 @@ budget-2026-09-08T1422.budgetbak        (a zip container)
     └── <id>.enc           receipt images, still encrypted
 ```
 
-Because `keys.enc` carries both wrapped DEKs, the file is **standalone**: a new
-server, an empty database, and either your `.env` master key *or* your 12 words
-is enough to get everything back (DAT-16).
+Because `keys.enc` carries the wrapped DEK, the file is **standalone** wherever
+the same master key exists: a new server, an empty database, and the offline
+`.env` copy are enough to get everything back (DAT-16). Keep the file and that
+copy apart. Each is harmless alone; together they are your data.
 
 ### The problem that makes this non-trivial
 
@@ -576,7 +585,7 @@ So only the import re-encrypts:
 ```
 EXPORT — no key needed               IMPORT — needs your key
 ──────────────────────               ───────────────────────
-copy each row exactly as stored      unwrap your DEK (.env or 12 words)
+copy each row exactly as stored      unwrap your DEK (.env master key)
   (ciphertext + its id,              rebuild each row's ORIGINAL AAD
    user_id, key_version)             decrypt → INSERT, get NEW id
                                      re-encrypt with AAD = NEW id
@@ -663,11 +672,14 @@ rows WHERE user_id = 1     rows WHERE user_id = 2
 **Bob cannot read Alice's data — not by policy, by cryptography.** Their DEKs
 are unrelated 32-byte keys. This has a consequence worth stating plainly:
 
-> **There is no admin who can read your data (SEC-18).** An administrator can
-> create, disable and delete accounts. They cannot decrypt one, because no key
-> exists that opens everything — and adding one would undo the entire design.
-> If you forget your password *and* lose your recovery phrase, nobody can help
-> you. That is the correct behaviour here, not a gap.
+> **There is no admin who can read your data in the app (SEC-18).** An
+> administrator can create, disable and delete accounts. They cannot decrypt an
+> account from the app, or reset its password: a reset link goes only to the
+> account's own email (SEC-30), so the mailbox is what guards it. Outside the app, whoever holds `.env` and the
+> database — the server owner — can read everything; with no per-user recovery
+> secret, that is the honest shape of the design. If `.env` and every offline
+> copy are lost, nobody can help anyone. That is the correct behaviour here,
+> not a gap.
 
 ### What it costs
 
@@ -710,44 +722,46 @@ Not built. Cleanly possible later.
 
 ## 17. Rotating keys after a compromise
 
-You asked for the ability to refresh a recovery phrase you think is compromised.
-That exists (SEC-22) — but it only solves half the problem, and the half it does
-not solve is the one that matters if something has actually gone wrong. Both
-capabilities are built; use the right one.
+This section used to compare regenerating the recovery phrase (SEC-22) with
+rotating the DEK (SEC-23). The phrase was removed on 2026-09-14, but the lesson
+carries over unchanged to the key that remains: re-wrapping a key does not
+revoke anyone who already unwrapped it.
 
 ### The two operations
 
-| | **SEC-22 — Regenerate phrase** | **SEC-23 — Rotate the DEK** |
+| | **Rotate the master key** (`scripts/rotate_keys.py`, Phase 9) | **SEC-23 — Rotate the DEK** |
 |---|---|---|
-| Changes | The recovery *wrap* only | **The data key itself** |
+| Changes | The *wrap* on every user's DEK | **The data key itself** |
 | Data re-encrypted | None | **Every row you own** |
-| Speed | Instant — one row update | Seconds to a minute |
-| Old phrase | Stops working immediately | Stops working immediately |
-| **Anyone who already has your DEK** | **Still has it. Still reads everything.** | **Locked out** |
-| Use when | The paper is lost, or you stored it somewhere you regret — but you do not believe anyone used it | You believe someone **used** the phrase, or otherwise obtained your key |
+| Speed | Milliseconds per user | Seconds to a minute |
+| Run by | The server owner | You, from Settings |
+| **Anyone who already unwrapped your DEK** | **Still has it. Still reads everything.** | **Locked out** |
+| Use when | A copy of `.env` went somewhere you regret, but nobody could also reach the database or a backup | Someone may have held `.env` **and** the database or a backup — so may have unwrapped your key |
 
 ### Why the difference exists
 
-The phrase does not protect your data. It **unwraps the key** that protects your
-data. So if someone read your twelve words and used them, they now hold a copy
-of your DEK — a 32-byte value they can keep forever. Changing the phrase after
+The master key does not protect your data. It **unwraps the key** that protects
+your data. Someone who held `.env` and a copy of the `users` table could unwrap
+your DEK — a 32-byte value they can keep forever. Rotating the master key after
 that is like changing the lock while the intruder walks around with a copy of
 the key already cut.
 
 ```
-Regenerate phrase (SEC-22)          Rotate DEK (SEC-23)
-──────────────────────────          ───────────────────
-new words → new recovery key        NEW DEK generated
+Rotate master key                   Rotate DEK (SEC-23)
+─────────────────                   ───────────────────
+new master key in .env              NEW DEK generated
      ↓                                   ↓
 re-wrap the SAME DEK                decrypt every row with old DEK
      ↓                              re-encrypt every row with new DEK
-dek_wrapped_recovery updated             ↓
-                                    re-wrap under master key AND
-old phrase: dead                    a fresh phrase
+dek_wrapped updated                      ↓
+old key → BUDGET_RETIRED_KEYS       re-wrap under the master key
 old DEK:    UNCHANGED  ←── the gap        ↓
-                                    old phrase: dead
                                     old DEK:    now useless
 ```
+
+After a real leak of `.env`, do **both, in this order**: rotate the master key
+first, so no new DEK is wrapped under the leaked key, then rotate every user's
+DEK. Then make a fresh offline copy and destroy the old ones.
 
 ### How rotation works
 
@@ -756,17 +770,18 @@ decrypt-with-old, encrypt-with-new for every row. At personal scale (~10k rows)
 this runs in **a single database transaction**: it either completes or nothing
 changed. No half-rotated state, no `dek_version` column, no resume logic.
 
-Both operations require a password re-prompt, are audited, and end every other
+DEK rotation requires a password re-prompt, is audited, and ends every other
 session (SEC-24) — leaving a stolen session alive would defeat the purpose.
+Master-key rotation is a script the server owner runs, dry run first.
 
 ### What neither can undo
 
 If someone already **exported and kept your data**, no key operation reaches it.
 
 The same goes for **your own older backups.** A `.budgetbak` written before a
-rotation still carries the old wrapped keys, so it still opens with the old
-phrase. After rotating because of a compromise, take a fresh backup and delete
-the older files.
+rotation still carries the old wrapped key, so it still opens with the old
+master key, which stays in `BUDGET_RETIRED_KEYS`. After rotating because of a
+compromise, take a fresh backup and delete the older files.
 Rotation stops future reads, not copies already taken. Worth knowing before you
 rely on it, because "I rotated the key" can feel more complete than it is.
 
@@ -802,7 +817,7 @@ An honest scorecard against the iOS original.
 | **Not in the iOS app** | |
 | Full-row encryption on a shared database | ✅ The reason this project exists |
 | Password + PIN + key rotation | ✅ |
-| 12-word recovery phrase | ✅ (SEC-14) |
+| Offline `.env` copy and password reset by email, not a recovery phrase | ✅ (SEC-30, SEC-31) |
 | Savings goals | ✅ |
 | Pace alert — spending faster than time is passing | ✅ (BUD-15) |
 

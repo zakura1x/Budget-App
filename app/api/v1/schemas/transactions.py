@@ -37,6 +37,7 @@ class TransactionIn(BaseModel):
     counter_account_id: Optional[int] = None  # transfers: where the money goes
     merchant: Optional[str] = Field(default=None, max_length=80)
     notes: Optional[str] = Field(default=None, max_length=500)
+    tag_ids: Optional[List[int]] = Field(default=None, max_length=10)  # TXN-10; omitted keeps the stored ones
 
 
 class RepeatIn(BaseModel):
@@ -65,6 +66,10 @@ class TransactionOut(BaseModel):
     direction: Optional[Literal["out", "in"]] = None
     counter_account_id: Optional[int] = None
     pair_id: Optional[int] = None
+    tag_ids: List[int] = []
+    recurring_id: Optional[int] = None  # the rule that posted it, or the plan it pays
+    recurring_on: Optional[date] = None
+    attachment_id: Optional[int] = None  # TXN-15 - GET /attachments/{id}
     created_at: Optional[datetime] = None
     card_posted_on: Optional[date] = None  # ACC-26
 

@@ -5,13 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#f5f6f1" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#101311" media="(prefers-color-scheme: dark)" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Budget" />
     <meta name="referrer" content="no-referrer" />
     <meta name="app-base" content="{{ base_url }}" />
     <meta name="app-api" content="{{ api_prefix }}" />
-    <!-- No request for /favicon.ico until the real icons arrive with the PWA (Phase 8b) -->
-    <link rel="icon" href="data:," />
+    <link rel="manifest" href="{{ base_url }}/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ base_url }}/static/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="{{ base_url }}/static/icons/apple-touch-icon.png" />
     <title>{{ app_name }}</title>
     {% if entry %}
       {% for css in entry.css %}

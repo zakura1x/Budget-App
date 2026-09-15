@@ -26,9 +26,9 @@ of them is ever a Spend.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
-from decimal import Decimal
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -41,7 +41,7 @@ from app.core.exceptions import (
     ValidationException,
 )
 from app.core.utils.date_utils import PERIOD_KINDS, BudgetPeriod, budget_period
-from app.core.utils.money import ZERO, money, total
+from app.core.utils.money import CENTS, ZERO, money, total
 from app.db.repositories.budget_repository import (
     BudgetAllocationRepository,
     BudgetRepository,
@@ -55,6 +55,7 @@ from app.services.budget_service.alerts import (
     CardDue,
     CardLimit,
     CategoryUse,
+    SubscriptionDue,
     budget_alerts,
 )
 from app.services.budget_service.allowance import (
@@ -183,6 +184,7 @@ def status(
             category_level=settings.ALERT_CATEGORY_LEVEL,
             cards_due=cards_due,
             card_limits=card_limits,
+            subscriptions_due=_subscriptions_due(db, cipher, today),
         )
 
     return BudgetStatus(
@@ -200,6 +202,59 @@ def status(
     )
 
 
+def period_for(db: Session, cipher: UserCipher, day: date) -> Optional[BudgetPeriod]:
+    """The budget period `day` falls in, or None with no budget - what Stats calls "this period"."""
+    record = _current_record(db, cipher)
+    return _period_of(record.data)(day) if record is not None else None
+
+
+def budget_between(db: Session, cipher: UserCipher, start: date, end: date) -> Decimal:
+    """
+    REC-21. The budget for [start, end]: each period's amount times the share
+    of its days inside the range, summed in Decimal and rounded once at the
+    end. A whole monthly period comes out as exactly its amount; a weekly
+    budget is pro-rated into calendar months. ZERO with no budget.
+    """
+    record = _current_record(db, cipher)
+    if record is None or end < start:
+        return ZERO
+    data = record.data
+    period_of = _period_of(data)
+    amount = Decimal(0)
+    day = start
+    while day <= end:
+        period = period_of(day)
+        last = min(period.end, end)
+        in_force = _amount_for(data, period) or ZERO
+        amount += in_force * ((last - day).days + 1) / period.days
+        day = last + timedelta(days=1)
+    return amount.quantize(CENTS, rounding=ROUND_HALF_UP)
+
+
+def daily_budget(db: Session, cipher: UserCipher) -> Optional[Callable[[date], Optional[Decimal]]]:
+    """
+    CAL-01. A function giving the budget per day of the period a day falls
+    in - the period's amount over its days - or None with no budget. The
+    calendar colours a day against it; a period from before the budget
+    existed gives None.
+    """
+    record = _current_record(db, cipher)
+    if record is None:
+        return None
+    data = record.data
+    period_of = _period_of(data)
+    known: Dict[date, Optional[Decimal]] = {}
+
+    def per_day(day: date) -> Optional[Decimal]:
+        period = period_of(day)
+        if period.start not in known:
+            amount = _amount_for(data, period)
+            known[period.start] = (amount / period.days).quantize(CENTS) if amount else None
+        return known[period.start]
+
+    return per_day
+
+
 # ------------------------------------------------------------------ writing
 
 
@@ -209,7 +264,11 @@ def create_budget(db: Session, cipher: UserCipher, payload: Mapping[str, Any], *
     if _current_record(db, cipher) is not None:
         raise ConflictException("You already have a budget - change it instead")
 
-    structure = _structure(payload, existing=None)
+    # A new budget starts from the user's own defaults (Settings), then what the sheet sent.
+    prefs = _preferences(db, cipher)
+    defaults = {key: prefs[pref] for key, pref in (("period", "budget_period"), ("month_start_day", "month_start_day"),
+                                                   ("week_start_day", "week_start_day")) if prefs.get(pref) is not None}
+    structure = _structure({**defaults, **{k: v for k, v in payload.items() if v is not None}}, existing=None)
     amount = _positive(payload.get("amount"))
     first_period = budget_period(today, **_config(structure))
     data = {
@@ -415,6 +474,20 @@ def _card_alerts(db: Session, cipher: UserCipher, today: date) -> Tuple[List[Car
         for v in cards if v.credit.spending_limit is not None
     ]
     return due, limits
+
+
+def _subscriptions_due(db: Session, cipher: UserCipher, today: date) -> List[SubscriptionDue]:
+    """
+    SUB-06. Imported here, not at the top: subscription_service reads the
+    budget for its share figure, so a top-level import would be a cycle.
+    """
+    from app.services import subscription_service
+
+    return [
+        SubscriptionDue(item.rule.id, item.rule.name, item.rule.account_id, item.due_in_days)
+        for item in subscription_service.reminders(db, cipher, today=today)
+        if item.due_in_days is not None
+    ]
 
 
 def _replace_allocations(

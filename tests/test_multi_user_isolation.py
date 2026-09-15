@@ -29,7 +29,6 @@ def test_every_user_has_their_own_key(api, session):
     api.register(email="bob@example.com")
     users = session.execute(select(User).order_by(User.id)).scalars().all()
     assert users[0].dek_wrapped != users[1].dek_wrapped
-    assert users[0].dek_wrapped_recovery != users[1].dek_wrapped_recovery
 
 
 def test_the_admins_key_cannot_open_another_users_rows(api, session):

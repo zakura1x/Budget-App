@@ -1,8 +1,8 @@
 """
 login_attempts - Shape A. The lockout and rate-limit ledger.
 
-kind is login | pin | recovery | register, so one table serves the account
-lockout (SEC-05), the PIN limit, the recovery limit and the registration-code
+kind is login | pin | unlock | register, so one table serves the account
+lockout (SEC-05), the PIN limit and the registration-code
 limit (SEC-25). The IP is stored only as a keyed hash: an unkeyed hash of an
 IPv4 address is reversible by trying all four billion.
 """

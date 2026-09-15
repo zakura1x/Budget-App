@@ -132,7 +132,7 @@ single encrypted blob each.
 ```mermaid
 graph TD
     subgraph OPS["Operational — readable, indexed"]
-        US["users<br/>email_bidx · password_hash<br/>dek_wrapped · dek_wrapped_recovery<br/>pin_hash"]
+        US["users<br/>email_bidx · password_hash<br/>dek_wrapped · pin_hash"]
         RT["refresh_tokens"]
         LA["login_attempts"]
         AL["audit_log"]
@@ -372,7 +372,7 @@ graph TD
     MORE --> M3["Recurring & subscriptions<br/>projection · card look-ahead"]
     MORE --> M4["Savings goals"]
     MORE --> M5["Import / Export CSV"]
-    MORE --> M6["Settings — theme, PIN,<br/>carry-over toggle,<br/>recovery phrase"]
+    MORE --> M6["Settings — theme, PIN,<br/>carry-over toggle,<br/>key rotation"]
 
     ADD -.->|"closes, ring animates"| H
 
@@ -437,21 +437,22 @@ graph TD
     subgraph NOT["NOT defended against"]
         N1["Admin on the app server<br/>— can read .env"]
         N2["Anyone who can dump<br/>process memory while running"]
-        N3["Someone holding BOTH your<br/>.env AND your paper phrase"]
+        N3["Anyone holding .env or its offline copy<br/>AND the database or a backup"]
     end
 
     style SAFE fill:#dcfce7,stroke:#166534
     style NOT fill:#fee2e2,stroke:#991b1b
 ```
 
-**Losing the master key is no longer fatal.** The 12-word recovery phrase wraps
-a second copy of your DEK, so `.env` and the phrase are independent ways in —
-lose either one and the other still opens your data. That was the largest risk
-in the project, and it is now an inconvenience rather than a catastrophe.
+**`.env` is the one key, and its offline copy is the insurance.** There is no
+recovery phrase (removed 2026-09-14): every user's DEK is wrapped by the master
+key alone. The server owner keeps a copy of the whole `.env` off the server, in
+at least two places, apart from the backup files, and refreshes it whenever a
+key changes. A forgotten password is reset by an emailed link, which touches no data.
 
-The trade is that the phrase is a second thing worth stealing. Written on paper,
-stored away from this machine and away from your `.env` backup, that is a good
-deal. Stored in a note on the same laptop, it is not.
+The trade is concentration. Users carry nothing, and the owner carries all of
+it: losing `.env` and every copy loses every account at once, and whoever holds
+`.env` plus the database can read everything.
 
 The honest summary: this defends your data from **the database and everyone with
 access to it**, which is precisely the risk you took on by using the company
@@ -459,10 +460,10 @@ server for personal finances. It does **not** defend against someone with
 administrative control of the machine doing the decrypting. If the same team
 administers both, this buys less than it appears to.
 
-On key loss: **you now have two independent ways in** — `BUDGET_MASTER_KEY` in
-`.env`, and the 12-word phrase on paper. Back up both, in different places.
-Losing one is recoverable. Losing both is still permanent, and no support ticket
-will change that.
+On key loss: **there is one way in** — `BUDGET_MASTER_KEY` in `.env`. Keep the
+offline copy current and check it against the server by fingerprint. Losing
+`.env` with a good copy is a five-minute restore. Losing it without one is
+permanent, for everyone, and no support ticket will change that.
 
 ---
 
@@ -500,8 +501,9 @@ is over a day old — never at a fixed time, because IIS stops the app after 20
 idle minutes and a 02:00 job would rarely fire. Data only changes while the app
 is in use, so nothing is missed.
 
-The file carries both wrapped DEKs, so it is **standalone** — a new server, an
-empty database, and either `.env` or your twelve words brings everything back.
+The file carries the wrapped DEK, so it is **standalone** wherever the master key
+exists — a new server, an empty database, and the offline `.env` copy bring
+everything back. Keep the file and that copy apart: together they are the data.
 
 Safe to put anywhere: it is ciphertext throughout. There is deliberately **no
 plaintext full archive**; per-transaction CSV export remains for Excel, and that
@@ -541,10 +543,12 @@ Bob cannot read Alice's data — **not by policy, by cryptography**. Their DEKs
 are unrelated keys. Which leads to the property worth understanding before you
 add a second user:
 
-> **There is no administrator who can read anyone's data.** No key opens
-> everything, and adding one would defeat the design. If a user forgets their
-> password *and* loses their recovery phrase, nobody can help them — not you,
-> not the DBA. Correct behaviour here, not a gap.
+> **No administrator can read anyone's data in the app**, or reset anyone's
+> password — a reset link goes only to the account's own email, so the mailbox
+> is what guards it. Outside the app, whoever holds `.env` and the
+> database can read everything. If `.env` and every offline copy are lost,
+> nobody can help anyone — not you, not the DBA. Correct behaviour here, not a
+> gap.
 
 **Shared budgets are still out.** Two people with *separate* data is a config
 flag; two people editing *one* budget needs a per-budget key wrapped to each
@@ -557,9 +561,10 @@ sketch if you ever want it.
 
 ## 13. Current state, honestly
 
-Phases 1 and 2 are built (2026-09-11): the crypto core, the recovery phrase,
-the database layer and migration, the frontend shell, and the whole sign-in /
-lock / recovery flow, with 212 passing tests. Schema ZBDGT and its fifteen
+Phases 1 and 2 are built (2026-09-11): the crypto core, the database layer and
+migration, the frontend shell, and the whole sign-in / lock flow, with 212
+passing tests. They also built a 12-word recovery phrase; on 2026-09-14 it was
+reversed in favour of an offline `.env` copy, and its code was removed the same day. Schema ZBDGT and its fifteen
 tables exist on P8_NOAH_AI. Everything from Phase 3 on is still a decision, not
 an observation.
 

@@ -38,6 +38,13 @@ export interface Transaction {
   direction: 'out' | 'in' | null;
   counter_account_id: number | null;
   pair_id: number | null;
+  /** TXN-10 - always empty on a transfer or an adjustment. */
+  tag_ids: number[];
+  /** REC-04 - the rule that posted it, or the installment it pays. */
+  recurring_id?: number | null;
+  recurring_on?: string | null;
+  /** TXN-15 - the receipt, if one is attached. */
+  attachment_id?: number | null;
   created_at: string | null;
   /** ACC-26 - the day the bank posted it, when that moved it to a later statement. */
   card_posted_on?: string | null;
@@ -74,6 +81,7 @@ export interface TransactionDraft {
   counter_account_id?: number;
   merchant?: string | null;
   notes?: string | null;
+  tag_ids?: number[];
 }
 
 export interface Filters {
@@ -81,6 +89,7 @@ export interface Filters {
   to?: string;
   category?: number;
   account?: number;
+  tag?: number;
   type?: TransactionType;
   q?: string;
 }

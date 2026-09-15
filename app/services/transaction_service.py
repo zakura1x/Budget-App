@@ -29,6 +29,12 @@ spending limit read only the types they mean, so none of them ever does - the
 budget stays the same (confirmed 2026-09-14). It can be deleted and never
 edited - its audit entry recorded before and after.
 
+TAGS (TXN-10) are ids inside the payload, checked against the user's tags on
+every write - no foreign key can do it. An expense or income carries up to
+MAX_TAGS; a transfer and an adjustment carry none. A write that does not
+mention `tag_ids` keeps the ones already there. Deleting a tag removes its id
+from every transaction (tag_service.delete_tag).
+
 A PURCHASE THE BANK POSTED LATE (ACC-26) carries `card_posted_on`. It moves
 the purchase to a later card statement and changes nothing else: the budget
 reads `txn_date` and only `txn_date`.
@@ -55,7 +61,7 @@ from app.db.repositories.account_repository import AccountRepository
 from app.db.repositories.category_repository import CategoryRepository
 from app.db.repositories.encrypted_repository import Record
 from app.db.repositories.transaction_repository import TransactionRepository
-from app.services import account_service, audit_service
+from app.services import account_service, audit_service, tag_service
 from app.services.account_service import Posting
 
 TYPES: Tuple[str, ...] = ("expense", "income", "transfer")  # what can be entered
@@ -66,6 +72,7 @@ MAX_SPLITS = 20
 MERCHANT_MAX = 80
 NOTES_MAX = 500
 SPLIT_NOTE_MAX = 120
+MAX_TAGS = 10
 EARLIEST = date(2000, 1, 1)
 PAGE_MAX = 200
 
@@ -95,6 +102,8 @@ class TransactionView:
     pair_id: Optional[int] = None  # transfers only
     tag_ids: Tuple[int, ...] = ()
     recurring_id: Optional[int] = None
+    recurring_on: Optional[date] = None  # the occurrence it posted as; None for a payment against a plan
+    attachment_id: Optional[int] = None  # TXN-15 - the receipt
     created_at: Optional[datetime] = None
     card_posted_on: Optional[date] = None  # ACC-26 - the statement it landed on, when later
 
@@ -182,6 +191,11 @@ def warm(db: Session, cipher: UserCipher) -> int:
     return len(TransactionRepository(db, cipher).cached())
 
 
+def views(db: Session, cipher: UserCipher) -> List[TransactionView]:
+    """Every live transaction, both legs of every transfer, unsorted - what stats and the calendar loop over."""
+    return [_view(record) for record in TransactionRepository(db, cipher).cached()]
+
+
 def postings(db: Session, cipher: UserCipher) -> List[Posting]:
     """
     Every transaction as a signed movement against its account - what
@@ -222,6 +236,7 @@ def list_transactions(
     category_id: Optional[int] = None,
     account_id: Optional[int] = None,
     type: Optional[str] = None,
+    tag_id: Optional[int] = None,
     q: Optional[str] = None,
     cursor: Optional[str] = None,
     limit: int = 50,
@@ -252,6 +267,8 @@ def list_transactions(
         if account_id is not None and view.account_id != account_id:
             continue
         if type is not None and view.type != type:
+            continue
+        if tag_id is not None and tag_id not in view.tag_ids:
             continue
         if date_from is not None and view.txn_date < date_from:
             continue
@@ -390,7 +407,8 @@ def repeat_last(
     else:
         payload = {"type": data["type"], "txn_date": when, "amount": data["amount"],
                    "account_id": data["account_id"], "merchant": data.get("merchant"),
-                   "notes": data.get("notes"), "splits": data["splits"]}
+                   "notes": data.get("notes"), "splits": data["splits"],
+                   "tag_ids": list(data.get("tag_ids") or [])}
     return create_transaction(db, cipher, payload, today=today)
 
 
@@ -430,6 +448,67 @@ def record_adjustment(
         "attachment_id": None,
     }
     return TransactionRepository(db, cipher).create(data)
+
+
+def post_recurring(
+    db: Session,
+    cipher: UserCipher,
+    payload: Mapping[str, Any],
+    *,
+    recurring_id: int,
+    recurring_on: Optional[date],
+) -> List[Record]:
+    """
+    REC-04/22. Write one occurrence of a recurring rule - or a payment against
+    one, an installment's interest or its payoff (`recurring_on` None) -
+    validated exactly like a typed entry.
+
+    Only recurring_service calls this. It neither commits nor audits: a
+    catch-up posts its whole batch and advances the rule's marker in ONE
+    commit, so it happens entirely or not at all.
+    """
+    kind = _type(payload.get("type"))
+    marks = {"recurring_id": recurring_id, "recurring_on": recurring_on.isoformat() if recurring_on else None}
+    repo = TransactionRepository(db, cipher)
+    if kind == "transfer":
+        out_data, in_data = _clean_transfer(db, cipher, payload, existing=None)
+        out_leg = repo.create({**out_data, **marks})
+        in_leg = repo.create({**in_data, **marks, "pair_id": out_leg.id})
+        out_leg = repo.update(out_leg.id, {**out_data, **marks, "pair_id": in_leg.id})
+        return [out_leg, in_leg]
+    return [repo.create({**_clean(db, cipher, payload, kind, existing=None), **marks})]
+
+
+def validate_entry(db: Session, cipher: UserCipher, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """DAT-04. Clean a would-be entry exactly as create_transaction would, and write nothing."""
+    kind = _type(payload.get("type"))
+    if kind == "transfer":
+        return _clean_transfer(db, cipher, payload, existing=None)[0]
+    return _clean(db, cipher, payload, kind, existing=None)
+
+
+def import_entries(db: Session, cipher: UserCipher, payloads: Sequence[Mapping[str, Any]]) -> int:
+    """
+    DAT-03. Write many entries from a checked import in ONE commit - all or
+    none - without recomputing the budget after each. Only
+    import_export_service calls this, after a preview it built.
+    """
+    repo = TransactionRepository(db, cipher)
+    for payload in payloads:
+        kind = _type(payload.get("type"))
+        if kind == "transfer":
+            out_data, in_data = _clean_transfer(db, cipher, payload, existing=None)
+            out_leg = repo.create(out_data)
+            in_leg = repo.create({**in_data, "pair_id": out_leg.id})
+            repo.update(out_leg.id, {**out_data, "pair_id": in_leg.id})
+        else:
+            repo.create(_clean(db, cipher, payload, kind, existing=None))
+    audit_service.record(
+        db, audit_service.IMPORT, user_id=cipher.user_id, entity="transactions", cipher=cipher,
+        detail={"transactions": len(payloads)},
+    )
+    db.commit()
+    return len(payloads)
 
 
 def set_card_posted_on(db: Session, cipher: UserCipher, transaction_id: int, day: date) -> TransactionView:
@@ -511,8 +590,9 @@ def _clean(
         "merchant": _text(payload.get("merchant"), MERCHANT_MAX),
         "notes": _text(payload.get("notes"), NOTES_MAX),
         "splits": splits,
-        "tag_ids": list((existing or {}).get("tag_ids") or []),
+        "tag_ids": _tags(db, cipher, payload, existing),
         "recurring_id": (existing or {}).get("recurring_id"),
+        "recurring_on": (existing or {}).get("recurring_on"),
         "attachment_id": (existing or {}).get("attachment_id"),
     }
     # ACC-26. A late posting date belongs to one purchase on one card on one
@@ -543,7 +623,10 @@ def _clean_transfer(
     # amount) while guaranteeing no category total can ever include it.
     splits = validate_splits(amount, [{"category_id": None, "amount": str(amount)}])
     common = {"txn_date": when.isoformat(), "type": "transfer", "amount": str(amount), "merchant": None,
-              "notes": notes, "splits": splits, "tag_ids": [], "recurring_id": None, "attachment_id": None}
+              "notes": notes, "splits": splits, "tag_ids": [], "attachment_id": None,
+              # An edited recurring transfer is still the occurrence it posted as.
+              "recurring_id": (existing or {}).get("recurring_id"),
+              "recurring_on": (existing or {}).get("recurring_on")}
     return (
         {**common, "direction": "out", "account_id": source, "counter_account_id": destination, "pair_id": None},
         {**common, "direction": "in", "account_id": destination, "counter_account_id": source, "pair_id": None},
@@ -589,6 +672,8 @@ def _view(record: Record) -> TransactionView:
         pair_id=data.get("pair_id"),
         tag_ids=tuple(data.get("tag_ids") or ()),
         recurring_id=data.get("recurring_id"),
+        recurring_on=date.fromisoformat(str(data["recurring_on"])) if data.get("recurring_on") else None,
+        attachment_id=data.get("attachment_id"),
         created_at=record.row_created,
         card_posted_on=date.fromisoformat(str(data["card_posted_on"])) if data.get("card_posted_on") else None,
     )
@@ -698,6 +783,29 @@ def _account(
         # one to it is not - you archived it because it is not in use.
         raise BusinessRuleException("That account is archived")
     return value
+
+
+def _tags(
+    db: Session, cipher: UserCipher, payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]
+) -> List[int]:
+    """TXN-10. The payload's tag ids, checked - or the stored ones, when the payload does not mention tags."""
+    raw = payload.get("tag_ids")
+    if raw is None:
+        return list((existing or {}).get("tag_ids") or [])
+    if not isinstance(raw, (list, tuple)):
+        raise ValidationException("tag_ids is a list")
+    chosen: List[int] = []
+    for value in raw:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValidationException("A tag id is a number")
+        if value not in chosen:
+            chosen.append(value)
+    if len(chosen) > MAX_TAGS:
+        raise ValidationException(f"At most {MAX_TAGS} tags on one transaction")
+    if chosen and not set(chosen) <= tag_service.known_ids(db, cipher):
+        # No foreign key can say this - the ids are inside the ciphertext.
+        raise ValidationException("That tag does not exist")
+    return chosen
 
 
 def _text(value: Any, limit: int) -> Optional[str]:

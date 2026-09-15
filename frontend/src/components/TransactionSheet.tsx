@@ -22,6 +22,10 @@
  *
  * A balance adjustment (ACC-29) opens read-only, with Delete: it was recorded
  * when a balance was set, and editing its amount would contradict the record.
+ *
+ * TAGS (TXN-10) sit behind a "Tags" button beside "Add note" - one tap away,
+ * never in the way of two taps and a number. An entry that has tags opens
+ * with them showing.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
@@ -44,8 +48,10 @@ import {
   type EntryType,
   type TransactionDraft,
 } from '../lib/transactions';
+import { listTags, type Tag } from '../lib/tags';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
+import { ReceiptControl } from './ReceiptControl';
 import { GlyphTile } from './StylePicker';
 import { Button } from './ui/Button';
 import { NumPad, type NumPadKey } from './ui/NumPad';
@@ -103,6 +109,7 @@ export function TransactionSheet() {
   const open = useUiStore((s) => s.addSheetOpen);
   const editing = useUiStore((s) => s.editing);
   const close = useUiStore((s) => s.closeAddSheet);
+  const addOn = useUiStore((s) => s.addOn);
   const ledger = useLedgerStore();
 
   const [kind, setKind] = useState<EntryType>('expense');
@@ -117,6 +124,9 @@ export function TransactionSheet() {
   const [lines, setLines] = useState<SplitLine[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [tree, setTree] = useState<Category[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [tagIds, setTagIds] = useState<number[]>([]);
+  const [showTags, setShowTags] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -126,11 +136,12 @@ export function TransactionSheet() {
     setError(null);
     setBusy(false);
     const controller = new AbortController();
-    Promise.all([listAccounts(controller.signal), listCategories(controller.signal)])
-      .then(([accountList, categories]) => {
+    Promise.all([listAccounts(controller.signal), listCategories(controller.signal), listTags(controller.signal)])
+      .then(([accountList, categories, tagList]) => {
         const active = accountList.accounts.filter((a) => !a.archived || a.id === editing?.account_id);
         setAccounts(active);
         setTree(categories);
+        setTags(tagList);
         if (!editing) {
           // The account you used last is the account you are about to use.
           const recent = ledger.items.find((row) => row.id > 0)?.account_id;
@@ -146,6 +157,8 @@ export function TransactionSheet() {
       setTxnDate(editing.txn_date);
       setNote(editing.notes ?? '');
       setShowNote(Boolean(editing.notes));
+      setTagIds(editing.tag_ids ?? []);
+      setShowTags((editing.tag_ids ?? []).length > 0);
       if (editing.type === 'transfer') {
         const out = editing.direction !== 'in';
         setAccountId(out ? editing.account_id : editing.counter_account_id);
@@ -165,9 +178,11 @@ export function TransactionSheet() {
       setKind('expense');
       setTyped('0');
       setCategoryId(null);
-      setTxnDate(localToday());
+      setTxnDate(addOn ?? localToday());
       setNote('');
       setShowNote(false);
+      setTagIds([]);
+      setShowTags(false);
       setSplitting(false);
       setLines([]);
     }
@@ -219,13 +234,15 @@ export function TransactionSheet() {
   const draft = (): TransactionDraft => {
     const base = { type: kind, amount, account_id: accountId as number, txn_date: txnDate, notes: note.trim() || null };
     if (kind === 'transfer') return { ...base, counter_account_id: counterId as number };
+    // Only ids that still exist - a tag deleted while the sheet was open would be refused.
+    const tagged = { ...base, tag_ids: tagIds.filter((id) => tags.some((t) => t.id === id)) };
     if (splitting) {
       return {
-        ...base,
+        ...tagged,
         splits: lines.map((l) => ({ category_id: l.category_id as number, amount: toDecimalString(l.amount) })),
       };
     }
-    return { ...base, category_id: categoryId as number };
+    return { ...tagged, category_id: categoryId as number };
   };
 
   const save = async () => {
@@ -247,6 +264,7 @@ export function TransactionSheet() {
         direction: body.type === 'transfer' ? 'out' : null,
         counter_account_id: body.counter_account_id ?? null,
         pair_id: null,
+        tag_ids: body.tag_ids ?? [],
         created_at: null,
       });
       close();
@@ -443,6 +461,12 @@ export function TransactionSheet() {
               Add note
             </button>
           )}
+          {kind !== 'transfer' && tags.length > 0 && !showTags && (
+            <button type="button" onClick={() => setShowTags(true)}
+              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent active:bg-accent/10">
+              Tags
+            </button>
+          )}
           {kind !== 'transfer' && !splitting && (
             <button type="button" onClick={startSplit}
               className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent active:bg-accent/10">
@@ -450,6 +474,21 @@ export function TransactionSheet() {
             </button>
           )}
         </div>
+
+        {kind !== 'transfer' && showTags && tags.length > 0 && (
+          <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Tags">
+            {tags.map((t) => {
+              const on = tagIds.includes(t.id);
+              return (
+                <Chip key={t.id} selected={on} colour={t.colour}
+                  onClick={() => setTagIds((ids) => (on ? ids.filter((id) => id !== t.id) : [...ids, t.id]))}>
+                  {!on && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.colour }} aria-hidden="true" />}
+                  {t.name}
+                </Chip>
+              );
+            })}
+          </div>
+        )}
 
         {showNote && (
           <input
@@ -535,6 +574,10 @@ export function TransactionSheet() {
         <Button block size="lg" onClick={() => void save()} disabled={!canSave}>
           {problem ?? (editing ? 'Save changes' : 'Save')}
         </Button>
+
+        {editing && editing.id > 0 && (
+          <ReceiptControl transactionId={editing.id} attachmentId={editing.attachment_id ?? null} />
+        )}
 
         {editing && (
           <Button variant="ghost" block className="text-danger" onClick={() => void remove()} disabled={busy}>

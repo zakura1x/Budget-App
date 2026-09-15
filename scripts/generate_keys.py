@@ -10,8 +10,8 @@ wrapped under the old one, and a new BUDGET_BLIND_INDEX_PEPPER finds no user.
 --fill therefore never overwrites a value that is already set - to replace a
 key on a live install, use scripts/rotate_keys.py (Phase 9).
 
-The one exception is disaster recovery: if .env is LOST, generate a fresh set
-and recover each account with its 12-word phrase (misc/how-to-run.txt).
+If .env is LOST, do not generate a fresh set - new keys open nothing that
+exists. Restore .env from its offline copy (misc/how-to-run.txt).
 """
 
 import argparse

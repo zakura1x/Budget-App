@@ -8,7 +8,7 @@ Sessions - one sign-in, one refresh-token family, one keyring entry.
                     family - that is what a stolen token being replayed looks
                     like (SEC-06)
     end_session     sign-out: family revoked, keyring entry zeroed
-    end_all         every session of a user (recovery, and SEC-24 later)
+    end_all         every session of a user (SEC-24, disabling an account)
 
 Revoking a family in the database and dropping its keyring entry always happen
 together here, so no code path can do one and forget the other.

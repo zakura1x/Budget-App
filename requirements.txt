@@ -7,7 +7,7 @@
 # versions below match QUOT's floors: nothing here should force an
 # upgrade QUOT did not ask for. Preview before installing on the server:
 #     pip install -r requirements.txt --dry-run
-# Packages this app adds: argon2-cffi, mnemonic, pillow (+ hypothesis,
+# Packages this app adds: argon2-cffi, pillow (+ hypothesis,
 # ruff for development). cryptography is already there via python-jose.
 
 # ============================================
@@ -37,11 +37,6 @@ cryptography>=41.0.0
 # login password if you ever want it; bcrypt is the default because
 # it needs no tuning to be safe.
 argon2-cffi>=23.1.0
-
-# BIP-39 mnemonics for the 12-word recovery phrase (SEC-14). Gives us
-# the standard wordlist and, importantly, the checksum - so a mistyped
-# word fails with a clear error instead of a cryptic decrypt failure.
-mnemonic>=0.21
 
 # ============================================
 # AUTHENTICATION

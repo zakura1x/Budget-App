@@ -1,5 +1,5 @@
 """
-login_attempts - the ledger behind every lockout and signup/recovery limit.
+login_attempts - the ledger behind every lockout and signup limit.
 
 Lockouts are computed from this table, not from counters on users, so they
 apply to email addresses that have no account as well. A counter on a user row
@@ -53,6 +53,20 @@ class AttemptRepository:
             ).order_by(LoginAttempt.attempted_at)
         )
         return [r[0] for r in rows]
+
+    def recent_count(self, *, kinds: Sequence[str], window_minutes: int,
+                     email_bidx: Optional[str] = None, ip_hash: Optional[str] = None) -> int:
+        """Every attempt inside the window, successful or not - a cap on requests, not a lockout."""
+        since = utcnow() - timedelta(minutes=window_minutes)
+        key = []
+        if email_bidx is not None:
+            key.append(LoginAttempt.email_bidx == email_bidx)
+        if ip_hash is not None:
+            key.append(LoginAttempt.ip_hash == ip_hash)
+        return self.session.execute(
+            select(func.count()).select_from(LoginAttempt).where(
+                LoginAttempt.kind.in_(kinds), LoginAttempt.attempted_at > since, *key)
+        ).scalar_one()
 
 
 def seconds_until_free(failures: list, window_minutes: int) -> int:

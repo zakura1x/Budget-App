@@ -45,13 +45,16 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 interface RequestOptions {
   method?: Method;
   body?: unknown;
+  /** A file sent as the raw request body (a receipt, a backup) instead of JSON. */
+  raw?: Blob;
+  headers?: Record<string, string>;
   signal?: AbortSignal;
   /** Resolve with the parsed body even on non-2xx (used by /health). */
   acceptErrorBody?: boolean;
 }
 
 // Calls that must never trigger a refresh-and-retry of their own.
-const NO_REFRESH = ['/auth/login', '/auth/register', '/auth/recover', '/auth/refresh', '/auth/logout', '/auth/config'];
+const NO_REFRESH = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/refresh', '/auth/logout', '/auth/config'];
 
 let refreshing: Promise<boolean> | null = null;
 
@@ -68,7 +71,7 @@ export function refreshSession(): Promise<boolean> {
   return refreshing;
 }
 
-function rawFetch(path: string, { method = 'GET', body, signal }: RequestOptions): Promise<Response> {
+function rawFetch(path: string, { method = 'GET', body, raw, headers, signal }: RequestOptions): Promise<Response> {
   return fetch(`${API_PREFIX}${path}`, {
     method,
     signal,
@@ -77,9 +80,11 @@ function rawFetch(path: string, { method = 'GET', body, signal }: RequestOptions
     headers: {
       Accept: 'application/json, application/problem+json',
       'X-Requested-With': 'fetch',
+      ...(raw !== undefined ? { 'Content-Type': 'application/octet-stream' } : {}),
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...headers,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: raw !== undefined ? raw : body !== undefined ? JSON.stringify(body) : undefined,
   });
 }
 
@@ -90,6 +95,34 @@ async function parse(response: Response): Promise<Record<string, unknown> | null
 }
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { response, payload } = await send(path, options, true);
+  if (response.ok || options.acceptErrorBody) return payload as T;
+  throw toError(path, response, payload);
+}
+
+/**
+ * A file from the API - a backup, a CSV, a receipt - with the same refresh and
+ * error rules as `api`. The blob lives in page memory only (SEC-29).
+ */
+export async function apiBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+  const { response, payload } = await send(path, options, false);
+  if (response.ok) return response.blob();
+  throw toError(path, response, payload);
+}
+
+/** Save a blob as a download, then let the page forget it. */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function send(path: string, options: RequestOptions, parseOk: boolean) {
   const attempt = async (): Promise<Response> => {
     try {
       return await rawFetch(path, options);
@@ -98,9 +131,10 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
       throw new ApiError(0, 'OFFLINE', 'You appear to be offline.');
     }
   };
+  const read = (r: Response) => (r.ok && !parseOk ? Promise.resolve(null) : parse(r));
 
   let response = await attempt();
-  let payload = await parse(response);
+  let payload = await read(response);
 
   const code = (payload?.code as string | undefined) ?? '';
   if (
@@ -110,12 +144,13 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   ) {
     if (await refreshSession()) {
       response = await attempt();
-      payload = await parse(response);
+      payload = await read(response);
     }
   }
+  return { response, payload };
+}
 
-  if (response.ok || options.acceptErrorBody) return payload as T;
-
+function toError(path: string, response: Response, payload: Record<string, unknown> | null): ApiError {
   const problem = payload ?? {};
   const finalCode = (problem.code as string | undefined) ?? `HTTP_${response.status}`;
   if (finalCode === 'SESSION_LOCKED') window.dispatchEvent(new Event(LOCKED_EVENT));
@@ -131,7 +166,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     (typeof problem.detail === 'string' && problem.detail) ||
     (typeof problem.title === 'string' && problem.title) ||
     'Something went wrong.';
-  throw new ApiError(response.status, finalCode, message, problem);
+  return new ApiError(response.status, finalCode, message, problem);
 }
 
 export interface HealthStatus {

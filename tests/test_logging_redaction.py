@@ -11,7 +11,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.crypto.recovery import generate_phrase
 from app.core.logging_config import RedactionFilter, StripQueryStringFilter, redact, setup_logging
 
 pytestmark = pytest.mark.security
@@ -44,14 +43,6 @@ def test_redacts_keys_in_base64_and_hex():
     token = secrets.token_urlsafe(64)
     out = redact(f"loaded {key_b64} and {key_hex} and {token}")
     assert key_b64 not in out and key_hex not in out and token not in out
-
-
-def test_redacts_a_recovery_phrase_however_it_is_written():
-    phrase = generate_phrase()
-    for variant in (phrase, phrase.upper(), ", ".join(phrase.split())):
-        out = redact(f"user typed {variant} into the box")
-        assert "[REDACTED-PHRASE]" in out
-        assert phrase.split()[5] not in out.lower().split()
 
 
 def test_leaves_ordinary_diagnostics_alone():

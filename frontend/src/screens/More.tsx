@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getHealth, type HealthStatus } from '../lib/api';
-import { GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, WalletIcon } from '../components/Icons';
+import { CalendarIcon, GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, WalletIcon } from '../components/Icons';
 import { useAuthStore } from '../stores/authStore';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SectionTitle } from '../components/ui/Card';
@@ -30,7 +30,6 @@ export function More() {
   }, []);
 
   const loading = !health && !error;
-  const soon = <span className="text-footnote text-ink-3">soon</span>;
   const navigate = useNavigate();
   const session = useAuthStore((s) => s.session);
   const lock = useAuthStore((s) => s.lock);
@@ -56,14 +55,28 @@ export function More() {
           chevron onClick={() => navigate('/accounts')} />
         <ListRow icon={<TagIcon size={20} />} title="Categories" subtitle="What your spending is sorted into"
           chevron onClick={() => navigate('/categories')} />
-        <ListRow icon={<RepeatIcon size={20} />} title="Recurring & installments" trailing={soon} />
+        <ListRow icon={<TagIcon size={20} />} title="Tags" subtitle="Trips and projects, across categories"
+          chevron onClick={() => navigate('/tags')} />
+        <ListRow icon={<RepeatIcon size={20} />} title="Recurring" subtitle="Bills, pay, subscriptions, installments"
+          chevron onClick={() => navigate('/recurring')} />
+        <ListRow icon={<WalletIcon size={20} />} title="Savings goals" subtitle="Targets that follow an account's balance"
+          chevron onClick={() => navigate('/goals')} />
+        <ListRow icon={<CalendarIcon size={20} />} title="Months ahead" subtitle="Cash on hand by month, card statements"
+          chevron onClick={() => navigate('/projection')} />
       </ListGroup>
 
       <SectionTitle>App</SectionTitle>
       <ListGroup>
         <ListRow icon={<GearIcon size={20} />} title="Settings" subtitle="Carry-over, daily allowance, alerts"
           chevron onClick={() => navigate('/settings')} />
-        <ListRow icon={<ShieldIcon size={20} />} title="About your encryption" trailing={soon} />
+        <ListRow icon={<ServerIcon size={20} />} title="Backup & data" subtitle="Encrypted backups, restore, CSV"
+          chevron onClick={() => navigate('/backup')} />
+        <ListRow icon={<ShieldIcon size={20} />} title="About your encryption" subtitle="What is protected, and what is not"
+          chevron onClick={() => navigate('/about-encryption')} />
+        {session?.user.is_admin && (
+          <ListRow icon={<ServerIcon size={20} />} title="Admin" subtitle="Accounts on this server - never their data"
+            chevron onClick={() => navigate('/admin')} />
+        )}
       </ListGroup>
 
       <SectionTitle>Server status</SectionTitle>

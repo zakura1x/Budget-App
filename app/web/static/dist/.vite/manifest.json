@@ -1,20 +1,11 @@
 {
   "index.html": {
-    "file": "assets/index-D_rqjNW3.js",
+    "file": "assets/index-ByMncj3i.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
-    "dynamicImports": [
-      "src/lib/bip39.ts"
-    ],
     "css": [
-      "assets/index-BdZZXQ5I.css"
+      "assets/index-6IW6ykps.css"
     ]
-  },
-  "src/lib/bip39.ts": {
-    "file": "assets/bip39-BBmJ4qpX.js",
-    "name": "bip39",
-    "src": "src/lib/bip39.ts",
-    "isDynamicEntry": true
   }
 }

@@ -26,9 +26,14 @@ suggestions come likeliest first and nothing is written without a choice. A
 LOWER bank total is never offered as a charge: owing less than the app thinks
 is a refund or a late posting, and calling it interest would invent a cost.
 
-Installment interest (REC-29) joins the choices in Phase 7.
+    installment_interest   REC-29: the interest on a plan bought without
+                  knowing it. The plan's terms are confirmed and payment 1's
+                  interest posts on the closing date, linked to the plan -
+                  suggested FIRST when exactly one unconfirmed plan has a
+                  payment on this statement
 
-This service writes only through transaction_service, and nothing imports it.
+This service writes only through transaction_service and recurring_service,
+and nothing imports it.
 """
 
 from dataclasses import dataclass, field
@@ -40,9 +45,9 @@ from sqlalchemy.orm import Session
 from app.core.crypto.user_cipher import UserCipher
 from app.core.exceptions import BusinessRuleException, ValidationException
 from app.core.utils.money import ZERO, money
-from app.services import account_service, audit_service, transaction_service
+from app.services import account_service, audit_service, recurring_service, transaction_service
 
-CHOICES = ("charge", "posted_next")
+CHOICES = ("charge", "posted_next", "installment_interest")
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,7 @@ class StatementCheck:
     checked: bool  # the bank's figure is in, and nothing is left unexplained
     late_candidates: List[transaction_service.TransactionView] = field(default_factory=list)
     suggestions: List[str] = field(default_factory=list)  # likeliest first; "leave" is always allowed
+    installments: List[recurring_service.StatementPlan] = field(default_factory=list)  # REC-29
 
 
 def get(db: Session, cipher: UserCipher, account_id: int, closes: date, *, today: Optional[date] = None) -> StatementCheck:
@@ -65,11 +71,13 @@ def get(db: Session, cipher: UserCipher, account_id: int, closes: date, *, today
         transaction_service.card_purchases(db, cipher, account_id, closes - timedelta(days=lag - 1), closes)
         if lag > 0 else []
     )
+    plans = recurring_service.unconfirmed_on_statement(db, cipher, account_id, found.start, closes)
     return StatementCheck(
         statement=found,
         checked=found.difference is not None and found.difference == ZERO,
         late_candidates=candidates,
-        suggestions=_suggest(found.difference, candidates),
+        suggestions=_suggest(found.difference, candidates, plans),
+        installments=plans,
     )
 
 
@@ -108,6 +116,8 @@ def resolve(
         _charge(db, cipher, account_id, closes, difference, payload, today)
     elif choice == "posted_next":
         _posted_next(db, cipher, closes, difference, current.late_candidates, payload)
+    elif choice == "installment_interest":
+        _installment_interest(db, cipher, closes, difference, current.installments, payload, today)
     else:
         raise ValidationException(f"choice must be one of: {', '.join(CHOICES)}")
     return get(db, cipher, account_id, closes, today=today)
@@ -116,12 +126,36 @@ def resolve(
 # ---------------------------------------------------------------- internals
 
 
-def _suggest(difference, candidates) -> List[str]:
+def _suggest(difference, candidates, plans=()) -> List[str]:
     if difference is None or difference == ZERO:
         return []
     if difference > ZERO:
-        return ["charge", "forgot"]
+        # Exactly one unconfirmed plan on the statement is the likeliest reason;
+        # with several, the user picks which, so it is offered after a charge.
+        if len(plans) == 1:
+            return ["installment_interest", "charge", "forgot"]
+        return ["charge"] + (["installment_interest"] if plans else []) + ["forgot"]
+    # A lower total is never interest.
     return (["posted_next"] if candidates else []) + ["forgot"]
+
+
+def _installment_interest(db, cipher, closes, difference, plans, payload, today) -> None:
+    if difference <= ZERO:
+        raise BusinessRuleException("The bank shows less than the app, which is never interest")
+    rule_id = payload.get("rule_id")
+    if rule_id is None and len(plans) == 1:
+        rule_id = plans[0].rule_id
+    if not any(plan.rule_id == rule_id for plan in plans):
+        raise BusinessRuleException("Choose an installment with a payment on this statement whose interest is unknown")
+    try:
+        amount = money(payload.get("amount"))
+    except (ValueError, TypeError):
+        raise ValidationException("amount is the interest the bank added to this payment") from None
+    if amount <= ZERO or amount > difference:
+        raise BusinessRuleException("The interest is more than zero and no more than the difference")
+    recurring_service.confirm_interest(
+        db, cipher, rule_id, amount, on=closes, category_id=payload.get("category_id"), today=today,
+    )
 
 
 def _charge(db, cipher, account_id, closes, difference, payload, today) -> None:

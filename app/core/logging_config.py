@@ -11,8 +11,6 @@ What it removes, from the message, its arguments, and any traceback:
   * money          PHP 5,000 / P5,000 / 3500.00 / 1,234,567 / "amount": "12"
   * keys           base64 blobs of 32+ bytes, long hex runs, b'...' reprs
   * named secrets  password=..., pin=..., phrase: ..., token=..., PWD=...
-  * a recovery     any run of 12 or more consecutive BIP-39 words
-    phrase
 
 It over-redacts on purpose. A log line that says "[AMOUNT]" where a harmless
 figure was is a small cost; a log line that says "rent 18,500.00" on a shared
@@ -99,58 +97,11 @@ _RULES = [
     (re.compile(r"(?<![\w.])-?\d+\.\d{2}(?![\w.])"), "[AMOUNT]"),
 ]
 
-_phrase_words: Optional[frozenset] = None
-
-
-def _bip39_words() -> frozenset:
-    global _phrase_words
-    if _phrase_words is None:
-        try:
-            from mnemonic import Mnemonic
-
-            _phrase_words = frozenset(Mnemonic("english").wordlist)
-        except Exception:  # noqa: BLE001 - redaction must never stop logging
-            _phrase_words = frozenset()
-    return _phrase_words
-
-
-_WORD = re.compile(r"[A-Za-z]+")
-_PHRASE_RUN = 12
-
-
-def _redact_phrases(text: str) -> str:
-    """Replace any run of 12+ consecutive BIP-39 words (any separators)."""
-    words = _bip39_words()
-    if not words:
-        return text
-    matches = list(_WORD.finditer(text))
-    if len(matches) < _PHRASE_RUN:
-        return text
-    spans = []
-    run_start = None
-    run_len = 0
-    for i, m in enumerate(matches):
-        if m.group(0).lower() in words:
-            if run_start is None:
-                run_start = i
-            run_len += 1
-        else:
-            if run_len >= _PHRASE_RUN:
-                spans.append((matches[run_start].start(), matches[i - 1].end()))
-            run_start, run_len = None, 0
-    if run_len >= _PHRASE_RUN:
-        spans.append((matches[run_start].start(), matches[-1].end()))
-    for start, end in reversed(spans):
-        text = text[:start] + "[REDACTED-PHRASE]" + text[end:]
-    return text
-
-
 def redact(text: str) -> str:
     """Apply every rule. Never raises."""
     if not text:
         return text
     try:
-        text = _redact_phrases(text)
         for pattern, replacement in _RULES:
             text = pattern.sub(replacement, text)
         return text

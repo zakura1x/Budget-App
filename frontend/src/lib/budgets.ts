@@ -74,11 +74,14 @@ export interface Alert {
     | 'card_due'
     | 'card_limit_over'
     | 'card_limit_approaching'
-    | 'card_limit_pace';
+    | 'card_limit_pace'
+    | 'subscription_due';
   severity: 'danger' | 'warn';
   message: string;
   category_id: number | null;
   account_id: number | null;
+  /** subscription_due (SUB-06). */
+  rule_id?: number | null;
 }
 
 export interface BudgetStatus {
@@ -105,11 +108,19 @@ export interface BudgetDraft {
   allocations?: { category_id: number; amount: string }[];
 }
 
+export type Theme = 'system' | 'light' | 'dark';
+
 export interface Preferences {
   carry_over: boolean;
   daily_allowance_mode: AllowanceMode;
   alert_warn_threshold_pct: number;
   alert_pace_enabled: boolean;
+  theme: Theme;
+  budget_period: PeriodKind;
+  month_start_day: number;
+  /** 1 Monday .. 7 Sunday */
+  week_start_day: number;
+  auto_lock_minutes: number;
   [key: string]: unknown;
 }
 

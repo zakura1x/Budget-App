@@ -35,6 +35,9 @@ def create_blocks(sql: str) -> dict:
     blocks = {}
     for match in re.finditer(rf"CREATE TABLE \[{SCHEMA}\]\.(\w+) \((.*?)\n\);", sql, re.S):
         blocks[match.group(1)] = match.group(2)
+    # Columns added by a later migration count as part of their table.
+    for match in re.finditer(rf"ALTER TABLE \[{SCHEMA}\]\.(\w+) ADD (\w+ [^;]+);", sql):
+        blocks[match.group(1)] += "\n    " + match.group(2)
     return blocks
 
 

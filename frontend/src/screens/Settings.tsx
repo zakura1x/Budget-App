@@ -1,48 +1,63 @@
 /**
- * Settings - Phase 5 opens the budget behaviour: carry-over (BUD-11), the
- * allowance mode (BUD-07/08) and the pace alert (BUD-15). The rest of Settings
- * arrives in Phase 8b.
+ * Settings (UX-05, BUD-04/05/07/11/14/15, SEC-08/16/21..24).
  *
- * Carry-over gets a sentence of explanation, not just a label - "carry over"
- * does not say that an overspend follows you too (FEATURES.md §13-B).
+ *   Appearance    light, dark or the device's own
+ *   Budget        carry-over, the allowance mode, and the defaults a new
+ *                 budget starts from
+ *   Alerts        the warning threshold, the pace warning
+ *   Security      password, PIN, how soon the app locks, rotating the
+ *                 encryption key
+ *   Your data     backup & data, what is encrypted
+ *   Delete        the whole account
+ *
+ * Carry-over keeps its sentence of explanation - "carry over" does not say that
+ * an overspend follows you too (FEATURES.md §13-B). Key rotation says what it
+ * cannot reach (§17).
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { ChangePasswordSheet, ChangePinSheet, DeleteAccountSheet, RotateKeySheet } from '../components/SecuritySheets';
 import { Card, SectionTitle } from '../components/ui/Card';
+import { ListGroup, ListRow } from '../components/ui/ListRow';
 import { Segmented } from '../components/ui/Segmented';
 import { Toggle } from '../components/ui/Toggle';
 import { ApiError } from '../lib/api';
-import { getPreferences, updatePreferences, type AllowanceMode, type Preferences } from '../lib/budgets';
+import type { AllowanceMode, PeriodKind, Preferences, Theme } from '../lib/budgets';
+import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
+import { usePreferencesStore } from '../stores/preferencesStore';
+
+const WEEKDAYS = [
+  { value: 1, label: 'Monday' }, { value: 2, label: 'Tuesday' }, { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' }, { value: 6, label: 'Saturday' }, { value: 7, label: 'Sunday' },
+] as const;
+const LOCK_CHOICES = [1, 2, 5, 10, 15, 30];
 
 export function Settings() {
   const navigate = useNavigate();
   const reloadBudget = useBudgetStore((s) => s.load);
-  const [prefs, setPrefs] = useState<Preferences | null>(null);
+  const { prefs, load, change: save } = usePreferencesStore();
+  const serverLock = useAuthStore((s) => s.session?.auto_lock_minutes ?? 5);
+  const pinSet = useAuthStore((s) => s.session?.pin_set ?? false);
   const [error, setError] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<'password' | 'pin' | 'rotate' | 'delete' | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-    getPreferences(controller.signal)
-      .then(setPrefs)
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
-  }, []);
+    if (!prefs) void load();
+  }, [prefs, load]);
 
   const change = async (changes: Partial<Preferences>) => {
-    if (!prefs) return;
-    const previous = prefs;
-    setPrefs({ ...prefs, ...changes }); // the switch moves at once; the server confirms
     setError(null);
     try {
-      setPrefs(await updatePreferences(changes));
+      await save(changes);
       void reloadBudget(null);
     } catch (e) {
-      setPrefs(previous);
       setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
     }
   };
+
+  const locks = LOCK_CHOICES.filter((m) => m <= serverLock);
 
   return (
     <>
@@ -56,6 +71,20 @@ export function Settings() {
 
       {prefs && (
         <>
+          <SectionTitle>Appearance</SectionTitle>
+          <Card>
+            <Segmented<Theme>
+              label="Theme"
+              value={prefs.theme ?? 'system'}
+              onChange={(value) => void change({ theme: value })}
+              options={[
+                { value: 'system', label: 'Device' },
+                { value: 'light', label: 'Light' },
+                { value: 'dark', label: 'Dark' },
+              ]}
+            />
+          </Card>
+
           <SectionTitle>Budget</SectionTitle>
           <Card className="space-y-4">
             <Toggle
@@ -81,23 +110,117 @@ export function Settings() {
                   : 'What is left, divided by the days left. Overspend today and tomorrow’s figure drops to make up for it.'}
               </p>
             </div>
+            <div className="space-y-3 border-t border-line pt-4">
+              <p className="text-body">A new budget starts as</p>
+              <Segmented<PeriodKind>
+                label="Budget period"
+                value={prefs.budget_period}
+                onChange={(value) => void change({ budget_period: value })}
+                options={[
+                  { value: 'monthly', label: 'Monthly' },
+                  { value: 'weekly', label: 'Weekly' },
+                ]}
+              />
+              <label className="flex items-center justify-between gap-3 text-body">
+                <span>Month starts on day</span>
+                <select
+                  value={prefs.month_start_day}
+                  onChange={(e) => void change({ month_start_day: Number(e.target.value) })}
+                  className="num min-h-tap rounded-xl border border-line bg-surface px-3 text-body text-ink"
+                >
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </label>
+              <div>
+                {/* A select, not seven buttons: seven do not fit a 390px row. */}
+                <label className="flex items-center justify-between gap-3 text-body">
+                  <span>Weeks start on</span>
+                  <select
+                    value={prefs.week_start_day}
+                    onChange={(e) => void change({ week_start_day: Number(e.target.value) })}
+                    className="min-h-tap rounded-xl border border-line bg-surface px-3 text-body text-ink"
+                  >
+                    {WEEKDAYS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </label>
+                <p className="mt-2 text-footnote text-ink-3">Also the first column of the calendar.</p>
+              </div>
+            </div>
           </Card>
 
           <SectionTitle>Alerts</SectionTitle>
-          <Card>
-            <Toggle
-              checked={prefs.alert_pace_enabled}
-              onChange={(value) => void change({ alert_pace_enabled: value })}
-              label="Warn when spending runs ahead"
-              hint={`Shown when you have used more of the budget than of the period — while there is still time to slow down. Over-budget warnings start at ${prefs.alert_warn_threshold_pct}%.`}
-            />
+          <Card className="space-y-4">
+            <div>
+              <p className="mb-2 text-body">Warn me when the budget is</p>
+              <Segmented<'70' | '80' | '90'>
+                label="Warning threshold"
+                value={String(prefs.alert_warn_threshold_pct) as '70' | '80' | '90'}
+                onChange={(value) => void change({ alert_warn_threshold_pct: Number(value) })}
+                options={[
+                  { value: '70', label: '70% used' },
+                  { value: '80', label: '80% used' },
+                  { value: '90', label: '90% used' },
+                ]}
+              />
+            </div>
+            <div className="border-t border-line pt-3">
+              <Toggle
+                checked={prefs.alert_pace_enabled}
+                onChange={(value) => void change({ alert_pace_enabled: value })}
+                label="Warn when spending runs ahead"
+                hint="When you have used more of the budget than of the period — while there is still time to slow down."
+              />
+            </div>
           </Card>
           <p className="px-1 pt-2 text-footnote text-ink-3">
             Alerts appear in the app when you open it. Nothing is sent to your phone — that would mean decrypting your
             budget while you are not signed in.
           </p>
+
+          <SectionTitle>Security</SectionTitle>
+          <ListGroup>
+            <ListRow title="Change password" chevron onClick={() => setSheet('password')} />
+            <ListRow title={pinSet ? 'Change PIN' : 'Set a PIN'} subtitle="Unlocks this device - never your data" chevron
+              onClick={() => setSheet('pin')} />
+          </ListGroup>
+          <Card className="mt-3">
+            <p className="mb-2 text-body">Lock after I stop using it for</p>
+            <Segmented<string>
+              label="Auto-lock"
+              value={String(Math.min(prefs.auto_lock_minutes, serverLock))}
+              onChange={(value) => void change({ auto_lock_minutes: Number(value) })}
+              options={locks.map((m) => ({ value: String(m), label: `${m} min` }))}
+            />
+            <p className="mt-2 text-footnote text-ink-3">
+              Locking empties your key from the server’s memory. {serverLock} minutes is this server’s limit.
+            </p>
+          </Card>
+          <div className="mt-3">
+            <ListGroup>
+              <ListRow title="Rotate my encryption key" subtitle="Someone may have got hold of my key" chevron
+                onClick={() => setSheet('rotate')} />
+            </ListGroup>
+          </div>
+
+          <SectionTitle>Your data</SectionTitle>
+          <ListGroup>
+            <ListRow title="Backup & data" subtitle="Back up now, restore, export or import CSV" chevron onClick={() => navigate('/backup')} />
+            <ListRow title="About your encryption" subtitle="What is protected, and what is not" chevron
+              onClick={() => navigate('/about-encryption')} />
+          </ListGroup>
+
+          <SectionTitle>Account</SectionTitle>
+          <ListGroup>
+            <ListRow title={<span className="text-danger">Delete my account</span>} subtitle="Everything, permanently" chevron
+              onClick={() => setSheet('delete')} />
+          </ListGroup>
         </>
       )}
+
+      <ChangePasswordSheet open={sheet === 'password'} onClose={() => setSheet(null)} />
+      <ChangePinSheet open={sheet === 'pin'} onClose={() => setSheet(null)} />
+      <DeleteAccountSheet open={sheet === 'delete'} onClose={() => setSheet(null)} />
+      <RotateKeySheet open={sheet === 'rotate'} onClose={() => setSheet(null)} />
     </>
   );
 }

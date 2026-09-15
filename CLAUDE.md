@@ -159,17 +159,18 @@ lives inside the ciphertext.
 
 ```
 BUDGET_MASTER_KEY (.env)  ──HKDF──▶ wrapping key ──▶ users.dek_wrapped
-12-word BIP-39 phrase     ──────────────────────▶ users.dek_wrapped_recovery
                                                         │
                                               per-user DEK (32 bytes)
                                                         │
                                         every Shape B row this user owns
 ```
 
-Two independent ways in; losing one is recoverable, losing both is permanent by
-design. The recovery wrap uses `key_version = 0`, which a master key can never
-be (config enforces 1–255). There is **no admin key** — nobody, the admin
-included, can decrypt another user's rows.
+**One way in.** There is no recovery phrase (removed 2026-09-14, migration
+`20260914_0002`): a lost `.env` is restored from the server owner's offline
+copy (`misc/how-to-run.txt`), and losing `.env` and every copy is permanent for
+every account. Key version 0 stays reserved — old backups carry recovery wraps
+under it — and config enforces 1–255 for master keys. There is **no admin key**
+— nobody, the admin included, can decrypt another user's rows in the app.
 
 `email_bidx = HMAC-SHA256(pepper, normalise(email))` is the single
 deterministic value in the schema, and exists only so login can find a row
@@ -185,7 +186,7 @@ first account exists.
   the client, DEBUG or not.
 - **Logging** installs a redaction filter before any handler exists
   (`app/core/logging_config.py`). It strips money, base64/hex key material,
-  named secrets and any 12+ BIP-39-word run from messages, args and tracebacks.
+  and named secrets from messages, args and tracebacks.
   It over-redacts on purpose. Log counts and durations as plain integers
   (`elapsed_ms=412`) — those pass through.
 - **Secrets are `SecretStr`**, and a config validation failure never echoes the
@@ -236,12 +237,17 @@ isolation — must never be skipped or xfailed), `slow`.
 
 ## Current state
 
-Phases 1–5 are built: crypto core, recovery phrase, database layer and
-migration, frontend shell, the whole sign-in / lock / recovery flow
+Phases 1–5 are built: crypto core, database layer and
+migration, frontend shell, the whole sign-in / lock flow
 (2026-09-11); accounts, categories, transactions and budgets (2026-09-13);
-card bills, statement check and balance adjustments (Phase 5b, 2026-09-14) —
-448 passing tests across 32 files. Mounted: `auth`, `health`,
-`settings`, `accounts`, `statements`, `categories`, `transactions`, `budgets`.
+card bills, statement check and balance adjustments (Phase 5b, 2026-09-14);
+calendar, stats and tags (Phase 6); recurring, subscriptions, installments and
+projection (Phase 7); backup, restore, CSV and receipts (Phase 8a); settings,
+security, goals, admin and PWA (Phase 8b, all 2026-09-14) — 43 test files.
+Mounted: `auth`, `health`, `settings`, `accounts`, `statements`, `categories`,
+`tags`, `transactions`, `budgets`, `calendar`, `stats`, `recurring`,
+`subscriptions`, `projection`, `attachments`, `backups`, `data`, `goals`,
+`security`, `admin`.
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -273,13 +279,61 @@ counts purchases, not payments. Two rules to keep:
   `txn_date` and nothing else. `statement_service` writes through
   `transaction_service`, and nothing imports it.
 
-Still open on purpose: tags (TXN-10) are stored as an empty `tag_ids` with no
-management until Phase 6. There is no "copy last period's budget" action,
+**Calendar, stats and tags** (Phase 6): `stats_service.overview` and
+`calendar_service.month` read `transaction_service.views()` - both legs of
+every transfer - and count ONLY expense and income splits; adjustments are
+reported as their own totals. One `GET /stats/overview` serves the whole Stats
+tab. Charts take colours from `hooks/useThemeColours.ts` (recharts needs SVG
+attributes, not classes); a category's own stored colour is the slice colour.
+Tag ids live in `tag_ids` inside the payload: `transaction_service._tags`
+checks them on write (omitted = keep), and `tag_service.delete_tag` strips the
+id from every transaction in the same commit.
+
+**The recurring engine** (Phase 7): `recurring_service` is the ONLY code that
+turns a schedule into transactions - through `transaction_service.post_recurring`,
+which never commits. `occurrences()` is pure and shared by expansion (≤ today)
+and `projection_service` (> today); never give projection its own date logic.
+Installment remainders, payments made and payoff dates are derived from rows
+carrying `recurring_id`, never stored. Import direction: `recurring_service`
+imports `transaction_service`; `account_service` and `budget_service` reach it
+(and `subscription_service`) only through lazy imports inside functions;
+`statement_service` and `projection_service` are imported by nothing.
+
+**Backup** (Phase 8a, `app/services/backup_service/`): writing a `.budgetbak`
+reads ciphertext as stored and needs no key; restoring opens rows with the
+backup's key and re-seals them through EncryptedRepository under the target
+account's. `references.py` is the ONLY list of references inside payloads -
+any new table or reference field must be added there (a test checks ORDER
+covers every encrypted table). The master key may open only the signed-in
+account's own backup; anything else goes through `scripts/restore.py`. EncryptedRepository marks
+`session.info[CHANGED_USERS]` on every write, and the scheduler's after-commit
+hook turns that into a debounced backup - disabled when ENVIRONMENT=test.
+Receipts are files at `uploads/<user_id>/<id>.enc`, sealed by
+AttachmentRepository under AAD table `attachment_files`. Uploads are raw
+request bodies (no multipart dependency); never put a secret or filename in a
+URL - IIS logs query strings.
+
+**Security & PWA** (Phase 8b): password change, DEK rotation (SEC-23) and
+account deletion (SEC-21) live in `auth_service/security_service.py`; every one
+re-prompts for the password via `confirm_password`, and rotation ends other
+sessions and replaces server-side backups. `rotation_repository.py` is where
+rows are re-sealed or purged - keep it the only place. There is no recovery
+phrase. A forgotten password is reset by an emailed link (SEC-30,
+`auth_service/password_reset_service.py` + `email_service.py`): the token rides
+in the URL fragment so IIS never logs it, only its SHA-256 is stored, and the
+link's origin is `APP_PUBLIC_URL` - never the request's Host header. Nothing
+from a budget ever goes into an email, and `email_service` never sends under
+ENVIRONMENT=test (messages land in `OUTBOX`). `app/web/static/sw.js` must never cache `/api/`; the
+worker is served at `/ZBDGT/sw.js` with its own CSP. Preferences are loaded
+into `preferencesStore` after unlock and dropped on lock (theme, week start,
+auto-lock); they are never persisted in the browser.
+
+There is no "copy last period's budget" action,
 because allocations persist across periods - confirmed by the user on
 2026-09-14, along with every other proposed default in FEATURES.md §13 and
 §20-22, plus two changes: refunds after a statement closes reduce what is left
 to pay, and each card has its own posting delay.
 
-Phase 6 (calendar, stats and tags; stats must exclude balance adjustments) is next — everything from there on is a plan,
+Phase 9 (hardening, master-key rotation, deploy) is next — everything from there on is a plan,
 not an observation, so check `misc/phases.md` before assuming a service,
 endpoint or script exists.

@@ -41,6 +41,9 @@ ALWAYS = {
 }
 
 NON_HTML_CSP = "default-src 'none'; frame-ancestors 'none'"
+# A service worker runs under the CSP of its own script response, so 'none'
+# would stop it fetching the very shell it exists to serve.
+WORKER_CSP = "default-src 'self'; frame-ancestors 'none'"
 
 
 def shell_csp(nonce: str) -> str:
@@ -63,10 +66,12 @@ def shell_csp(nonce: str) -> str:
 
 
 class SecurityHeadersMiddleware:
-    def __init__(self, app: ASGIApp, *, api_prefix: str, csp_exempt_paths: Iterable[str] = ()):
+    def __init__(self, app: ASGIApp, *, api_prefix: str, csp_exempt_paths: Iterable[str] = (),
+                 worker_paths: Iterable[str] = ()):
         self.app = app
         self.api_prefix = api_prefix.rstrip("/")
         self.csp_exempt = tuple(csp_exempt_paths)
+        self.worker_paths = tuple(worker_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -84,7 +89,9 @@ class SecurityHeadersMiddleware:
                 headers = MutableHeaders(scope=message)
                 for name, value in ALWAYS.items():
                     headers[name] = value
-                if not exempt:
+                if path in self.worker_paths:
+                    headers["Content-Security-Policy"] = WORKER_CSP
+                elif not exempt:
                     content_type = headers.get("content-type", "")
                     headers["Content-Security-Policy"] = (
                         shell_csp(nonce) if content_type.startswith("text/html") else NON_HTML_CSP
