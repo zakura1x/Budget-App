@@ -124,8 +124,30 @@ python scripts/generate_int_tables.py    # regenerate int_tables.sql from the
                                          # migrations (connects to nothing)
 python scripts/generate_keys.py          # new secrets (NOT for an existing install)
 python scripts/generate_keys.py --fill   # fill EMPTY keys in .env; never overwrites
-python scripts/verify_integrity.py       # (Phase 9) orphaned refs, unreadable rows
-python scripts/rotate_keys.py --dry-run  # (Phase 9) ALWAYS dry-run first
+python scripts/verify_integrity.py       # READ-ONLY: rows that do not decrypt,
+                                         # broken references, missing receipts.
+                                         # Exit 2 = something to look at
+python scripts/env_fingerprint.py        # fingerprints of .env's random keys
+python scripts/env_fingerprint.py --compare E:\budget\.env
+                                         # .env against the offline copy
+python scripts/rotate_keys.py --status   # which key version wraps each account
+
+
+ROTATING THE MASTER KEY
+───────────────────────
+Dry-run every step first. In this order:
+  1. python scripts/rotate_keys.py --new-key --dry-run
+     python scripts/rotate_keys.py --new-key
+       .env gets a new key; the old one moves into BUDGET_RETIRED_KEYS.
+  2. Restart the app (IIS: recycle the ZBDGT pool) so it loads the new key.
+  3. python scripts/rotate_keys.py --rewrap --dry-run
+     python scripts/rotate_keys.py --rewrap
+       Interrupted? Run it again - it carries on.
+  4. Replace the offline copy of .env TODAY, then
+     python scripts/env_fingerprint.py --compare <the copy>
+Never delete a retired key while a backup made before the rotation might be
+needed - only that key opens it. Rotation does not lock out someone who
+already unwrapped a key; after a leak, every user also rotates their own key.
 
 
 ADDING ANOTHER USER
@@ -182,7 +204,7 @@ WHEN TO REFRESH IT: the same day .env changes - after generate_keys.py,
   after any edit. A stale copy cannot open anything written under the
   newer key.
 
-CHECK IT, DO NOT TRUST IT: (Phase 9) python scripts/env_fingerprint.py
+CHECK IT, DO NOT TRUST IT: python scripts/env_fingerprint.py --compare <copy>
   prints a non-secret fingerprint of each key. Run it on the server and
   against the copy and compare. After every refresh, and every few
   months besides.
@@ -202,7 +224,7 @@ IF THE OFFLINE COPY LEAKS
 ─────────────────────────
 Whoever has it plus the database (or any .budgetbak) can read every
 account. In this order:
-  1. Rotate the master key (scripts/rotate_keys.py, Phase 9).
+  1. Rotate the master key (ROTATING THE MASTER KEY, above).
   2. Rotate every user's DEK (Settings -> Rotate my encryption key).
      Step 1 comes first so the new keys are not wrapped under the
      leaked one.

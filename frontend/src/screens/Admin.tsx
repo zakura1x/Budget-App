@@ -64,6 +64,21 @@ export function Admin() {
           <p>Master key version {status.master_key_version} ({status.master_key_versions_loaded} loaded)</p>
           <p>{status.unlocked_sessions} unlocked sessions · {status.cached_users} in memory</p>
           <p>{Object.entries(status.rows).filter(([, n]) => n > 0).map(([t, n]) => `${t} ${n}`).join(' · ')}</p>
+          {Object.keys(status.key_fingerprints).length > 0 && (
+            <div className="mt-2 space-y-1 border-t border-line pt-2">
+              <p className="text-ink">Key fingerprints</p>
+              {Object.entries(status.key_fingerprints).map(([name, value]) => (
+                <p key={name} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">{name}</span>
+                  <span className="shrink-0">{value}</span>
+                </p>
+              ))}
+              <p className="text-caption text-ink-3">
+                Compare with the offline copy of .env using scripts/env_fingerprint.py. These are short hashes — they
+                can’t be turned back into keys.
+              </p>
+            </div>
+          )}
         </Card>
       )}
 

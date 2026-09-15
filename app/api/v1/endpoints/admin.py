@@ -2,7 +2,9 @@
 /admin - account management, and deliberately nothing more (UX-20, SEC-18).
 
 The admin sees each account's row - active or not, when it was made and last
-used, its key version - and can disable, re-enable or delete it. The admin
+used, the master-key version wrapping its key - and can disable, re-enable or
+delete it. The status adds the fingerprints of the keys this process loaded,
+so the offline copy of .env can be checked against them (SEC-31). The admin
 cannot see an email address, a name or a single figure: all of those are
 sealed under the user's own key, and no key on this server opens them.
 Deleting someone else's account needs no key for the same reason: it removes
@@ -17,11 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.settings import ActiveIn, AdminDeleteIn, AdminStatusOut, AdminUserOut
 from app.core.config import settings
+from app.core.crypto.dek import wrapped_key_version
 from app.core.crypto.keyring import get_master_keyring
 from app.core.crypto.session_keys import get_session_keyring
 from app.core.crypto.working_set import get_working_set
 from app.core.deps import UnlockedContext, get_ip_hash, get_unlocked_context
 from app.core.exceptions import BusinessRuleException, NotFoundException, PermissionDeniedException, ValidationException
+from app.core.fingerprints import FINGERPRINTED, fingerprint
 from app.db.models import ENCRYPTED_MODELS, User
 from app.db.session import get_db
 from app.services import audit_service
@@ -39,8 +43,14 @@ def require_admin(ctx: UnlockedContext = Depends(get_unlocked_context)) -> Unloc
 @router.get("/users", response_model=List[AdminUserOut])
 def list_users(ctx: UnlockedContext = Depends(require_admin), db: Session = Depends(get_db)) -> List[AdminUserOut]:
     users = db.execute(select(User).order_by(User.id)).scalars().all()
-    return [AdminUserOut(id=u.id, is_admin=u.is_admin, is_active=u.is_active, created_at=u.created_at,
-                         last_login_at=u.last_login_at, key_version=u.key_version) for u in users]
+    return [_user_out(u) for u in users]
+
+
+def _user_out(user: User) -> AdminUserOut:
+    # The version wrapping the DEK, which rotate_keys.py moves - not users.key_version,
+    # which names the version the profile was sealed under.
+    return AdminUserOut(id=user.id, is_admin=user.is_admin, is_active=user.is_active, created_at=user.created_at,
+                        last_login_at=user.last_login_at, key_version=wrapped_key_version(bytes(user.dek_wrapped)))
 
 
 @router.post("/users/{user_id}/active", response_model=AdminUserOut)
@@ -55,8 +65,7 @@ def set_active(user_id: int, body: ActiveIn, ctx: UnlockedContext = Depends(requ
     audit_service.record(db, audit_service.USER_ENABLE if body.active else audit_service.USER_DISABLE,
                          user_id=user.id, entity="users", entity_id=ctx.user.id, ip_hash=ip_hash)
     db.commit()
-    return AdminUserOut(id=user.id, is_admin=user.is_admin, is_active=user.is_active, created_at=user.created_at,
-                        last_login_at=user.last_login_at, key_version=user.key_version)
+    return _user_out(user)
 
 
 @router.post("/users/{user_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
@@ -83,6 +92,11 @@ def server_status(ctx: UnlockedContext = Depends(require_admin), db: Session = D
         unlocked_sessions=len(get_session_keyring()),
         cached_users=len(get_working_set()),
         rows={m.__tablename__: db.execute(select(func.count()).select_from(m)).scalar_one() for m in ENCRYPTED_MODELS},
+        key_fingerprints={
+            name: fingerprint(name, getattr(settings, name).get_secret_value())
+            for name in FINGERPRINTED
+            if getattr(settings, name).get_secret_value().strip()
+        },
     )
 
 

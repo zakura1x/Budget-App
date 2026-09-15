@@ -1475,10 +1475,26 @@ Verify:
 
 ```yaml
 Days 1-3:
+  # Status 2026-09-15: rotation, integrity check and .env fingerprints BUILT.
+  #  - The rotation test found a REAL BUG from Phase 2: session_service's lazy
+  #    re-wrap at sign-in compared and overwrote users.key_version - but that
+  #    column is the version profile_enc was sealed under (its AAD). After any
+  #    master-key rotation, the first sign-in would have made every later
+  #    profile read fail. Fixed: it compares wrapped_key_version(dek_wrapped)
+  #    and leaves users.key_version alone. Regression test added.
+  #  - Admin -> users now shows the WRAP version for "key v", for the same
+  #    reason.
+  #  - Run read-only against ZBDGT: 1 account (the placeholder admin), wrapped
+  #    under v1, integrity OK.
   ★ Key rotation - the thing you will be glad exists:
-    ☐ scripts/rotate_keys.py
-    ☐ Generate new master key -> rewrap every DEK -> bump BUDGET_KEY_VERSION
-    ☐ Old key stays in BUDGET_RETIRED_KEYS until every DEK is moved
+    ✅ scripts/rotate_keys.py --status | --new-key | --rewrap, each with --dry-run
+    ✅ --new-key writes .env only (atomically): new key, version + 1, the old
+       key appended to BUDGET_RETIRED_KEYS. Prints fingerprints, never a key
+    ✅ --rewrap re-wraps every DEK not under the current version, one commit
+       per account, after proving the new wrap opens (UserRepository.rewrap_dek);
+       sign-in also re-wraps lazily. Neither touches users.key_version
+    ✅ Old key stays in BUDGET_RETIRED_KEYS - and must stay while any backup
+       made under it may be needed (tested: without it the old backup is refused)
   ★ DEK ROTATION (SEC-23) - the real revoke, distinct from master-key
     rotation above:
     ☐ scripts/rotate_dek.py + a Settings action
@@ -1490,15 +1506,19 @@ Days 1-3:
     ☐ Revoke every session
     ☐ Be honest in the docs: this does NOT reach data already exported.
 
-    ☐ ★ Master-key rotation must keep OLDER BACKUPS openable: the old key
-       goes into BUDGET_RETIRED_KEYS, and a test restores a backup written
-       before the rotation.
+    ✅ ★ Master-key rotation keeps OLDER BACKUPS openable: tests/test_key_rotation.py
+       restores a backup written before the rotation, through the retired key.
     ☐ ★ Refresh the offline .env copy the same day, and check it with
-       env_fingerprint.py. A rotation without a new copy leaves the only
-       insurance unable to open anything.
-    ☐ Resumable and idempotent - it must survive being interrupted
-    ☐ DRY RUN MODE, and test a full rotation on a copy before ever running it
-    ☐ scripts/verify_integrity.py - orphaned refs, undecryptable rows
+       env_fingerprint.py --compare. A rotation without a new copy leaves the
+       only insurance unable to open anything. (The script prints this.)
+    ✅ Resumable and idempotent - interrupted after one account, a second run
+       carries on; a third moves nothing. An unopenable key is reported, not moved
+    ✅ DRY RUN MODE for every step
+    ☐ Rehearse a full rotation on a COPY of the database before the real one
+    ✅ scripts/verify_integrity.py + app/services/integrity_service.py - per
+       account: key opens, profile opens, every row decrypts, every reference
+       resolves (from references.py, so it stays in step with restore), receipt
+       files present and readable, stray files noted. Read-only; ids, never values
 
   ★ REMOVE THE RECOVERY PHRASE (decided 2026-09-14, SEC-14/15/16/20/22 out)
     - DONE EARLY, 2026-09-14:
@@ -1545,9 +1565,13 @@ Days 1-3:
     ☐ Send one real reset email end to end once deployed over HTTPS
 
   ★ OFFLINE .env COPY (SEC-31):
-    ☐ scripts/env_fingerprint.py - HKDF fingerprint per key (never the key),
-       run against .env or a named file, so copy and server can be compared
-    ☐ health / admin status shows the master key fingerprint for the same check
+    ✅ scripts/env_fingerprint.py [FILE] [--compare OTHER] - a short SHA-256
+       fingerprint of each RANDOM key (never a password: a short hash of a
+       guessable value can be checked against guesses); --compare says
+       same / DIFFERENT / missing for every setting, printing no value. Needs
+       no database and no valid config (app/core/fingerprints.py imports nothing)
+    ✅ Admin -> status shows the same fingerprints for the keys the app loaded
+       (not /health, which is unauthenticated)
     ☐ how-to-run.txt runbook (written 2026-09-14): what, where, when to
        refresh, how to check, what to do if it leaks
     ☐ ★ Rehearse: move .env aside, restore it from the offline copy, sign in
@@ -1559,7 +1583,9 @@ Days 4-6:
     ☐ API integration tests over the full auth -> write -> read path
     ☐ ★ Run scripts/benchmark_fetch.py ON THE SERVER. Record it. This is
        the §5.7 go/no-go (the dev-PC figure is network-bound).
-    ☐ Decimal precision audit - grep the codebase for float. Should be zero.
+    ✅ Decimal precision audit (2026-09-15) - `float` appears only in timers,
+       the rate limiter and the scheduler; money is refused as float at the API
+       edge (schemas/common.py), in money.py and at sealing (user_cipher.py).
     ☐ Lighthouse mobile audit, target 90+
     ☐ Test on a real iPhone, installed to the home screen. Not just DevTools.
 
@@ -1580,8 +1606,8 @@ Days 7-8:
     ☐ Backup retention + rotation, offsite copy destination
     ☐ ★ Practise a restore from backup. A backup you have never restored
        is not a backup, and here the cost of finding out is everything.
-    ☐ ★ Multi-user rotation: rotate_keys.py must iterate EVERY user's
-       DEK, and must leave every user's older backups openable.
+    ✅ ★ Multi-user rotation: rotate_keys.py iterates EVERY user's DEK and
+       leaves every user's older backups openable (tested with two accounts).
     ☐ misc/how-to-run.txt + README.md
 ```
 

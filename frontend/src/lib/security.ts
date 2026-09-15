@@ -69,6 +69,8 @@ export interface AdminStatus {
   unlocked_sessions: number;
   cached_users: number;
   rows: Record<string, number>;
+  /** SEC-31 - short hashes of the loaded keys, to compare with the offline .env copy. */
+  key_fingerprints: Record<string, string>;
 }
 
 export const adminUsers = (signal?: AbortSignal) => api<AdminUser[]>('/admin/users', { signal });

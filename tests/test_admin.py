@@ -42,6 +42,17 @@ def test_the_admin_sees_rows_and_never_data(api):
     assert (status["users"], status["rows"]["accounts"]) == (2, 1)
 
 
+def test_status_shows_key_fingerprints_the_script_can_match(api):
+    from app.core.fingerprints import fingerprint
+
+    admin_and_bob(api)
+    response = api.get("/admin/status")
+    key = settings.BUDGET_MASTER_KEY.get_secret_value()
+    assert response.json()["key_fingerprints"]["BUDGET_MASTER_KEY"] == fingerprint("BUDGET_MASTER_KEY", key)
+    assert key not in response.text
+    assert [u["key_version"] for u in api.get("/admin/users").json()] == [1, 1]
+
+
 def test_only_the_admin(api):
     admin_cookie, bob_cookie = admin_and_bob(api)
     assert as_bob(api, bob_cookie, admin_cookie, "/admin/users") == 403

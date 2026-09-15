@@ -72,7 +72,7 @@ shared company database. See ARCHITECTURE.md §5.
 | SEC-08 | Auto-lock on idle | ✅ v1 | 2 | 5 min; drops the DEK *and* the cache |
 | SEC-09 | Full-row encryption of all financial data | ✅ v1 | 1 | AES-256-GCM. The defining constraint of the whole system |
 | SEC-10 | Per-user DEK, envelope-wrapped | ✅ v1 | 1 | Makes rotation affordable |
-| SEC-11 | Key rotation script | ✅ v1 | 9 | Resumable, dry-run first |
+| SEC-11 | Key rotation script | ✅ v1 | 9 | **Built 2026-09-15.** `scripts/rotate_keys.py --status / --new-key / --rewrap`, each with `--dry-run`. Resumable, one commit per account; the old key is retired, never deleted, so older backups still open. Paired with `verify_integrity.py` and `env_fingerprint.py` (SEC-31) |
 | SEC-12 | Biometric unlock (WebAuthn / Face ID) | 🟡 Deferred | 9 | `BIOMETRIC_WEBAUTHN_ENABLED=False`. Works on iOS Safari as a passkey; adds a dependency and a fallback path |
 | SEC-13 | Backup UI in Settings | ✅ v1 | 8a | **Promoted from deferred.** The full backup (DAT-06) needs a button, not just a script — a backup you have to open a terminal for is one you will not take |
 | SEC-14 | ~~12-word recovery phrase~~ | ❌ Out | — | **Removed 2026-09-14** (built in Phase 1). Replaced by an offline copy of `.env` kept by the server owner (SEC-31). The phrase asked every user to keep paper safe against a loss only the server side can cause. See §13 and ARCHITECTURE.md §5.2.1. Code and database columns removed the same day |
@@ -729,7 +729,7 @@ revoke anyone who already unwrapped it.
 
 ### The two operations
 
-| | **Rotate the master key** (`scripts/rotate_keys.py`, Phase 9) | **SEC-23 — Rotate the DEK** |
+| | **Rotate the master key** (`scripts/rotate_keys.py`) | **SEC-23 — Rotate the DEK** |
 |---|---|---|
 | Changes | The *wrap* on every user's DEK | **The data key itself** |
 | Data re-encrypted | None | **Every row you own** |

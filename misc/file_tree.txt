@@ -68,6 +68,7 @@ Budget App/
 │   │   ├── exceptions.py                # DecryptionError never leaks detail
 │   │   ├── logging_config.py            # redaction filter, installed first
 │   │   │
+│   │   ├── fingerprints.py              # SEC-31 short hashes of .env keys; imports nothing
 │   │   ├── crypto/                      # ★ NOTHING OUTSIDE HERE TOUCHES A KEY ★
 │   │   │   ├── keyring.py               # master key load, HKDF, retired keys
 │   │   │   ├── envelope.py              # AES-256-GCM, fmt|ver|nonce|ct|tag
@@ -183,6 +184,8 @@ Budget App/
 │   │   │   │                            #   fresh | merge | verify (in memory)
 │   │   │   └── scheduler.py             #   5 min after a change; at sign-in if stale
 │   │   ├── email_service.py             # SMTP. Reset links only - never a figure
+│   │   ├── integrity_service.py         # read-only: undecryptable rows, broken refs,
+│   │   │                                #   missing receipts (verify_integrity.py)
 │   │   ├── admin_service.py             # create/disable accounts. NEVER decrypt.
 │   │   └── audit_service.py
 │   │
@@ -280,8 +283,8 @@ Budget App/
 │
 ├── scripts/
 │   ├── generate_keys.py                 # every secret in one run; --fill never overwrites
-│   ├── env_fingerprint.py               # SEC-31: non-secret fingerprint per key, to
-│   │                                    #   check the offline .env copy (Phase 9)
+│   ├── env_fingerprint.py               # SEC-31: fingerprints of the random keys;
+│   │                                    #   --compare the offline .env copy
 │   ├── generate_int_tables.py           # int_tables.sql FROM the migrations
 │   ├── benchmark_fetch.py               # READ-ONLY cold-load estimate; run on the server
 │   ├── backup.py                        # ★ full encrypted export
@@ -290,7 +293,8 @@ Budget App/
 │   ├── int_tables.sql                   # raw DDL, 15 tables - generated, do not edit
 │   ├── bootstrap_user.py                # first account + its DEK
 │   ├── seed_categories.py
-│   ├── rotate_keys.py                   # ★ master key - resumable, dry-run
+│   ├── rotate_keys.py                   # ★ master key: --status/--new-key/--rewrap,
+│   │                                    #   resumable, dry-run
 │   ├── rotate_dek.py                    # ★ SEC-23 new DEK, re-encrypts all
 │   ├── verify_integrity.py              # catches what FKs cannot
 │   ├── decrypt_query.py                 # the only window into the data
@@ -314,6 +318,7 @@ Budget App/
 │   ├── test_registration_code.py        # wrong code rejected + rate limited
 │   ├── test_auth.py                     # tokens, replay, lock, PIN, restart = lock
 │   ├── test_password_reset.py           # SEC-30: same answer, one use, expiry, Host ignored
+│   ├── test_integrity.py                # tampered row, broken ref, missing receipt found
 │   ├── test_middleware.py               # rate limits, request log, CSRF header
 │   ├── test_db_mssql_auth.py            # the whole auth flow on SQL Server
 │   ├── test_budget_periods.py           # custom start days, year boundaries

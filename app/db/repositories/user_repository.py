@@ -6,13 +6,13 @@ user id into its AAD (crypto/dek.py), and the id does not exist until the
 INSERT has run.
 """
 
-from typing import Optional
+from typing import Dict, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.crypto.blind_index import BlindIndexer
-from app.core.crypto.dek import unwrap_dek, wrap_dek
+from app.core.crypto.dek import rewrap_dek, unwrap_dek, wrap_dek, wrapped_key_version, zero
 from app.core.crypto.envelope import PLACEHOLDER
 from app.core.crypto.keyring import MasterKeyring
 from app.core.crypto.provisioning import NewUserKeys
@@ -74,10 +74,33 @@ class UserRepository:
         """The user's DEK via the master key. Zero it when done."""
         return unwrap_dek(user.dek_wrapped, keyring, user.id)
 
+    def wrap_versions(self) -> Dict[int, int]:
+        """How many accounts have their DEK wrapped under each master-key version."""
+        counts: Dict[int, int] = {}
+        for (wrapped,) in self.session.execute(select(User.dek_wrapped)):
+            version = wrapped_key_version(bytes(wrapped))
+            counts[version] = counts.get(version, 0) + 1
+        return dict(sorted(counts.items()))
+
+    def rewrap_dek(self, user: User, keyring: MasterKeyring) -> bool:
+        """
+        Master-key rotation for one account (scripts/rotate_keys.py): the SAME
+        DEK, re-wrapped under the current version. False if it already is.
+
+        users.key_version is left alone: it names the version profile_enc was
+        sealed under (part of its AAD), not the version of the wrap. The new
+        wrap is opened before it replaces the old one. The caller commits.
+        """
+        if wrapped_key_version(bytes(user.dek_wrapped)) == keyring.current_version:
+            return False
+        rewrapped = rewrap_dek(bytes(user.dek_wrapped), keyring, user.id)
+        zero(unwrap_dek(rewrapped, keyring, user.id))
+        user.dek_wrapped = rewrapped
+        self.session.flush()
+        return True
+
     def cipher_for(self, user: User, keyring: MasterKeyring) -> UserCipher:
         """A UserCipher for scripts that run without a session keyring."""
-        from app.core.crypto.dek import zero
-
         dek = self.unwrap_dek(user, keyring)
         try:
             return UserCipher(user.id, dek, keyring.current_version)

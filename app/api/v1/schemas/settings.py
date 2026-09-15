@@ -94,3 +94,6 @@ class AdminStatusOut(BaseModel):
     unlocked_sessions: int
     cached_users: int
     rows: Dict[str, int]  # per table, every user - counts only
+    # SEC-31: short non-secret hashes of the keys this process loaded, to compare
+    # with the offline copy of .env (scripts/env_fingerprint.py).
+    key_fingerprints: Dict[str, str]

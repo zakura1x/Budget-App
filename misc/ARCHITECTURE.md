@@ -561,9 +561,12 @@ Rules for the copy (the runbook is `how-to-run.txt`):
   (§12); a backup plus the copy is the data.
 - **Refreshed the same day any key changes** — `generate_keys.py`,
   `rotate_keys.py`. A stale copy cannot open what was wrapped under a newer key.
-- **Checked, not trusted.** `scripts/env_fingerprint.py` (Phase 9) prints a
-  non-secret HKDF fingerprint per key, so the copy and the server can be
-  compared without displaying either.
+- **Checked, not trusted.** `scripts/env_fingerprint.py` prints a short SHA-256
+  fingerprint of each random key, and `--compare` checks every setting of two
+  files - passwords included - printing only same / different. Admin → status
+  shows the same fingerprints for the keys the running app loaded. Passwords
+  are never fingerprinted for display: a short hash of a guessable value can be
+  checked against guesses.
 
 **What this costs, stated plainly.** Losing `.env` *and* every copy destroys
 every account at once, where the phrase made that loss survivable per user. And
@@ -618,10 +621,20 @@ a master-key wrap.
 
 Two operations exist, and the difference between them is the whole point.
 
-**Rotate the master key** (`scripts/rotate_keys.py`, Phase 9) — a new key in
-`.env`, every user's *same* DEK re-wrapped under it, the old key kept in
+**Rotate the master key** (`scripts/rotate_keys.py`) — a new key in `.env`,
+every user's *same* DEK re-wrapped under it, the old key kept in
 `BUDGET_RETIRED_KEYS` so older backups still open. Milliseconds per user, no
-data touched.
+data touched. Three steps: `--new-key` (writes `.env`), restart the app,
+`--rewrap` (one commit per account, resumable). Sign-in also re-wraps a DEK
+still under a retired version.
+
+Two version numbers must not be confused. The **wrap's** version is the
+`key_ver` byte of `users.dek_wrapped`, and rotation moves it.
+`users.key_version` is the version `profile_enc` was sealed under - part of
+that ciphertext's AAD - and only a DEK rotation, which re-seals the profile,
+changes it. Until 2026-09-15 the sign-in re-wrap overwrote `users.key_version`,
+which would have made every profile unreadable after the first real rotation;
+`tests/test_key_rotation.py` now guards it.
 
 **Rotate the DEK (SEC-23)** — a *new* DEK, with every row decrypted under the old
 one and re-encrypted under the new one, then wrapped under the master key.

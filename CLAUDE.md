@@ -63,7 +63,12 @@ belong to later phases): `bootstrap_user.py` (create the first account from the
 CLI), `decrypt_query.py` (read your own rows; needs the master key),
 `benchmark_fetch.py` (read-only cold-load timing — the number that decides
 ARCHITECTURE §5.7), `generate_keys.py [--fill]`, `generate_int_tables.py`,
-`seed_categories.py --user-id N [--dry-run]` (the default category set, CAT-07).
+`seed_categories.py --user-id N [--dry-run]` (the default category set, CAT-07),
+`backup.py` / `restore.py` / `verify_backup.py` (Phase 8a),
+`rotate_keys.py --status | --new-key | --rewrap [--dry-run]` (master-key
+rotation; runbook in `misc/how-to-run.txt`), `verify_integrity.py [--user-id N]
+[--json]` (read-only drift check) and `env_fingerprint.py [FILE] [--compare OTHER]`
+(SEC-31, reads files only).
 
 Develop against `:5173` (hot reload) with uvicorn running alongside it on
 `:8000`, or every API call fails.
@@ -149,8 +154,8 @@ Consequences worth internalising: SQL cannot filter, sum or join on anything
 inside a payload, so **all arithmetic happens in Python over a warm in-memory
 cache loaded once at login**. References inside payloads (`category_id`,
 `account_id`, `splits[]`) are real relationships with **no foreign key
-possible** — the service layer owns that integrity (a planned
-`scripts/verify_integrity.py` is to check for drift in Phase 9).
+possible** — the service layer owns that integrity, and
+`scripts/verify_integrity.py` (`integrity_service.py`) checks for drift.
 
 `row_created` is the insert timestamp, not the transaction date; `txn_date`
 lives inside the ciphertext.
@@ -171,6 +176,13 @@ copy (`misc/how-to-run.txt`), and losing `.env` and every copy is permanent for
 every account. Key version 0 stays reserved — old backups carry recovery wraps
 under it — and config enforces 1–255 for master keys. There is **no admin key**
 — nobody, the admin included, can decrypt another user's rows in the app.
+
+**Two version numbers, never interchangeable.** The version of the *wrap* is
+the `key_ver` byte of `users.dek_wrapped` (`wrapped_key_version()`); master-key
+rotation and the sign-in re-wrap move it. `users.key_version` is the version
+`profile_enc` was sealed under — part of its AAD — and only DEK rotation (which
+re-seals the profile) may change it. Overwriting it on a re-wrap makes the
+profile undecryptable; `tests/test_key_rotation.py` guards this.
 
 `email_bidx = HMAC-SHA256(pepper, normalise(email))` is the single
 deterministic value in the schema, and exists only so login can find a row
