@@ -354,20 +354,24 @@ so a projected salary cannot turn into a real transaction by accident
 ## 8. The screens
 
 Bottom tab bar, thumb-reachable, `[+]` centre and raised. Designed at 390 px.
+Since 2026-09-15 the tabs are Home · Accounts · [+] · Calendar · More, in the
+look of `sample_ui/` (lavender ground, white tiles, indigo accent).
 
 ```mermaid
 graph TD
     L["Lock screen<br/>PIN · biometric"] --> H
 
     subgraph TABS["Bottom tab bar"]
-        H["🏠 Home<br/>ring · remaining<br/>daily allowance<br/>recent activity"]
-        CAL["📅 Calendar<br/>spending heatmap<br/>tap a day → its list"]
+        H["🏠 Home<br/>ring · daily allowance<br/>category tiles<br/>recent activity"]
+        ACC["👛 Accounts<br/>cash on hand<br/>tiles by type · cards"]
         ADD["➕ Add<br/>numpad bottom sheet"]
-        ST["📊 Stats<br/>category pie<br/>trend line<br/>drill-down"]
+        CAL["📅 Calendar<br/>heatmap · month list"]
         MORE["☰ More"]
     end
 
-    MORE --> M1["Accounts"]
+    CAL <-->|"Calendar | Stats switch"| ST["📊 Stats<br/>category pie<br/>trend line<br/>drill-down"]
+    H --> B["Budget<br/>gauge · Remain | Plan"]
+    ACC --> AD["Account page<br/>balance banner · + / transfer<br/>trail of money in and out"]
     MORE --> M2["Budgets & categories"]
     MORE --> M3["Recurring & subscriptions<br/>projection · card look-ahead"]
     MORE --> M4["Savings goals"]

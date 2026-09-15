@@ -26,6 +26,20 @@ budget is monthly (a 25th start day included); otherwise a calendar month with
 the budget pro-rated by days. Carry-over is ignored. Paused occurrences are
 listed and left out of every total (REC-26).
 
+CARDS WITH TYPED BILLS (ACC-35). Cash on hand already subtracts such a card's
+bill due now; each later bill enters it the day after the one before it falls
+due - so that is the day the projection takes it:
+
+    bills      = the TYPED part of those bills - past purchases, taken on top
+                 of the budget, never inside it
+    committed  + the PLAN part (installments and repeating charges that land
+                 on a bill), on that same day instead of the day each posts
+
+A card charge that lands on one of those bills is not counted again on its own
+day. Paying the card stays a transfer between two counted accounts: nothing.
+
+    closing    = opening + income - spending + transfers - bills
+
 THE CARD LOOK-AHEAD (REC-25) groups each card's recurring charges by statement.
 The bill is shown, never subtracted from cash on hand a second time - the
 charges already were, on the days they post.
@@ -34,7 +48,7 @@ charges already were, on the days they post.
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -82,6 +96,7 @@ class ProjectedMonth:
     low_on: date
     overcommitted: bool  # committed charges alone exceed the budget (REC-23)
     items: List[ProjectedItem]
+    bills: Decimal = ZERO  # ACC-35 - typed card bills entering cash on hand this month, on top of spending
 
 
 @dataclass(frozen=True)
@@ -125,23 +140,28 @@ def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, mo
     cash = account_service.cash_on_hand(views)
     counted: Set[int] = set(cash.account_ids)
     ahead = recurring_service.upcoming(db, cipher, today + ONE_DAY, windows[-1][1])
+    # ACC-35. Typed card bills enter on their own days; the charges folded into them are not counted twice.
+    bill_items, billed = _bill_items(views, counted)
+    ahead = [u for u in ahead if not _lands_on_bill(u, billed)]
 
     result: List[ProjectedMonth] = []
     opening = cash.total
     for index, (start, end) in enumerate(windows):
         current = index == 0
-        items = [_item(u, counted) for u in ahead if start <= u.on <= end]
+        items = sorted([_item(u, counted) for u in ahead if start <= u.on <= end]
+                       + [b for b in bill_items if start <= b.on <= end], key=lambda i: (i.on, i.rule_id))
         live = [i for i in items if not i.paused]
 
         income = total(i.effect for i in live if i.type == "income")
-        committed = total(-i.effect for i in live if i.type == "expense")
+        committed = total(-i.effect for i in live if i.type == "expense" and i.kind != "bill")
+        bills = total(-i.effect for i in live if i.kind == "bill")
         transfers = total(i.effect for i in live if i.type == "transfer")
         if current and monthly:
             budget = max(status.allowance.remaining, ZERO)
         else:
             budget = budget_service.budget_between(db, cipher, today if current else start, end)
         spending = max(budget, committed)
-        closing = opening + income - spending + transfers
+        closing = opening + income - spending + transfers - bills
 
         running = opening - (spending - committed)
         low, low_on = running, today if current else start
@@ -154,7 +174,7 @@ def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, mo
         result.append(ProjectedMonth(
             start=start, end=end, current=current, opening=opening, income=income, committed=committed,
             transfers=transfers, budget=budget, spending=spending, closing=closing, low_point=low,
-            low_on=low_on, overcommitted=committed > budget, items=items,
+            low_on=low_on, overcommitted=committed > budget, items=items, bills=bills,
         ))
         opening = closing
     return Projection(today=today, basis="budget" if monthly else "calendar", cash_on_hand=cash.total, months=result)
@@ -199,6 +219,52 @@ def cards(db: Session, cipher: UserCipher, *, today: Optional[date] = None, stat
             ))
         result.append(CardLookahead(view.id, view.name, own, cards_statements))
     return result
+
+
+def _bill_items(views, counted: Set[int]) -> Tuple[List[ProjectedItem], Dict[int, Tuple[date, int, int]]]:
+    """
+    ACC-35. For each counted card with typed bills: an item for every unpaid
+    bill after the one due now, dated the day after the bill before it falls
+    due - the day cash on hand starts counting it. The typed part is kind
+    "bill"; the plan part is kind "bill_plans" and counts with the fixed
+    charges. Also returns, per card, the last bill's due date and its days,
+    so a charge landing on one of these bills is not counted again.
+    """
+    items: List[ProjectedItem] = []
+    billed: Dict[int, Tuple[date, int, int]] = {}
+    for view in views:
+        credit = view.credit
+        if credit is None or credit.due_now is None or view.archived or view.id not in counted:
+            continue
+        billed[view.id] = (max(b.due for b in credit.bills), credit.statement_closing_day, credit.payment_due_day)
+        unpaid = [b for b in credit.bills if b.left > ZERO]
+        now = next((b for b in unpaid if not b.overdue), None)
+        if now is None:
+            continue
+        previous = now.due
+        for bill in unpaid:
+            if bill.overdue or bill.due <= now.due:
+                continue  # in cash on hand already
+            enters = previous + ONE_DAY
+            typed = min(bill.typed_left, bill.left)
+            planned = bill.left - typed
+            label = f"{view.name} bill due {bill.due.day} {bill.due:%b}"
+            for kind, amount, name in (("bill", typed, label), ("bill_plans", planned, f"{label} · plans")):
+                if amount > ZERO:
+                    items.append(ProjectedItem(
+                        on=enters, rule_id=0, name=name, kind=kind, type="expense", account_id=view.id,
+                        counter_account_id=None, amount=amount, effect=-amount, paused=False, final=False,
+                    ))
+            previous = bill.due
+    return items, billed
+
+
+def _lands_on_bill(upcoming: Upcoming, billed: Dict[int, Tuple[date, int, int]]) -> bool:
+    """An expense on a billed card whose statement falls due by the last bill is inside the bills already."""
+    if upcoming.type != "expense" or upcoming.account_id not in billed:
+        return False
+    last_due, closing_day, due_day = billed[upcoming.account_id]
+    return statement_period(upcoming.on, closing_day, due_day).due <= last_due
 
 
 def _item(upcoming: Upcoming, counted: Set[int]) -> ProjectedItem:

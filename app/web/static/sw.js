@@ -59,7 +59,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) caches.open(CACHE).then((cache) => cache.put(SHELL, response.clone()));
+          // Clone NOW: the page starts reading the body as soon as this returns, and a clone
+          // taken later - inside caches.open's callback - finds it already used.
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(SHELL, copy));
+          }
           return response;
         })
         .catch(() => caches.open(CACHE).then((cache) => cache.match(SHELL)).then((hit) => hit || new Response(

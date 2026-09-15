@@ -44,7 +44,9 @@ function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Dat
         {month.overcommitted && <span className="text-caption font-semibold text-warn">Overcommitted</span>}
       </div>
       <p className={`num mt-1 text-title ${negative(month.closing) ? 'text-danger' : ''}`}>{formatPHP(month.closing)}</p>
-      <p className="text-caption text-ink-3">cash on hand at the end</p>
+      <p className="num text-caption text-ink-3">
+        cash on hand at the end{month.bills !== '0.00' && ` · after ${formatPHP(month.bills)} of card bills`}
+      </p>
       <div className="mt-3 grid grid-cols-3 divide-x divide-line text-center">
         <div>
           <p className="text-caption text-ink-3">Coming in</p>
@@ -81,6 +83,9 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
               The larger of your budget ({formatPHP(month.budget)}) and fixed charges ({formatPHP(month.committed)}) —
               fixed charges already count against the budget.
             </p>
+            {month.bills !== '0.00' && (
+              <p className="flex justify-between"><span className="text-ink-2">Card bills</span>−{formatPHP(month.bills)}</p>
+            )}
             {month.transfers !== '0.00' && (
               <p className="flex justify-between"><span className="text-ink-2">Transfers out of cash on hand</span>{formatPHP(month.transfers)}</p>
             )}
@@ -97,9 +102,10 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
               <p className="mb-1.5 text-footnote font-semibold text-ink-2">{lookups.accountById.get(accountId)?.name ?? 'Account'}</p>
               <ul className="divide-y divide-line rounded-2xl bg-surface-2/60 px-3">
                 {items.map((item) => (
-                  <li key={`${item.rule_id}-${item.on}`} className={`num flex min-h-11 items-center justify-between gap-2 text-footnote ${item.paused ? 'opacity-50' : ''}`}>
+                  <li key={`${item.rule_id}-${item.on}-${item.name}`} className={`num flex min-h-11 items-center justify-between gap-2 text-footnote ${item.paused ? 'opacity-50' : ''}`}>
                     <span className="min-w-0 truncate">
                       <span className="text-ink-2">{short(item.on)}</span> · {item.name}
+                      {item.kind === 'bill' && ' · card bill'}
                       {item.final && ' · last payment'}
                       {item.paused && ' · paused, not counted'}
                     </span>

@@ -204,13 +204,90 @@ def test_the_phone_from_price_and_months_confirmed_by_the_first_bill(session, ow
 
     recurring_service.expand(session, owner, today=date(2027, 3, 31))
     payments = [v for v in posted(session, owner, plan.id) if v.recurring_on is not None]
-    assert [v.amount for v in payments] == [D("6666.67")] + [D("7066.67")] * 4 + [D("7066.65")]
+    # Payment 1 was corrected to what the bank billed - no separate interest entry.
+    assert len(posted(session, owner, plan.id)) == 6
+    assert [v.amount for v in payments] == [D("7066.67")] * 5 + [D("7066.65")]
     splits = [s for v in posted(session, owner, plan.id) for s in v.splits]
     assert sum(s.amount for s in splits if s.category_id == books.gadgets) == D("40000.00")
     assert sum(s.amount for s in splits if s.category_id == books.interest) == D("2400.00")
 
     done = recurring_service.get_rule(session, owner, plan.id, today=date(2027, 3, 31))
     assert (done.installment.remaining, done.installment.closed, done.next_on) == (D("0.00"), True, None)
+
+
+def test_confirming_late_corrects_every_payment_already_posted(session, owner, books):
+    """Phase 10: two bills went by unconfirmed. Confirming on the second corrects both, and the plan still ends at 0."""
+    plan = phone(session, owner, books)  # payment 1 on 20 Sep, statement 16 Oct
+    recurring_service.expand(session, owner, today=date(2026, 11, 17))  # payment 2 on 20 Oct, statement 16 Nov
+    # Nothing was paid on the card, so the 16 Nov bill carries both payments, each with ₱400 of interest.
+    check = statement_service.check(session, owner, books.card, date(2026, 11, 16), "14133.34", today=date(2026, 11, 17))
+    assert check.statement.difference == D("800.00")
+    assert [(p.terms, p.payments_posted) for p in check.installments] == [("provisional", 2)]
+
+    resolved = statement_service.resolve(session, owner, books.card, date(2026, 11, 16),
+                                         {"choice": "installment_interest", "amount": "400.00"}, today=date(2026, 11, 17))
+    assert resolved.checked is True
+    assert [v.amount for v in posted(session, owner, plan.id)] == [D("7066.67"), D("7066.67")]
+
+    recurring_service.expand(session, owner, today=date(2027, 3, 31))
+    splits = [s for v in posted(session, owner, plan.id) for s in v.splits]
+    assert sum(s.amount for s in splits if s.category_id == books.interest) == D("2400.00")
+    done = recurring_service.get_rule(session, owner, plan.id, today=date(2027, 3, 31)).installment
+    assert (done.total, done.remaining, done.closed) == (D("42400.00"), D("0.00"), True)
+
+
+def test_a_later_bill_with_a_higher_payment_changes_the_plan_from_that_month(session, owner, books):
+    """REC-29, last sentence: payment 2 is billed ₱100 more. It and every later payment carry ₱500 interest."""
+    plan = phone(session, owner, books, interest="2400.00")  # confirmed: 7,066.67 × 5 + 7,066.65
+    recurring_service.expand(session, owner, today=date(2026, 11, 17))
+    check = statement_service.check(session, owner, books.card, date(2026, 11, 16), "14233.34", today=date(2026, 11, 17))
+    assert check.statement.difference == D("100.00")
+    assert "installment_change" in check.suggestions
+    [only] = check.installments
+    assert (only.terms, only.payments_on_statement, only.on_statement) == ("confirmed", 1, D("7066.67"))
+
+    with pytest.raises(BusinessRuleException):  # more than the difference explains
+        statement_service.resolve(session, owner, books.card, date(2026, 11, 16),
+                                  {"choice": "installment_change", "amount": "7266.67"}, today=date(2026, 11, 17))
+    resolved = statement_service.resolve(session, owner, books.card, date(2026, 11, 16),
+                                         {"choice": "installment_change", "amount": "7166.67"}, today=date(2026, 11, 17))
+    assert resolved.checked is True
+
+    recurring_service.expand(session, owner, today=date(2027, 3, 31))
+    assert [v.amount for v in posted(session, owner, plan.id)] == (
+        [D("7066.67")] + [D("7166.67")] * 4 + [D("7166.65")])
+    splits = [s for v in posted(session, owner, plan.id) for s in v.splits]
+    assert sum(s.amount for s in splits if s.category_id == books.gadgets) == D("40000.00")
+    assert sum(s.amount for s in splits if s.category_id == books.interest) == D("2900.00")
+    done = recurring_service.get_rule(session, owner, plan.id, today=date(2027, 3, 31)).installment
+    assert (done.total, done.interest, done.remaining, done.closed) == (D("42900.00"), D("2900.00"), D("0.00"), True)
+
+
+def test_a_lower_bill_can_lower_the_payment_but_never_below_its_price(session, owner, books):
+    plan = phone(session, owner, books, interest="2400.00")
+    recurring_service.expand(session, owner, today=date(2026, 11, 17))
+    check = statement_service.check(session, owner, books.card, date(2026, 11, 16), "14083.34", today=date(2026, 11, 17))
+    assert check.statement.difference == D("-50.00")
+    assert check.suggestions == ["installment_change", "forgot"]
+
+    for wrong in ("6000.00", "7166.67"):  # below the price share; the wrong way round
+        with pytest.raises(BusinessRuleException):
+            statement_service.resolve(session, owner, books.card, date(2026, 11, 16),
+                                      {"choice": "installment_change", "amount": wrong}, today=date(2026, 11, 17))
+    resolved = statement_service.resolve(session, owner, books.card, date(2026, 11, 16),
+                                         {"choice": "installment_change", "amount": "7016.67"}, today=date(2026, 11, 17))
+    assert resolved.checked is True
+    status = recurring_service.get_rule(session, owner, plan.id, today=date(2026, 11, 17)).installment
+    # 40,000 + 400 on payment 1 + 350 on each of the other five; paid 7,066.67 + 7,016.67.
+    assert (status.total, status.remaining) == (D("42150.00"), D("28066.66"))
+
+
+def test_a_provisional_plan_cannot_have_its_payment_changed(session, owner, books):
+    phone(session, owner, books)
+    statement_service.check(session, owner, books.card, date(2026, 10, 16), "7066.67", today=date(2026, 10, 17))
+    with pytest.raises(BusinessRuleException):
+        statement_service.resolve(session, owner, books.card, date(2026, 10, 16),
+                                  {"choice": "installment_change", "amount": "7066.67"}, today=date(2026, 10, 17))
 
 
 def test_thirty_six_payments_then_nothing(session, owner, books):

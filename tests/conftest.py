@@ -171,6 +171,10 @@ class ApiClient:
         headers = {**self.headers, **kw.pop("headers", {})}
         return self.client.post(self.prefix + path, json=json, headers=headers, **kw)
 
+    def put(self, path, json=None, **kw):
+        headers = {**self.headers, **kw.pop("headers", {})}
+        return self.client.put(self.prefix + path, json=json, headers=headers, **kw)
+
     def patch(self, path, json=None, **kw):
         headers = {**self.headers, **kw.pop("headers", {})}
         return self.client.patch(self.prefix + path, json=json, headers=headers, **kw)

@@ -17,21 +17,25 @@
  * parts: each answer comes back as the statement now stands, with what is left.
  * When a higher total sits on a statement with an installment whose interest
  * is not known yet, "interest on this installment" comes first (REC-29): it
- * confirms the plan's terms and posts payment 1's interest on the closing date.
+ * confirms the plan's terms and corrects every payment already posted. On a
+ * plan whose terms are known, "the payment changed" takes the amount the bank
+ * billed - higher or lower - from that payment on.
  */
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
 import type { Account } from '../lib/accounts';
 import { ApiError } from '../lib/api';
 import { flatten, listCategories, type Category } from '../lib/categories';
-import { formatPHP, sanitizeAmount, toDecimalString } from '../lib/money';
+import { centavos, formatPHP, fromCentavos, sanitizeAmount, toDecimalString } from '../lib/money';
 import {
+  changeInstallmentPayment,
   checkStatement,
   confirmInstallmentInterest,
   getStatement,
   markPostedNext,
   recordCharge,
   type StatementCheck,
+  type StatementPlan,
 } from '../lib/statements';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
@@ -77,6 +81,8 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
   const [note, setNote] = useState('');
   const [interestFor, setInterestFor] = useState<number | null>(null);
   const [interestAmount, setInterestAmount] = useState('');
+  const [changeFor, setChangeFor] = useState<number | null>(null);
+  const [changeAmount, setChangeAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -89,6 +95,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
     setBusy(false);
     setCharging(false);
     setInterestFor(null);
+    setChangeFor(null);
     setNote('');
     const controller = new AbortController();
     Promise.all([getStatement(account.id, closes, controller.signal), listCategories(controller.signal)])
@@ -118,6 +125,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
       accept(await call());
       setCharging(false);
       setInterestFor(null);
+      setChangeFor(null);
       if (recorded) {
         onChanged();
         void useLedgerStore.getState().load();
@@ -142,6 +150,50 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
   const higher = difference !== null && !difference.startsWith('-') && !isZero(difference);
   const lower = difference !== null && difference.startsWith('-');
   const gap = difference === null ? '' : difference.replace(/^-/, '');
+  const provisional = data?.installments.filter((p) => p.terms !== 'confirmed') ?? [];
+  const confirmed = data?.installments.filter((p) => p.terms === 'confirmed') ?? [];
+
+  /** The payment that would explain the whole difference - a starting point, not an answer. */
+  const billedAs = (plan: StatementPlan) => {
+    const signed = higher ? centavos(gap) : -centavos(gap);
+    return fromCentavos(Math.round((centavos(plan.on_statement) + signed) / Math.max(plan.payments_on_statement, 1)));
+  };
+
+  const changeChoices = statement
+    ? confirmed.map((plan) => (
+      <div key={`change-${plan.rule_id}`} className="space-y-2">
+        <Choice
+          title={`The ${plan.name} payment changed`}
+          hint={`The app has ${formatPHP(plan.on_statement)} for it on this statement. This payment and later ones change; earlier ones stay as billed.`}
+          onClick={() => {
+            setChangeFor((v) => (v === plan.rule_id ? null : plan.rule_id));
+            setChangeAmount(billedAs(plan));
+          }}
+          disabled={busy}
+        />
+        {changeFor === plan.rule_id && (
+          <div className="space-y-3 rounded-2xl border border-line p-3">
+            <TextField
+              label="The payment as the bank billed it"
+              value={changeAmount}
+              onChange={(e) => setChangeAmount(sanitizeAmount(e.target.value))}
+              inputMode="decimal"
+              hint="Its share of the price stays the same - the rest counts as interest."
+            />
+            <Button
+              block
+              disabled={busy || !changeAmount.trim()}
+              onClick={() =>
+                void run(() => changeInstallmentPayment(account.id, closes, plan.rule_id, toDecimalString(changeAmount)), true)
+              }
+            >
+              Update the plan
+            </Button>
+          </div>
+        )}
+      </div>
+    ))
+    : null;
 
   return (
     <Sheet open={open} onClose={onClose} title="Check statement">
@@ -197,11 +249,13 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
 
                 {higher && (
                   <>
-                    {data.installments.map((plan) => (
+                    {provisional.map((plan) => (
                       <div key={plan.rule_id} className="space-y-2">
                         <Choice
                           title={`Interest on the ${plan.name} installment`}
-                          hint={`Confirms the plan: ${formatPHP(plan.per_payment)} plus this interest on every payment from now on.`}
+                          hint={plan.payments_posted > 1
+                            ? `Confirms the plan, and adds this interest to each of the ${plan.payments_posted} payments already posted and every one after.`
+                            : `Confirms the plan: ${formatPHP(plan.per_payment)} plus this interest on every payment.`}
                           onClick={() => {
                             setInterestFor((v) => (v === plan.rule_id ? null : plan.rule_id));
                             setInterestAmount(gap);
@@ -211,11 +265,11 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                         {interestFor === plan.rule_id && (
                           <div className="space-y-3 rounded-2xl border border-line p-3">
                             <TextField
-                              label="Interest on this payment"
+                              label="Interest on each payment"
                               value={interestAmount}
                               onChange={(e) => setInterestAmount(sanitizeAmount(e.target.value))}
                               inputMode="decimal"
-                              hint={`Up to ${formatPHP(gap)}. Posts on ${day(statement.closes)}, linked to the plan.`}
+                              hint={`Up to ${formatPHP(gap)}. Added to the payments themselves, so each matches the bank’s line.`}
                             />
                             <Button
                               block
@@ -284,6 +338,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                         </Button>
                       </div>
                     )}
+                    {changeChoices}
                     <Choice
                       title="A purchase I forgot"
                       hint={`Opens on this card, dated ${day(statement.closes)} - change the day if you know it.`}
@@ -304,6 +359,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                         disabled={busy}
                       />
                     ))}
+                    {changeChoices}
                     <Choice
                       title="A refund I haven’t entered"
                       hint={`Opens as income on this card, dated ${day(statement.closes)}.`}

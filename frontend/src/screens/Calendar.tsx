@@ -22,6 +22,8 @@ import {
   startOfWeek,
 } from 'date-fns';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { CalendarSwitch } from '../components/CalendarSwitch';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TransactionRow } from '../components/TransactionRow';
 import { Button } from '../components/ui/Button';
@@ -29,8 +31,8 @@ import { Card } from '../components/ui/Card';
 import { Sheet } from '../components/ui/Sheet';
 import { useLookups } from '../hooks/useLookups';
 import { getMonth, type CalendarDay, type CalendarMonth } from '../lib/calendar';
-import { formatPHP, splitDecimal } from '../lib/money';
-import { listTransactions, type Transaction } from '../lib/transactions';
+import { centavos, formatPHP, fromCentavos, splitDecimal } from '../lib/money';
+import { listTransactions, type Page, type Transaction } from '../lib/transactions';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { usePreferencesStore } from '../stores/preferencesStore';
 import { useUiStore } from '../stores/uiStore';
@@ -114,6 +116,87 @@ function DaySheet({ day, onClose }: { day: CalendarDay | null; onClose: () => vo
   );
 }
 
+/** Income · Expense · Balance for the month, and its transactions by day. */
+function MonthList({ month, spent, earned }: { month: Date; spent: string; earned: string }) {
+  const lookups = useLookups();
+  const navigate = useNavigate();
+  const version = useLedgerStore((s) => s.version);
+  const openSheet = useUiStore((s) => s.openAddSheet);
+  const [page, setPage] = useState<Page | null>(null);
+
+  useEffect(() => {
+    setPage(null);
+    const controller = new AbortController();
+    listTransactions({ from: format(month, 'yyyy-MM-dd'), to: format(endOfMonth(month), 'yyyy-MM-dd') }, null, controller.signal)
+      .then(setPage)
+      .catch(() => {
+        /* the grid above already shows the month's error */
+      });
+    return () => controller.abort();
+  }, [month, version]);
+
+  const balance = fromCentavos(centavos(earned) - centavos(spent));
+  const days = new Map((page?.days ?? []).map((d) => [d.on, d]));
+  const groups: { on: string; rows: Transaction[] }[] = [];
+  for (const row of page?.items ?? []) {
+    const last = groups[groups.length - 1];
+    if (last && last.on === row.txn_date) last.rows.push(row);
+    else groups.push({ on: row.txn_date, rows: [row] });
+  }
+
+  return (
+    <>
+      <Card className="mt-4 grid grid-cols-3 divide-x divide-line py-3 text-center">
+        <div>
+          <p className="text-caption text-ink-3">Income</p>
+          <p className="num text-footnote font-semibold text-ok">{formatPHP(earned)}</p>
+        </div>
+        <div>
+          <p className="text-caption text-ink-3">Expense</p>
+          <p className="num text-footnote font-semibold">{formatPHP(spent)}</p>
+        </div>
+        <div>
+          <p className="text-caption text-ink-3">Balance</p>
+          <p className={`num text-footnote font-semibold ${balance.startsWith('-') ? 'text-danger' : ''}`}>{formatPHP(balance)}</p>
+        </div>
+      </Card>
+
+      {page === null && <div className="skeleton mt-3 h-40 rounded-card" aria-hidden="true" />}
+      {page && page.items.length === 0 && (
+        <p className="mt-3 rounded-2xl border border-dashed border-line px-4 py-3 text-footnote text-ink-2">
+          Nothing recorded this month.
+        </p>
+      )}
+      {groups.map((group) => {
+        const total = days.get(group.on);
+        return (
+          <section key={group.on} className="mt-3">
+            <div className="flex items-baseline justify-between px-1 pb-1.5">
+              <span className="text-footnote font-semibold text-ink-2">{format(parseISO(group.on), 'EEE d MMM')}</span>
+              {total && total.spent !== '0.00' && (
+                <span className="num text-caption text-ink-3">{formatPHP(total.spent)} spent</span>
+              )}
+            </div>
+            <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+              {group.rows.map((row) => (
+                <button key={row.id} type="button" onClick={() => row.id > 0 && openSheet(row)}
+                  className="block w-full transition active:bg-surface-2">
+                  <TransactionRow row={row} lookups={lookups} />
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+      {page?.next_cursor && (
+        <Button block variant="secondary" className="mt-3" onClick={() => navigate('/transactions')}>
+          See all {page.total_count} in the ledger
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function Calendar() {
   const version = useLedgerStore((s) => s.version);
   // Settings: 1 Monday .. 7 Sunday; date-fns counts 0 Sunday .. 6 Saturday.
@@ -145,6 +228,7 @@ export function Calendar() {
 
   return (
     <>
+      <CalendarSwitch />
       <ScreenHeader
         title={format(month, 'MMMM')}
         subtitle={
@@ -207,10 +291,14 @@ export function Calendar() {
                 className={[
                   'num flex aspect-square flex-col items-center justify-start rounded-xl pt-1.5 transition active:scale-95',
                   day ? LEVEL[day.level] : LEVEL[0],
-                  isToday(d) ? 'ring-2 ring-inset ring-accent' : '',
                 ].join(' ')}
               >
-                <span className={`text-footnote ${isToday(d) ? 'font-bold' : 'font-medium'}`}>{format(d, 'd')}</span>
+                <span
+                  className={`text-footnote ${isToday(d) ? 'rounded-full bg-highlight px-1.5 font-bold text-on-highlight' : 'font-medium'}`}
+                  aria-current={isToday(d) ? 'date' : undefined}
+                >
+                  {format(d, 'd')}
+                </span>
                 {spent && <span className="mt-0.5 text-caption leading-none opacity-90">{compactAmount(day.spent)}</span>}
                 {!spent && day && day.count > 0 && <span className="mt-1.5 h-1 w-1 rounded-full bg-ink-3" aria-hidden="true" />}
               </button>
@@ -228,9 +316,6 @@ export function Calendar() {
           ))}
           More
         </div>
-        {shown && shown.earned !== '0.00' && (
-          <span className="num text-caption text-ink-3">{formatPHP(shown.earned)} earned</span>
-        )}
       </div>
       {referenced?.reference && (
         <p className="mt-1 px-1 text-caption text-ink-3">
@@ -239,6 +324,8 @@ export function Calendar() {
             : `No budget for this month — shaded against a typical day (${formatPHP(referenced.reference)}).`}
         </p>
       )}
+
+      {shown && <MonthList month={month} spent={shown.spent} earned={shown.earned} />}
 
       <DaySheet day={chosen} onClose={() => setChosen(null)} />
     </>

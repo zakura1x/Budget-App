@@ -239,7 +239,7 @@ Design system:
 
 Shell:
   ✅ App shell + React Router (basename from the server's meta tag)
-  ✅ BottomTabBar - Home · Calendar · [+] · Stats · More
+  ✅ BottomTabBar - Home · Calendar · [+] · Stats · More (now Home · Accounts · [+] · Calendar · More - see Phase 10)
   ✅ Raised centre [+] opens the add sheet with the numpad up
   ✅ api.ts - one fetch wrapper, credentials 'include', problem+json errors
   ✅ money.ts - PHP formatting by STRING arithmetic, never through a float
@@ -1136,7 +1136,7 @@ Verify:
 > rules. Subscription reminders arrive as a `subscription_due` alert. The
 > endpoints are as listed below plus `/recurring/preview`, `/expand`,
 > `/{id}/skip` and `/{id}/payoff`. 541 tests pass (14 SQL Server skipped).
-> Gaps, for Phase 10: a later bill that shows a DIFFERENT installment amount
+> Gaps, for Phase 10 (both installment gaps RESOLVED 2026-09-15): a later bill that shows a DIFFERENT installment amount
 > does not yet update the plan through the amount history (REC-29's last
 > sentence); interest for more than one provisional payment is confirmed one
 > statement at a time; subscription reminders show on Home only when a budget
@@ -1184,6 +1184,8 @@ Days 4-5:
     ✅ Price + months only (REC-28): terms = provisional, amount =
        price / payments, "Terms not confirmed" on the card
     ✅ Statement check gains "interest on this installment" (REC-29).
+       (Changed 2026-09-15: the posted payments are corrected instead of a
+       separate interest entry - see Phase 10.)
        Suggested only when ONE unconfirmed plan is on that statement.
        Posts payment 1's interest on the closing date WITH recurring_id,
        sets interest/total/amount, terms = confirmed. A later differing
@@ -1852,10 +1854,101 @@ Found while building Phase 10 (2026-09-15):
   - Deploys are copied, not pulled - there is no git remote.
     scripts/make_release.py zips the last commit; how-to-run.txt lists the
     server folders to replace and the ones never to touch.
-  - STILL OPEN from Phase 7: a later bill showing a DIFFERENT installment
-    amount does not update the plan through its amount history (REC-29), and
-    interest for several provisional payments is confirmed one statement at a
-    time.
+  - RESOLVED 2026-09-15 (from Phase 7): confirming interest after several
+    provisional payments added interest to ONE payment only, so the plan never
+    reached zero. confirm_interest now corrects every posted payment to carry
+    its interest, on its own day (transaction_service.reprice_recurring - the
+    only code that edits a posted payment's amount).
+  - RESOLVED 2026-09-15 (from Phase 7): a later bill showing a DIFFERENT
+    installment payment, higher or lower, is the statement choice
+    `installment_change`: recurring_service.change_installment_payment stores
+    the new interest per payment from that payment on (`interest_changes`),
+    corrects the posted payments from there, and the plan's total becomes the
+    sum of its schedule. The change must explain part of the difference the
+    same way round, and a payment can never go below its share of the price.
+  - BEHAVIOUR CHANGE: payment 1's interest is no longer a separate entry on
+    the closing date - the payment itself is corrected. Budgets see the
+    interest in the payment's own period.
+  - REDESIGN 2026-09-15 (user, after sample_ui/): Accounts was buried under
+    More. Tabs are now Home · Accounts · [+] · Calendar · More; Stats sits
+    behind a Calendar | Stats switch (CalendarSwitch, both routes kept).
+    Whole app restyled: lavender/indigo tokens in theme.css (plus a
+    `highlight` token for today), floating pill tab bar, pill buttons and
+    segmented controls. Accounts: cash-on-hand card with "In accounts" and
+    "Owed on cards" from the same counted set, tiles grouped by type with
+    folding totals, cards as wide tiles keeping bill / own limit / statement
+    check. Home: category tiles with rings (CategoryGrid, /stats/overview for
+    Home's period). Calendar: income / expense / balance and the month's
+    transactions by day. Budget: half-circle Gauge, then Remain | Plan.
+    More: signed-in card, Accounts row removed. Icons, manifest and
+    theme-color metas moved to indigo. Cash on hand (not net worth) kept.
+  - ACCOUNT PAGES 2026-09-15 (user, sample_ui IMG_4038-4040): every account,
+    cards included, is a small tile; a tile opens /accounts/:id
+    (AccountDetail) - banner in the account's colour, + and transfer preset
+    to it, Edit, a card's bill / own limit / statement check (CreditDetails),
+    and the TRAIL of money in and out from GET /transactions?account= (each
+    transfer leg carries its direction; IN/OUT summed client-side). Day
+    groups 200 rows a page; Month reads the whole history first so month
+    totals are never partial. A new account starts from a list of kinds
+    (Cash, Bank account, Debit card, E-wallet, Credit card, Savings, Stocks &
+    funds) - lent/borrowed and member cards from the sample are left out,
+    as no account type stands behind them.
+  - SUPERSEDED the same day (user: "add all Add Account categories like
+    borrow/lend, member account"): new account types `lent`, `borrowed`
+    (Loan is its subtype) and `member` (ACC-31/32), and an optional
+    `subtype` slug on every account (ACC-33) so the full sample list -
+    PayPal, Other credit, Fund, Crypto, Real estate, Precious metal,
+    Transport / School / Membership cards - shows its own label. Lent and
+    borrowed are off cash on hand by default, member cards on. Their pages
+    offer Lend more / Paid back and Borrow more / Pay back, which open a
+    transfer from or INTO the account (AddPreset.counterAccountId). No
+    migration: payloads are JSON, and an account without a subtype reads
+    as its type.
+  - IMPORT FROM BUDGET APP 2026-09-15 (user, budget_app_backup/ - now
+    gitignored with *.xlsx): DAT-21, app/services/budget_app_import_service.py,
+    POST /data/import/budget-app/preview and /data/import/budget-app (file as
+    base64 in the JSON body), BudgetAppImportSheet on Backup & data. Decided
+    with the user: today's balances are TYPED (the file's adjustments do not
+    reproduce its own balances - a sign search over every row kind against
+    seven balances on its Accounts screen left ~₱17.5k unexplained);
+    borrow/lend people become Lent/Borrowed accounts with their history; the
+    import lives in the app, repeatable. Dry run on the real file: 580
+    entries, 17 accounts, 104 categories, 158 adjustments and 137
+    account-less loan records folded into openings. NOT yet run against
+    ZBDGT - the user imports it themselves after signing up.
+  - CARD PAYMENTS + RECURRING ON [+] 2026-09-15 (user: imported cards have a
+    balance and no recurring rules; "Both" chosen): ACC-34 CardPayments on a
+    credit card's page (plans, Does it balance? with Make it match via
+    fix_opening, the monthly payment transfer and its payoff month from
+    /projection items - 12 months, MONTH_CHOICES unchanged). REC-31 the add
+    sheet's fourth choice "Recurring" -> bill or income / subscription /
+    installment / credit card payment, opening ONE shared RuleSheetHost
+    (uiStore.openRuleSheet, which closes the add sheet first).
+  - CARD BILLS + NET WORTH 2026-09-15 (user, SPayLater "My Bills" screenshot:
+    wants the monthly bill, not every purchase, and cash on hand to show what
+    must be settled this month, plus a grand total): ACC-35 bills typed per
+    card (payload `bills` + `bills_from`, paid derived FIFO from payments
+    since saved; CreditView.bills/bills_left/due_now; AccountView.cash_amount
+    is what cash_on_hand sums; reminder follows the next bill), ACC-36
+    account_service.net_worth on GET /accounts (all active accounts, debts in
+    full incl. unbilled installments) with a flip on the Accounts headline.
+    NOTE: tests/test_card_bills.py was overwritten by mistake while adding
+    these tests and restored from git the same minute; the new tests are
+    tests/test_card_app_bills.py.
+  - SAME DAY, FOLLOW-UPS: bills include plan charges (installments and
+    repeating expenses on the card, placed on their statement's due date;
+    open-ended ones only up to the last typed bill); per-account
+    counts_in_net_worth switch; Months ahead link on the cash-on-hand banner;
+    Months ahead takes typed card bills (ProjectedMonth.bills, items kind
+    bill / bill_plans) and skips card charges already inside a bill.
+  - FIXED 2026-09-15: sw.js cloned the shell response after the page had
+    started reading it ("body is already used"); the card tile formatted
+    whole pesos with places=0 on a two-decimal string and crashed the tab.
+  - FIXED 2026-09-15: category rows could be dragged but not opened with a
+    MOUSE - ReorderList captured the pointer on every press, so the click
+    landed on the <li>, not the row's button. It now captures only once a
+    row is lifted and swallows the click after a drag. The category sheet
+    pins Save and Delete to its bottom, and rows show a chevron.
 
 To revisit after Phase 1's benchmark:
   - If cold load > 1500ms, adopt bucket columns (ARCHITECTURE.md §5.7) and

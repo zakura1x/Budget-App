@@ -24,8 +24,13 @@ THE PAYLOAD:
      "posted_through": "2026-09-14", "closed_on": null}
 
   An installment has no `amounts`; it has `price`, `payments`, `interest`
-  (null until known), `terms` (provisional | confirmed) and
-  `interest_category_id` instead (REC-09, REC-28).
+  (null until known), `terms` (provisional | confirmed),
+  `interest_category_id` and `interest_changes` instead (REC-09, REC-28):
+
+     "interest_changes": [{"from": "2026-11-20", "per_payment": "500.00"}]
+
+  the installment's own dated history (REC-20, REC-29): from that payment on,
+  each carries that much interest.
 
 IDEMPOTENT CATCH-UP (REC-05). Expansion posts the occurrences dated after
 `posted_through` and on or before today that are not already in the working
@@ -41,6 +46,13 @@ and the interest both come out exact. The remaining balance is the total less
 every expense posted with this rule's id - derived, never a counter (REC-10).
 A skip moves the payoff one period later and owes the same (REC-15). An
 installment cannot be paused: pausing would pretend the bank stopped billing.
+
+THE BILL CORRECTS THE PLAN (REC-29). When a statement shows the interest, or
+later a different payment, the payments already posted are corrected to what
+the bank billed - through transaction_service.reprice_recurring, their price
+split untouched - and the plan's schedule carries the new interest forward.
+The total is the sum of the schedule, so it, the remaining balance and the
+payoff always agree with what posts.
 
 A new rule posts nothing dated before the day it is created unless asked
 (`post_past`) - those charges were most likely entered by hand already.
@@ -177,11 +189,15 @@ class Expansion:
 
 @dataclass(frozen=True)
 class StatementPlan:
-    """An unconfirmed installment with a payment on a given statement (REC-29)."""
+    """An installment with a payment on a given statement (REC-29)."""
 
     rule_id: int
     name: str
     per_payment: Decimal
+    terms: str = "provisional"
+    payments_posted: int = 0  # every scheduled payment posted so far
+    payments_on_statement: int = 0
+    on_statement: Decimal = ZERO  # what the app has for this plan's payments on the statement
 
 
 # --------------------------------------------------------- the pure schedule
@@ -267,11 +283,13 @@ def occurrences(rule_id: int, data: Mapping[str, Any], start: date, end: date) -
     installment = data.get("kind") == "installment"
     prices: List[Decimal] = []
     interests: Optional[List[Decimal]] = None
+    changes: List[Tuple[date, Decimal]] = []
     if installment:
         end_after = int(data["payments"])
         prices = split_schedule(money(data["price"]), end_after)
         interest = money(data.get("interest") or ZERO)
         interests = split_schedule(interest, end_after) if interest > ZERO else None
+        changes = sorted((_as_date(c["from"]), money(c["per_payment"])) for c in data.get("interest_changes") or [])
 
     limit = end if end_on is None else min(end, end_on)
     if closed_on is not None:
@@ -296,8 +314,11 @@ def occurrences(rule_id: int, data: Mapping[str, Any], start: date, end: date) -
         if installment:
             price_part = prices[number - 1]
             interest_part = interests[number - 1] if interests else ZERO
+            for since, per_payment in changes:  # REC-29: a later bill's interest, from its payment on
+                if since <= day:
+                    interest_part = per_payment
             splits: Tuple[Tuple[Optional[int], Decimal], ...] = ((data.get("category_id"), price_part),)
-            if interests:
+            if interest_part > ZERO:
                 splits += ((data.get("interest_category_id"), interest_part),)
             result.append(Occurrence(rule_id, day, number, price_part + interest_part, splits,
                                      final=number == int(end_after)))
@@ -373,20 +394,26 @@ def unpaid_by_account(db: Session, cipher: UserCipher) -> Dict[int, Decimal]:
     return unpaid
 
 
-def unconfirmed_on_statement(
+def plans_on_statement(
     db: Session, cipher: UserCipher, account_id: int, start: date, closes: date
 ) -> List[StatementPlan]:
-    """REC-29. Provisional installments on this card with a payment on the statement [start, closes]."""
+    """REC-29. The installments on this card with a payment on the statement [start, closes], either terms."""
     context = _Context.load(db, cipher)
     plans: List[StatementPlan] = []
     for record in context.rules:
         data = record.data
-        if data.get("kind") != "installment" or data.get("terms") == "confirmed" or data.get("account_id") != account_id:
+        if data.get("kind") != "installment" or data.get("account_id") != account_id:
             continue
-        if any(v.recurring_on is not None and start <= (v.card_posted_on or v.txn_date) <= closes
-               for v in context.posted.get(record.id, [])):
-            status = _installment_status(record.id, data, context.posted.get(record.id, []))
-            plans.append(StatementPlan(record.id, str(data.get("name", "")), status.per_payment))
+        views = context.posted.get(record.id, [])
+        payments = _scheduled_payments(views)
+        here = [v for v in payments if start <= _statement_day(v) <= closes]
+        if not here:
+            continue
+        status = _installment_status(record.id, data, views)
+        plans.append(StatementPlan(
+            record.id, str(data.get("name", "")), status.per_payment, terms=status.terms,
+            payments_posted=len(payments), payments_on_statement=len(here), on_statement=total(v.amount for v in here),
+        ))
     return plans
 
 
@@ -565,15 +592,16 @@ def confirm_interest(
     rule_id: int,
     per_payment: Decimal,
     *,
-    on: date,
     category_id: Optional[int] = None,
     today: Optional[date] = None,
 ) -> RuleView:
     """
-    REC-29. The first statement shows what the bank adds per payment. The plan
-    becomes price + per_payment × payments, and payment 1's interest posts on
-    `on` (the closing date) carrying the plan's id, so the remaining balance
-    counts it as paid. Later payments post both splits (REC-30).
+    REC-29. A statement shows what the bank adds per payment. The plan becomes
+    price + per_payment × payments, and EVERY payment already posted at the
+    provisional amount is corrected to carry its interest, on its own day - so
+    each stays on the statement the bank billed it on, and a plan confirmed
+    after two or three bills ends at exactly zero like one confirmed after the
+    first. Later payments post both splits (REC-30).
     """
     today = today or date.today()
     repo = RecurringRuleRepository(db, cipher)
@@ -590,20 +618,86 @@ def confirm_interest(
     chosen = category_id or data.get("interest_category_id") or _interest_category(categories)
     _check_interest_category(chosen, data.get("category_id"), categories)
 
+    before = data.get("interest_category_id")
     data.update({
         "interest": str(per_payment * int(data["payments"])),
         "terms": "confirmed",
         "interest_category_id": chosen,
     })
     repo.update(rule_id, data)
-    transaction_service.post_recurring(db, cipher, {
-        "type": "expense", "amount": str(per_payment), "account_id": data["account_id"],
-        "txn_date": on.isoformat(), "notes": f"Interest - {data.get('name')}",
-        "splits": [{"category_id": chosen, "amount": str(per_payment)}],
-    }, recurring_id=rule_id, recurring_on=None)
+    posted = _scheduled_payments(_Context.load(db, cipher).posted.get(rule_id, []))
+    for view in posted:
+        _reprice(db, cipher, view, per_payment, chosen, before)
     audit_service.record(
         db, audit_service.CONFIRM_TERMS, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
-        cipher=cipher, detail={"name": data.get("name"), "interest_per_payment": str(per_payment)},
+        cipher=cipher, detail={"name": data.get("name"), "interest_per_payment": str(per_payment),
+                               "payments_corrected": len(posted)},
+    )
+    db.commit()
+    return get_rule(db, cipher, rule_id, today=today)
+
+
+def change_installment_payment(
+    db: Session,
+    cipher: UserCipher,
+    rule_id: int,
+    payment: Decimal,
+    *,
+    start: date,
+    closes: date,
+    category_id: Optional[int] = None,
+    today: Optional[date] = None,
+) -> RuleView:
+    """
+    REC-29, its last sentence. A later bill shows a different payment: the
+    bank changed what it adds. From this plan's first payment on the statement
+    [start, closes], each payment carries `payment` less its share of the price
+    as interest - the payments already posted from there are corrected to it,
+    and the rest post that way, through the plan's dated `interest_changes`
+    (REC-20). Payments before it keep what they were billed, and a newer change
+    replaces any later one. The price never changes: it is what was bought.
+    """
+    today = today or date.today()
+    repo = RecurringRuleRepository(db, cipher)
+    record = _record(repo, rule_id)
+    data = dict(record.data)
+    if data.get("kind") != "installment":
+        raise BusinessRuleException("Only an installment has a payment to change")
+    if data.get("terms") != "confirmed":
+        raise BusinessRuleException("Confirm this plan's interest first")
+    if payment <= ZERO:
+        raise ValidationException("A payment is more than zero")
+
+    posted = _scheduled_payments(_Context.load(db, cipher).posted.get(rule_id, []))
+    here = [v for v in posted if start <= _statement_day(v) <= closes]
+    if not here:
+        raise BusinessRuleException("This plan has no payment on this statement")
+    first = here[0].recurring_on
+    scheduled = [o for o in occurrences(rule_id, {**data, "closed_on": None}, first, first) if not o.paused]
+    if not scheduled:
+        raise BusinessRuleException("That payment is no longer on the plan's schedule")
+    price_part = scheduled[0].splits[0][1]
+    interest = payment - price_part
+    if interest < ZERO:
+        raise BusinessRuleException(f"A payment cannot be less than its share of the price, {price_part}")
+
+    categories = {r.id: r.data for r in CategoryRepository(db, cipher).list()}
+    before = data.get("interest_category_id")
+    chosen = category_id or before or _interest_category(categories)
+    if interest > ZERO:
+        _check_interest_category(chosen, data.get("category_id"), categories)
+
+    changes = [c for c in data.get("interest_changes") or [] if _as_date(c["from"]) < first]
+    changes.append({"from": first.isoformat(), "per_payment": str(interest)})
+    data.update({"interest_changes": changes, "interest_category_id": chosen})
+    repo.update(rule_id, data)
+    corrected = [v for v in posted if v.recurring_on >= first]
+    for view in corrected:
+        _reprice(db, cipher, view, interest, chosen, before)
+    audit_service.record(
+        db, audit_service.UPDATE, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
+        cipher=cipher, detail={"name": data.get("name"), "payment": str(payment), "from": first.isoformat(),
+                               "payments_corrected": len(corrected)},
     )
     db.commit()
     return get_rule(db, cipher, rule_id, today=today)
@@ -765,14 +859,21 @@ def _view(rule_id: int, data: Mapping[str, Any], context: _Context, today: date)
 
 def _installment_status(rule_id: int, data: Mapping[str, Any], posted: Sequence[TransactionView]) -> InstallmentStatus:
     price = money(data["price"])
-    interest = money(data.get("interest") or ZERO)
     payments = int(data["payments"])
-    whole = price + interest
+    start = _as_date(data["start"])
+    # Far enough for the last payment of any schedule; the loop stops at the payment count anyway.
+    horizon = start + timedelta(days=min(366 * (payments * int(data.get("interval") or 1) + 1), 366 * 2000))
+    schedule = occurrences(rule_id, {**data, "closed_on": None}, start, horizon)
+    if len(schedule) == payments:
+        # The schedule IS the plan: with a later change of interest (REC-29) the
+        # total is what each payment carries, not one figure times the count.
+        whole = total(o.amount for o in schedule)
+    else:
+        whole = price + money(data.get("interest") or ZERO)
+    interest = whole - price
     paid = total(v.amount for v in posted if v.type == "expense")
     remaining = max(whole - paid, ZERO)
-    start = _as_date(data["start"])
-    schedule = occurrences(rule_id, {**data, "closed_on": None}, start, start + timedelta(days=366 * 31))
-    per_payment = split_schedule(price, payments)[0] + (split_schedule(interest, payments)[0] if interest > ZERO else ZERO)
+    per_payment = schedule[0].amount if schedule else split_schedule(price, payments)[0]
     return InstallmentStatus(
         price=price,
         interest=interest,
@@ -785,6 +886,36 @@ def _installment_status(rule_id: int, data: Mapping[str, Any], posted: Sequence[
         payments_posted=sum(1 for v in posted if v.type == "expense" and v.recurring_on is not None),
         payoff_on=_opt_date(data.get("closed_on")) or (schedule[-1].on if schedule else None),
         closed=data.get("closed_on") is not None or remaining == ZERO,
+    )
+
+
+def _scheduled_payments(views: Sequence[TransactionView]) -> List[TransactionView]:
+    """An installment's posted payments - not its payoff or other one-offs - in schedule order."""
+    return sorted((v for v in views if v.type == "expense" and v.recurring_on is not None),
+                  key=lambda v: (v.recurring_on, v.id))
+
+
+def _statement_day(view: TransactionView) -> date:
+    """The day that puts a posting on a card statement (ACC-26)."""
+    return view.card_posted_on or view.txn_date
+
+
+def _reprice(
+    db: Session,
+    cipher: UserCipher,
+    view: TransactionView,
+    interest: Decimal,
+    interest_category: Optional[int],
+    old_interest_category: Optional[int],
+) -> None:
+    """REC-29. One posted payment corrected to carry `interest`; its price split is left exactly as posted."""
+    interest_categories = {interest_category, old_interest_category} - {None}
+    price = [s for s in view.splits if s.category_id not in interest_categories]
+    splits = [{"category_id": s.category_id, "amount": str(s.amount)} for s in price]
+    if interest > ZERO:
+        splits.append({"category_id": interest_category, "amount": str(interest)})
+    transaction_service.reprice_recurring(
+        db, cipher, view.id, amount=total(s.amount for s in price) + interest, splits=splits,
     )
 
 

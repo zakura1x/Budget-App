@@ -67,11 +67,54 @@ def test_counts_in_cash_on_hand_defaults_by_type(session, owner):
     """ACC-18 - credit on, investment off, and the rest on."""
     kinds = {
         "cash": True, "debit": True, "savings": True, "credit": True, "investment": False,
+        "lent": False, "borrowed": False, "member": True,
     }
     for kind, expected in kinds.items():
         extra = {"statement_closing_day": 20, "payment_due_day": 5} if kind == "credit" else {}
         view = make(session, owner, name=f"{kind} account", type=kind, **extra)
         assert view.counts_in_cash_on_hand is expected, kind
+
+
+def test_borrowed_lent_and_member_accounts_move_money_like_any_other(session, owner):
+    """ACC-31/32. A loan is a negative balance that repayments bring back to zero;
+    money lent out comes back by transfer; a transport card is spent from."""
+    from app.services import transaction_service
+
+    wallet = make(session, owner, name="Wallet", opening_balance="10000.00")
+    loan = make(session, owner, name="Car loan", type="borrowed", subtype="loan", opening_balance="-50000.00")
+    lent = make(session, owner, name="Juan", type="lent", opening_balance="0")
+    beep = make(session, owner, name="Beep", type="member", subtype="transport-card", opening_balance="0")
+    on = date(2026, 9, 15)
+    for source, target, amount in ((wallet, loan, "5000.00"), (wallet, lent, "2000.00"), (wallet, beep, "500.00")):
+        transaction_service.create_transaction(session, owner, {
+            "type": "transfer", "amount": amount, "account_id": source.id,
+            "counter_account_id": target.id, "txn_date": on.isoformat()}, today=on)
+
+    listed = account_service.list_accounts(session, owner, postings=transaction_service.postings(session, owner), today=on)
+    views = {v.name: v for v in listed}
+    assert views["Car loan"].balance == Decimal("-45000.00")
+    assert views["Juan"].balance == Decimal("2000.00")
+    assert views["Beep"].balance == Decimal("500.00")
+    assert views["Car loan"].subtype == "loan"
+    assert views["Car loan"].credit is None
+    # Only the wallet and the member card count; the loan and the money lent out do not.
+    cash = account_service.cash_on_hand(listed)
+    assert set(cash.account_ids) == {wallet.id, beep.id}
+    assert cash.total == Decimal("3000.00")  # 10,000 - 5,000 - 2,000 - 500 left in the wallet + 500 on the card
+
+
+def test_a_subtype_is_kept_on_an_edit_that_does_not_mention_it(session, owner):
+    """ACC-33."""
+    created = make(session, owner, name="GCash", type="debit", subtype="e-wallet")
+    account_service.update_account(session, owner, created.id, {"name": "GCash", "type": "debit"})
+    assert account_service.get_account(session, owner, created.id).subtype == "e-wallet"
+    account_service.update_account(session, owner, created.id, {"name": "GCash", "type": "debit", "subtype": None})
+    assert account_service.get_account(session, owner, created.id).subtype is None
+
+
+def test_a_subtype_must_be_a_short_slug(session, owner):
+    with pytest.raises(ValidationException):
+        make(session, owner, subtype="Not A Slug!")
 
 
 def test_the_default_can_be_overridden(session, owner):

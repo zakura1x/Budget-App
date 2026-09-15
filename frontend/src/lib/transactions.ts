@@ -104,8 +104,9 @@ function query(filters: Filters, cursor?: string | null, limit = 50): string {
   return params.toString();
 }
 
-export const listTransactions = (filters: Filters, cursor?: string | null, signal?: AbortSignal) =>
-  api<Page>(`/transactions?${query(filters, cursor)}`, { signal });
+/** `limit` is 1-200 on the server; an account's trail asks for a full 200. */
+export const listTransactions = (filters: Filters, cursor?: string | null, signal?: AbortSignal, limit = 50) =>
+  api<Page>(`/transactions?${query(filters, cursor, limit)}`, { signal });
 
 export const createTransaction = (body: TransactionDraft) =>
   api<Outcome>(`/transactions?today=${localToday()}`, { method: 'POST', body });

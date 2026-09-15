@@ -9,5 +9,5 @@ export function Card({ padded = true, className = '', ...rest }: CardProps) {
 }
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="px-1 pb-2 pt-5 text-footnote font-semibold uppercase tracking-wide text-ink-3">{children}</h2>;
+  return <h2 className="px-1 pb-2 pt-5 text-headline text-ink">{children}</h2>;
 }

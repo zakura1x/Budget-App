@@ -1,7 +1,8 @@
 /**
- * More - the menu for everything that is not a main tab. In Phase 1 it also
- * proves the whole pipe works: the status rows call /health through api.ts,
- * past the CSP, through the Vite proxy in dev and same-origin in production.
+ * More - the menu for everything that is not a main tab. It opens on who is
+ * signed in; Accounts moved to a tab of its own on 2026-09-15. The status rows
+ * still prove the whole pipe works: they call /health through api.ts, past the
+ * CSP, through the Vite proxy in dev and same-origin in production.
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -34,25 +35,30 @@ export function More() {
   const session = useAuthStore((s) => s.session);
   const lock = useAuthStore((s) => s.lock);
   const logout = useAuthStore((s) => s.logout);
+  const name = session?.user.display_name || session?.user.email || 'You';
 
   return (
     <>
-      <ScreenHeader title="More" subtitle={session?.user.email ?? undefined} />
+      <ScreenHeader title="More" />
 
-      <SectionTitle>Session</SectionTitle>
-      <ListGroup>
-        <ListRow icon={<LockIcon size={20} />} title="Lock now"
-          subtitle={session?.pin_set ? 'Unlock with your PIN' : 'Unlock with your password'} onClick={() => void lock()} />
-        <ListRow icon={<LogoutIcon size={20} />} iconTone="bg-danger/10 text-danger" title="Sign out"
-          onClick={() => void logout()} />
-      </ListGroup>
+      <section className="flex items-center gap-4 rounded-card bg-accent p-5 text-on-accent shadow-raised" aria-label="Signed in">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-on-accent/20 text-title" aria-hidden="true">
+          {name.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-headline">{name}</span>
+          {session?.user.email && <span className="block truncate text-footnote opacity-80">{session.user.email}</span>}
+        </span>
+        <button type="button" onClick={() => void lock()} aria-label="Lock now"
+          className="flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-on-accent/15 transition active:scale-95">
+          <LockIcon size={20} />
+        </button>
+      </section>
 
       <SectionTitle>Money</SectionTitle>
       <ListGroup>
         <ListRow icon={<StatsIcon size={20} />} title="Budget" subtitle="Amount, period and categories"
           chevron onClick={() => navigate('/budget')} />
-        <ListRow icon={<WalletIcon size={20} />} title="Accounts" subtitle="Cash, cards, savings"
-          chevron onClick={() => navigate('/accounts')} />
         <ListRow icon={<TagIcon size={20} />} title="Categories" subtitle="What your spending is sorted into"
           chevron onClick={() => navigate('/categories')} />
         <ListRow icon={<TagIcon size={20} />} title="Tags" subtitle="Trips and projects, across categories"
@@ -77,6 +83,14 @@ export function More() {
           <ListRow icon={<ServerIcon size={20} />} title="Admin" subtitle="Accounts on this server - never their data"
             chevron onClick={() => navigate('/admin')} />
         )}
+      </ListGroup>
+
+      <SectionTitle>Session</SectionTitle>
+      <ListGroup>
+        <ListRow icon={<LockIcon size={20} />} title="Lock now"
+          subtitle={session?.pin_set ? 'Unlock with your PIN' : 'Unlock with your password'} onClick={() => void lock()} />
+        <ListRow icon={<LogoutIcon size={20} />} iconTone="bg-danger/10 text-danger" title="Sign out"
+          onClick={() => void logout()} />
       </ListGroup>
 
       <SectionTitle>Server status</SectionTitle>

@@ -21,9 +21,12 @@
 import { useEffect, useState } from 'react';
 import { ApiError } from '../lib/api';
 import {
+  ACCOUNT_KINDS,
   TYPE_HINT,
   TYPE_ICON,
-  TYPE_LABEL,
+  isOwed,
+  kindLabelOf,
+  type AccountKind,
   addValuation,
   balanceQuestion,
   createAccount,
@@ -43,11 +46,28 @@ import { Sheet } from './ui/Sheet';
 import { TextField } from './ui/TextField';
 import { Toggle } from './ui/Toggle';
 
-const TYPES: AccountType[] = ['cash', 'debit', 'credit', 'savings', 'investment'];
-
+/** Mirrors account_service.COUNTS_IN_CASH_ON_HAND_DEFAULT (ACC-18/31/32). */
 const COUNTS_BY_DEFAULT: Record<AccountType, boolean> = {
-  cash: true, debit: true, savings: true, credit: true, investment: false,
+  cash: true, debit: true, savings: true, credit: true, investment: false, lent: false, borrowed: false, member: true,
 };
+
+/** The balance field on an existing account, in the words of what its balance means. */
+function balanceWords(type: AccountType): { label: string; hint: string } {
+  if (type === 'credit') return { label: 'Amount owed', hint: 'What the card owes right now. Changing it asks how to record the difference.' };
+  if (type === 'borrowed') return { label: 'Amount you still owe', hint: 'What is left to pay back. Changing it asks how to record the difference.' };
+  if (type === 'lent') return { label: 'Still owed to you', hint: 'What has not come back yet. Changing it asks how to record the difference.' };
+  return { label: 'Current balance', hint: 'What is really in it right now. Changing it asks how to record the difference.' };
+}
+
+/** The first figure on a new account. */
+function openingWords(type: AccountType): { label: string; hint: string } {
+  if (type === 'investment') return { label: 'Starting value', hint: 'What it was worth when you started tracking it.' };
+  if (type === 'credit') return { label: 'Opening balance', hint: 'What you already owe on it, as a minus — −8,420.00.' };
+  if (type === 'borrowed') return { label: 'Amount you owe', hint: 'What is left to pay back today. Pay it back later with a transfer into this account.' };
+  if (type === 'lent') return { label: 'Amount lent', hint: 'What they still owe you. When it comes back, transfer it out of this account.' };
+  if (type === 'member') return { label: 'Load on the card', hint: 'What is on it now. Top it up with a transfer.' };
+  return { label: 'Opening balance', hint: 'What was in it before you started tracking.' };
+}
 
 /**
  * Keep only what an amount can contain: one leading minus, one decimal point,
@@ -80,6 +100,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   const [colour, setColour] = useState('#4A90D9');
   const [icon, setIcon] = useState('cash');
   const [counts, setCounts] = useState(true);
+  const [inNetWorth, setInNetWorth] = useState(true);
   const [closingDay, setClosingDay] = useState('');
   const [dueDay, setDueDay] = useState('');
   const [limit, setLimit] = useState('');
@@ -87,12 +108,17 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   const [lag, setLag] = useState('3');
   const [value, setValue] = useState('');
   const [question, setQuestion] = useState<BalanceQuestion | null>(null);
+  /** A new account: has a kind been picked from the list yet? */
+  const [picked, setPicked] = useState(false);
+  const [example, setExample] = useState('BPI Debit');
+  const [kindLabel, setKindLabel] = useState<{ label: string; hint: string } | null>(null);
+  const [subtype, setSubtype] = useState<string | null>(null);
   const [balanceNote, setBalanceNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   /** What the balance field shows for an account: a card's balance as the amount owed. */
-  const shownBalance = (a: Account) => (a.type === 'credit' ? negate(a.balance) : a.balance);
+  const shownBalance = (a: Account) => (isOwed(a.type) ? negate(a.balance) : a.balance);
 
   useEffect(() => {
     if (!open) return;
@@ -101,6 +127,10 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     setValue('');
     setQuestion(null);
     setBalanceNote('');
+    setPicked(false);
+    setSubtype(account?.subtype ?? null);
+    setInNetWorth(account?.counts_in_net_worth ?? true);
+    setKindLabel(null);
     if (account) {
       setType(account.type);
       setName(account.name);
@@ -130,10 +160,14 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     }
   }, [open, account]);
 
-  const chooseType = (next: AccountType) => {
-    setType(next);
-    setIcon(TYPE_ICON[next]);
-    setCounts(COUNTS_BY_DEFAULT[next]);
+  const chooseKind = (kind: AccountKind) => {
+    setType(kind.type);
+    setSubtype(kind.subtype);
+    setIcon(kind.icon ?? TYPE_ICON[kind.type]);
+    setCounts(COUNTS_BY_DEFAULT[kind.type]);
+    setExample(kind.example);
+    setKindLabel({ label: kind.label, hint: kind.hint });
+    setPicked(true);
   };
 
   const save = async (action?: BalanceAction) => {
@@ -143,9 +177,11 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       const draft: AccountDraft = {
         name: name.trim(),
         type,
+        subtype,
         colour,
         icon,
         counts_in_cash_on_hand: counts,
+        counts_in_net_worth: inNetWorth,
         ...(type === 'credit'
           ? {
               statement_closing_day: Number(closingDay) || 1,
@@ -158,10 +194,12 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
           : {}),
       };
       if (!account || type === 'investment') {
-        draft.opening_balance = toDecimalString(opening.trim() || '0');
+        const typed = toDecimalString(opening.trim() || '0');
+        // A loan's opening is typed as what you owe, and stored as the minus it is (ACC-31).
+        draft.opening_balance = type === 'borrowed' && !/^-?0+(\.0+)?$/.test(typed) ? negate(typed) : typed;
       } else if (current.trim()) {
         const typed = toDecimalString(current.trim());
-        const balance = type === 'credit' ? negate(typed) : typed;
+        const balance = isOwed(type) ? negate(typed) : typed;
         if (balance !== account.balance) {
           draft.balance = balance;
           if (action) {
@@ -221,14 +259,14 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   if (question) {
     // ACC-28. The balance is worked out from transactions, so the change has to be one of these.
     const loss = question.difference.startsWith('-');
-    const shown = (v: string) => (type === 'credit' ? negate(v) : v);
+    const shown = (v: string) => (isOwed(type) ? negate(v) : v);
     return (
       <Sheet open={open} onClose={onClose} title="Record the difference?">
         <div className="space-y-4 pb-2">
           <div className="rounded-2xl bg-surface-2 p-4 text-center">
             <p className="text-footnote text-ink-2">
               {name.trim()}
-              {type === 'credit' ? ' · amount owed' : ''}
+              {isOwed(type) ? ' · amount owed' : ''}
             </p>
             <p className="num mt-1 text-headline">
               {formatPHP(shown(question.before))} → {formatPHP(shown(question.after))}
@@ -274,76 +312,83 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     );
   }
 
+  if (!editing && !picked) {
+    // Type first: it decides what everything after means.
+    return (
+      <Sheet open={open} onClose={onClose} title="Add account">
+        <div className="space-y-4 pb-2">
+          {ACCOUNT_KINDS.map(({ group, items }) => (
+            <section key={group}>
+              <h3 className="px-1 pb-1.5 text-footnote font-semibold text-accent">{group}</h3>
+              <div className="divide-y divide-line overflow-hidden rounded-card bg-surface-2/60">
+                {items.map((kind) => (
+                  <button key={kind.subtype} type="button" onClick={() => chooseKind(kind)}
+                    className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition active:bg-line">
+                    <GlyphTile icon={kind.icon} colour={colour} size={36} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body">{kind.label}</span>
+                      <span className="block truncate text-footnote text-ink-3">{kind.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet open={open} onClose={onClose} title={editing ? 'Edit account' : 'New account'}>
       <div className="space-y-5 pb-2">
-        {/* Type first: it decides what everything below means. */}
-        <fieldset disabled={editing}>
-          <legend className="mb-2 text-footnote font-semibold text-ink-2">
-            {editing ? `Type · ${TYPE_LABEL[type]}` : 'What kind of account?'}
-          </legend>
-          {editing ? (
+        {editing ? (
+          <div>
+            <p className="mb-1 text-footnote font-semibold text-ink-2">Type · {kindLabelOf(type, subtype)}</p>
             <p className="text-footnote text-ink-3">
               A type cannot change once the account exists — archive it and make a new one.
             </p>
-          ) : (
-            <div className="grid grid-cols-5 gap-2">
-              {TYPES.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => chooseType(option)}
-                  aria-pressed={type === option}
-                  className={[
-                    'flex flex-col items-center gap-1.5 rounded-xl py-2.5 transition',
-                    type === option ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-ink-2 active:bg-line',
-                  ].join(' ')}
-                >
-                  <GlyphTile icon={TYPE_ICON[option]} colour={type === option ? colour : '#8E8E93'} size={32} />
-                  <span className="text-caption leading-tight">{TYPE_LABEL[option]}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {!editing && <p className="mt-2 text-footnote text-ink-3">{TYPE_HINT[type]}</p>}
-        </fieldset>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
+            <GlyphTile icon={icon} colour={colour} size={36} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-body font-medium">{kindLabel?.label ?? kindLabelOf(type, subtype)}</span>
+              <span className="block truncate text-footnote text-ink-3">{kindLabel?.hint ?? TYPE_HINT[type]}</span>
+            </span>
+            <button type="button" onClick={() => setPicked(false)}
+              className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent active:bg-line">
+              Change
+            </button>
+          </div>
+        )}
 
         <TextField
           label="Name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="BPI Debit"
+          placeholder={editing ? undefined : example}
           maxLength={60}
           autoComplete="off"
         />
 
         {editing && type !== 'investment' ? (
           <TextField
-            label={type === 'credit' ? 'Amount owed' : 'Current balance'}
+            label={balanceWords(type).label}
             value={current}
             onChange={(e) => setCurrent(clean(e.target.value))}
             inputMode="decimal"
             placeholder="0.00"
-            hint={
-              type === 'credit'
-                ? 'What the card owes right now. Changing it asks how to record the difference.'
-                : 'What is really in it right now. Changing it asks how to record the difference.'
-            }
+            hint={balanceWords(type).hint}
           />
         ) : (
           <TextField
-            label={type === 'investment' ? 'Starting value' : 'Opening balance'}
+            label={openingWords(type).label}
             value={opening}
-            onChange={(e) => setOpening(clean(e.target.value))}
+            onChange={(e) => setOpening(type === 'borrowed' ? clean(e.target.value).replace('-', '') : clean(e.target.value))}
             inputMode="decimal"
             placeholder="0.00"
-            hint={
-              type === 'investment'
-                ? 'What it was worth when you started tracking it.'
-                : type === 'credit'
-                  ? 'What you already owe on it, as a minus — −8,420.00.'
-                  : 'What was in it before you started tracking.'
-            }
+            hint={openingWords(type).hint}
           />
         )}
 
@@ -445,8 +490,19 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
               ? 'What you have already spent on the card is subtracted.'
               : type === 'investment'
                 ? 'Off by default — money you cannot spend today.'
-                : 'Include this balance in the headline number.'
+                : type === 'lent'
+                  ? 'Off by default — it is not in your pockets until it comes back.'
+                  : type === 'borrowed'
+                    ? 'Off by default — like an installment, it is money you owe later.'
+                    : 'Include this balance in the headline number.'
           }
+        />
+
+        <Toggle
+          checked={inNetWorth}
+          onChange={setInNetWorth}
+          label="Count in net worth"
+          hint="Include this account in the grand total. Turn it off for money you don’t want to count on."
         />
 
         {error && <p className="text-footnote text-danger">{error}</p>}

@@ -9,7 +9,20 @@ import type { Statement } from './accounts';
 import { api } from './api';
 import { localToday, type Transaction } from './transactions';
 
-export type Suggestion = 'charge' | 'posted_next' | 'forgot' | 'installment_interest';
+export type Suggestion = 'charge' | 'posted_next' | 'forgot' | 'installment_interest' | 'installment_change';
+
+/** REC-29 - an installment with a payment on this statement. */
+export interface StatementPlan {
+  rule_id: number;
+  name: string;
+  per_payment: string;
+  terms: 'provisional' | 'confirmed';
+  /** Every scheduled payment posted so far - confirming the interest corrects them all. */
+  payments_posted: number;
+  payments_on_statement: number;
+  /** What the app has for this plan's payments on this statement. */
+  on_statement: string;
+}
 
 export interface StatementCheck {
   statement: Statement;
@@ -19,8 +32,8 @@ export interface StatementCheck {
   late_candidates: Transaction[];
   /** Likeliest first. Leaving it is always allowed. */
   suggestions: Suggestion[];
-  /** REC-29 - installments on this statement whose interest is not known yet. */
-  installments: { rule_id: number; name: string; per_payment: string }[];
+  /** REC-29 - installments with a payment on this statement, either terms. */
+  installments: StatementPlan[];
 }
 
 const path = (accountId: number, closes: string, action = '') =>
@@ -39,7 +52,14 @@ export const recordCharge = (
   charge: { amount: string; category_id: number; note?: string | null },
 ) => api<StatementCheck>(path(accountId, closes, '/resolve'), { method: 'POST', body: { choice: 'charge', ...charge } });
 
-/** REC-29. The bank added interest to this plan's payment - confirms its terms. */
+/** REC-29. A confirmed plan's payment was billed at a different amount - this payment and later ones change. */
+export const changeInstallmentPayment = (accountId: number, closes: string, ruleId: number, amount: string) =>
+  api<StatementCheck>(path(accountId, closes, '/resolve'), {
+    method: 'POST',
+    body: { choice: 'installment_change', rule_id: ruleId, amount },
+  });
+
+/** REC-29. The bank added interest to this plan's payments - confirms its terms and corrects the posted ones. */
 export const confirmInstallmentInterest = (accountId: number, closes: string, ruleId: number, amount: string) =>
   api<StatementCheck>(path(accountId, closes, '/resolve'), {
     method: 'POST',

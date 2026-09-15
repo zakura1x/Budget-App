@@ -121,6 +121,58 @@ class ImportResultOut(BaseModel):
     skipped_duplicates: int
 
 
+class BudgetAppImportIn(BaseModel):
+    """DAT-21. The Budget app's .xlsx as base64 in the body - never in a URL, never saved - and today's balances."""
+
+    file: str = Field(min_length=1, max_length=14_000_000)
+    # An _Account key -> today's balance as the user reads it: an amount OWED on a card or a loan.
+    balances: Dict[str, Money] = {}
+
+
+class BudgetAppAccountOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    name: str
+    type: str
+    subtype: Optional[str] = None
+    exists: bool
+    history: Money
+    suggested: Optional[Money] = None
+    owed: bool
+    archived: bool
+    transactions: int
+
+
+class BudgetAppPreviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    exported_at: Optional[str] = None
+    app_version: Optional[str] = None
+    first_date: Optional[date] = None
+    last_date: Optional[date] = None
+    accounts: List[BudgetAppAccountOut]
+    categories_new: int
+    categories_existing: int
+    transactions: int
+    ready: int
+    duplicates: int
+    adjustments_folded: int
+    loan_records_folded: int
+    unassigned: int
+    skipped: int
+
+
+class BudgetAppResultOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    accounts_created: int
+    categories_created: int
+    transactions: int
+    skipped_duplicates: int
+    archived: int
+
+
 class AttachmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

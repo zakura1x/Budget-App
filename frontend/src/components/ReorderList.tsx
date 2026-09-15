@@ -32,7 +32,16 @@ export function ReorderList<T>({ items, idOf, renderItem, onReorder, label }: Re
   const [order, setOrder] = useState<T[]>(items);
   const [liftedId, setLifted] = useState<number | null>(null);
   const rows = useRef(new Map<number, HTMLLIElement>());
-  const gesture = useRef<{ id: number; startY: number; timer: number | null; lifted: boolean } | null>(null);
+  const gesture = useRef<{
+    id: number;
+    startY: number;
+    timer: number | null;
+    lifted: boolean;
+    pointerId: number;
+    element: Element;
+  } | null>(null);
+  /** A drag just ended: the click the browser sends after the release must not open the row. */
+  const dragged = useRef(false);
 
   // Someone else's edit wins over a drag that is not in progress.
   useEffect(() => {
@@ -74,8 +83,19 @@ export function ReorderList<T>({ items, idOf, renderItem, onReorder, label }: Re
     return order.length - 1;
   };
 
+  const capture = (active: NonNullable<typeof gesture.current>) => {
+    try {
+      active.element.setPointerCapture?.(active.pointerId);
+    } catch {
+      /* the pointer is already gone - nothing to follow */
+    }
+  };
+
   const lift = (id: number) => {
-    gesture.current = { ...(gesture.current as NonNullable<typeof gesture.current>), lifted: true };
+    const active = gesture.current;
+    if (!active) return;
+    gesture.current = { ...active, lifted: true };
+    capture(active);
     setLifted(id);
   };
 
@@ -83,10 +103,15 @@ export function ReorderList<T>({ items, idOf, renderItem, onReorder, label }: Re
     // A nested list sits inside a row of this one; without this the parent row
     // would lift the moment a child row is touched.
     e.stopPropagation();
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    dragged.current = false;
     const timer = immediate ? null : window.setTimeout(() => lift(id), LIFT_MS);
-    gesture.current = { id, startY: e.clientY, timer, lifted: immediate };
-    if (immediate) setLifted(id);
+    gesture.current = { id, startY: e.clientY, timer, lifted: immediate, pointerId: e.pointerId, element: e.currentTarget as Element };
+    // Capture only once the row is really lifted. Capturing on every press made a MOUSE click land on the
+    // row itself instead of the button inside it, so on a PC a category could be dragged but never opened.
+    if (immediate) {
+      capture(gesture.current);
+      setLifted(id);
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -119,7 +144,10 @@ export function ReorderList<T>({ items, idOf, renderItem, onReorder, label }: Re
     if (active?.timer) window.clearTimeout(active.timer);
     gesture.current = null;
     setLifted(null);
-    if (active?.lifted) onReorder(order.map(idOf));
+    if (active?.lifted) {
+      dragged.current = true;
+      onReorder(order.map(idOf));
+    }
   };
 
   return (
@@ -157,6 +185,12 @@ export function ReorderList<T>({ items, idOf, renderItem, onReorder, label }: Re
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={cancel}
+            onClickCapture={(e) => {
+              if (!dragged.current) return;
+              dragged.current = false;
+              e.stopPropagation();
+              e.preventDefault();
+            }}
             style={{ touchAction: 'pan-y' }}
             className={[
               'bg-surface transition-shadow',

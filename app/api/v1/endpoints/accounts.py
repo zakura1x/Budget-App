@@ -28,6 +28,7 @@ from app.api.v1.schemas.accounts import (
     AccountListOut,
     AccountOut,
     ArchiveIn,
+    BillsIn,
     ValuationIn,
 )
 from app.core.deps import UnlockedContext, get_unlocked_context
@@ -66,6 +67,7 @@ def list_accounts(
     return AccountListOut(
         accounts=[AccountOut.model_validate(view) for view in views],
         cash_on_hand=account_service.cash_on_hand(views),
+        net_worth=account_service.net_worth(views),
     )
 
 
@@ -124,6 +126,19 @@ def set_archived(
     foreign key can stop the deletion from stranding them.
     """
     account_service.set_archived(db, ctx.cipher, account_id, body.archived)
+    return _current(db, ctx, account_id, today)
+
+
+@router.put("/{account_id}/bills", response_model=AccountOut)
+def set_bills(
+    account_id: int,
+    body: BillsIn,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> AccountOut:
+    """ACC-35 - replace a card's bills with the unpaid ones its app shows today."""
+    account_service.set_bills(db, ctx.cipher, account_id, [bill.model_dump() for bill in body.bills], today=today)
     return _current(db, ctx, account_id, today)
 
 

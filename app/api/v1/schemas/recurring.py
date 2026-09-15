@@ -1,6 +1,7 @@
 """Request and response shapes for /recurring, /subscriptions and /projection (REC-01..30, SUB-00..08)."""
 
 from datetime import date
+from decimal import Decimal
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,6 +10,8 @@ from app.api.v1.schemas.budgets import Ratio
 from app.api.v1.schemas.common import Money
 
 Kind = Literal["standard", "subscription", "installment"]
+# A projected item can also be a typed card bill entering cash on hand (ACC-35): its typed part, or its plan part.
+ProjectedKind = Literal["standard", "subscription", "installment", "bill", "bill_plans"]
 RuleType = Literal["expense", "income", "transfer"]
 Frequency = Literal["daily", "weekly", "monthly", "yearly", "semi_monthly"]
 
@@ -174,7 +177,7 @@ class ProjectedItemOut(BaseModel):
     on: date
     rule_id: int
     name: str
-    kind: Kind
+    kind: ProjectedKind
     type: RuleType
     account_id: int
     counter_account_id: Optional[int] = None
@@ -201,6 +204,7 @@ class ProjectedMonthOut(BaseModel):
     low_on: date
     overcommitted: bool
     items: List[ProjectedItemOut]
+    bills: Money = Decimal("0.00")  # ACC-35 - typed card bills taken this month, on top of spending
 
 
 class ProjectionOut(BaseModel):

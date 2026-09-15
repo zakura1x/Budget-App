@@ -112,6 +112,24 @@ Run --verify occasionally. A backup you have never restored is not a
 backup, and here the cost of finding out is everything.
 
 
+IMPORT FROM THE "BUDGET" PHONE APP  (DAT-21)
+────────────────────────────────────────────
+1. In the Budget app, export a backup (.xlsx). Keep it in budget_app_backup\ -
+   the folder and every .xlsx are gitignored, because the file is your real
+   finances in plain text.
+2. Sign in to THIS app, then More -> Backup & data -> Import from Budget App,
+   and choose the file. The preview writes nothing: accounts, categories,
+   transactions, and what is left out (the old app's balance adjustments).
+3. Type each account's balance TODAY as the Budget app shows it - a card or a
+   loan as the amount owed. People you lent to or borrowed from are prefilled.
+   The history comes in as it is; each opening balance is set so today matches.
+4. Import. Afterwards: set each card's statement closing and due day (Edit on
+   the card) - the file does not carry usable ones - and type each card's
+   bills from its own app if you pay it by monthly bills.
+Importing a later export again adds only what is new (matched by name,
+duplicates skipped). The file is read in memory and never stored on the server.
+
+
 USEFUL SCRIPTS
 ──────────────
 python scripts/decrypt_query.py --user-id 1 --table transactions

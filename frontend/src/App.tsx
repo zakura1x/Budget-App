@@ -15,6 +15,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { BottomTabBar } from './components/BottomTabBar';
 import { Offline } from './components/Offline';
+import { RuleSheetHost } from './components/RuleSheetHost';
 import { useOnline } from './hooks/useOnline';
 import { usePreferencesStore } from './stores/preferencesStore';
 import { Splash } from './components/Splash';
@@ -22,6 +23,7 @@ import { TransactionSheet } from './components/TransactionSheet';
 import { useAutoLock } from './hooks/useAutoLock';
 import { LOCKED_EVENT, SIGNED_OUT_EVENT } from './lib/api';
 import { BASE_URL } from './lib/config';
+import { AccountDetail } from './screens/AccountDetail';
 import { Accounts } from './screens/Accounts';
 import { Budget } from './screens/Budget';
 import { Calendar } from './screens/Calendar';
@@ -79,6 +81,7 @@ function AppTabs() {
             <Route path="/stats" element={<Stats />} />
             <Route path="/more" element={<More />} />
             <Route path="/accounts" element={<Accounts />} />
+            <Route path="/accounts/:id" element={<AccountDetail />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/tags" element={<Tags />} />
             <Route path="/recurring" element={<Recurring />} />
@@ -97,6 +100,7 @@ function AppTabs() {
       </div>
       <BottomTabBar onAdd={() => openAddSheet()} />
       <TransactionSheet />
+      <RuleSheetHost />
     </>
   );
 }

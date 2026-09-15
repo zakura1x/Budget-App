@@ -13,17 +13,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.schemas.common import Colour, DayOfMonth, IconName, Money
 
-AccountType = Literal["cash", "debit", "credit", "savings", "investment"]
+# lent / borrowed (ACC-31) and member (ACC-32) since 2026-09-15.
+AccountType = Literal["cash", "debit", "credit", "savings", "investment", "lent", "borrowed", "member"]
 
 
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     type: AccountType
+    subtype: Optional[IconName] = None  # ACC-33 - "e-wallet", "loan", "crypto"; a label only
     opening_balance: Money = Decimal("0.00")
     colour: Optional[Colour] = None
     icon: Optional[IconName] = None
     archived: bool = False
     counts_in_cash_on_hand: Optional[bool] = None  # ACC-18 - defaults by type
+    counts_in_net_worth: Optional[bool] = None  # ACC-36 - on unless turned off
     sort_order: Optional[int] = Field(default=None, ge=0, le=9999)
     note: Optional[str] = Field(default=None, max_length=280)
 
@@ -79,8 +82,36 @@ class StatementOut(BaseModel):
     posting_lag_days: int
 
 
+class BillIn(BaseModel):
+    due: date
+    amount: Money
+
+
+class BillsIn(BaseModel):
+    """ACC-35 - the card app's unpaid bills today. An empty list removes them."""
+
+    bills: List[BillIn] = Field(default=[], max_length=24)
+
+
+class BillOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    due: date
+    amount: Money
+    paid: Money
+    left: Money
+    overdue: bool
+    typed: Money = Decimal("0.00")
+    from_plans: Money = Decimal("0.00")
+    typed_left: Money = Decimal("0.00")
+
+
 class CreditOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    bills: List[BillOut] = []
+    bills_left: Money = Decimal("0.00")
+    due_now: Optional[Money] = None
 
     limit: Optional[Money]
     statement_closing_day: int
@@ -111,6 +142,7 @@ class AccountOut(BaseModel):
     id: int
     name: str
     type: AccountType
+    subtype: Optional[str] = None
     opening_balance: Money
     balance: Money
     colour: str
@@ -122,6 +154,18 @@ class AccountOut(BaseModel):
     credit: Optional[CreditOut] = None
     valuations: List[ValuationOut] = []
     current_value: Optional[Money] = None
+    cash_amount: Optional[Money] = None  # what it adds to cash on hand when counted (ACC-35)
+    counts_in_net_worth: bool = True
+
+
+class NetWorthOut(BaseModel):
+    """ACC-36 - beside cash on hand, never instead of it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    total: Money
+    assets: Money
+    liabilities: Money
 
 
 class CashOnHandOut(BaseModel):
@@ -137,6 +181,7 @@ class CashOnHandOut(BaseModel):
 class AccountListOut(BaseModel):
     accounts: List[AccountOut]
     cash_on_hand: CashOnHandOut
+    net_worth: Optional[NetWorthOut] = None
 
 
 class DeletedOut(BaseModel):

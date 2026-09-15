@@ -237,6 +237,22 @@ screens. They are not permitted to change the foundations:
 - Any visual change means `npm run build` and committing
   `app/web/static/dist/` (invariant 9).
 
+The look follows `sample_ui/` (adopted 2026-09-15): lavender ground, white
+rounded tiles, indigo `accent`, a floating pill tab bar. Tabs are Home ·
+Accounts · [+] · Calendar · More; Stats is reached through `CalendarSwitch`
+and keeps its own `/stats` route. Every account is a small tile; a tile
+opens `/accounts/:id` (`AccountDetail`) - the account's trail of money in and
+out, read from `GET /transactions?account=` and signed per account by
+`TransactionRow.moneyIn`. Account types are cash, debit, credit, savings,
+investment, lent, borrowed and member (ACC-31/32); `subtype` (ACC-33) is a
+label from the Add Account list (`ACCOUNT_KINDS` in `lib/accounts.ts`) and
+must never drive a rule. `isOwed()` - credit and borrowed - is the one
+frontend test for "show this balance as owed". `highlight` (yellow) marks where you are -
+today, a chosen period - and never an amount, so it cannot read as `warn`.
+The accent change also lives outside theme.css in three places: the
+theme-color metas (both index.html files), the manifest in `app/web/router.py`,
+and `scripts/generate_icons.py` (icons are committed PNGs).
+
 ## Tests
 
 `tests/conftest.py` sets throwaway keys into the environment **before anything
@@ -294,6 +310,12 @@ counts purchases, not payments. Two rules to keep:
   with its `BALANCE_ADJUST` audit entry in the same commit. Never let
   `POST /transactions` create one, and never make one editable. It moves
   balances only: no budget, allowance, day total, stat or card limit counts it.
+- Bills typed from a card's own app (ACC-35, payload `bills`/`bills_from`) are
+  written ONLY by `account_service.set_bills`. With bills, a card adds
+  `-due_now` to cash on hand (`AccountView.cash_amount`, which
+  `cash_on_hand()` sums) instead of its balance; what is paid is derived FIFO
+  from payments since the list was saved and never stored. Net worth
+  (`net_worth()`, ACC-36) always uses full balances plus unbilled installments.
 - `card_posted_on` moves a purchase between STATEMENTS only. The budget reads
   `txn_date` and nothing else. `statement_service` writes through
   `transaction_service`, and nothing imports it.
@@ -313,7 +335,11 @@ turns a schedule into transactions - through `transaction_service.post_recurring
 which never commits. `occurrences()` is pure and shared by expansion (≤ today)
 and `projection_service` (> today); never give projection its own date logic.
 Installment remainders, payments made and payoff dates are derived from rows
-carrying `recurring_id`, never stored. Import direction: `recurring_service`
+carrying `recurring_id`, never stored; an installment's total is the sum of
+its schedule, which carries later interest changes (`interest_changes`,
+REC-29). When a statement confirms or changes a plan's interest, the posted
+payments are corrected through `transaction_service.reprice_recurring` - the
+only code that edits a posted payment's amount, and it never commits. Import direction: `recurring_service`
 imports `transaction_service`; `account_service` and `budget_service` reach it
 (and `subscription_service`) only through lazy imports inside functions;
 `statement_service` and `projection_service` are imported by nothing.
@@ -327,6 +353,10 @@ covers every encrypted table). The master key may open only the signed-in
 account's own backup; anything else goes through `scripts/restore.py`. EncryptedRepository marks
 `session.info[CHANGED_USERS]` on every write, and the scheduler's after-commit
 hook turns that into a debounced backup - disabled when ENVIRONMENT=test.
+`budget_app_import_service` (DAT-21) imports the Budget phone app's .xlsx
+through the same `import_entries` path as the CSV import; it never writes a
+balance adjustment - today's balances are typed and land in the opening
+balance - and `budget_app_backup/` holds real finances, so it stays gitignored.
 Receipts are files at `uploads/<user_id>/<id>.enc`, sealed by
 AttachmentRepository under AAD table `attachment_files`. Uploads are raw
 request bodies (no multipart dependency); never put a secret or filename in a

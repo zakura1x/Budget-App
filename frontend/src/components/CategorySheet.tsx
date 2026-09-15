@@ -151,10 +151,11 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
           <IconPicker value={icon} onChange={setIcon} colour={colour} />
         </div>
 
-        {error && <p className="text-footnote text-danger">{error}</p>}
-
         {pendingUsage === null ? (
-          <>
+          // Pinned to the bottom of the sheet: the icon grid is long, and below it Save and Delete
+          // were out of sight - on a PC window the editor looked as if it had no buttons.
+          <div className="sticky -bottom-4 -mx-5 space-y-1 border-t border-line bg-surface px-5 pb-6 pt-3">
+            {error && <p className="pb-1 text-footnote text-danger">{error}</p>}
             <Button block size="lg" onClick={() => void save()} disabled={busy || !name.trim()}>
               {editing ? 'Save changes' : 'Add category'}
             </Button>
@@ -163,9 +164,10 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
                 Delete category
               </Button>
             )}
-          </>
+          </div>
         ) : (
           <div className="space-y-3 rounded-2xl bg-surface-2 p-4">
+            {error && <p className="text-footnote text-danger">{error}</p>}
             <p className="text-body">
               {pendingUsage} transaction{pendingUsage === 1 ? '' : 's'} use this category. Where should they go?
             </p>

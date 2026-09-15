@@ -122,7 +122,8 @@ export interface ProjectedItem {
   on: string;
   rule_id: number;
   name: string;
-  kind: RuleKind;
+  /** 'bill' / 'bill_plans': a typed card bill entering cash on hand (ACC-35), rule_id 0. */
+  kind: RuleKind | 'bill' | 'bill_plans';
   type: RuleType;
   account_id: number;
   counter_account_id: number | null;
@@ -148,6 +149,8 @@ export interface ProjectedMonth {
   low_on: string;
   overcommitted: boolean;
   items: ProjectedItem[];
+  /** ACC-35 - typed card bills taken this month, on top of spending. */
+  bills: string;
 }
 
 export interface Projection {

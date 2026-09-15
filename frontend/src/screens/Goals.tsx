@@ -91,7 +91,7 @@ function GoalSheet({ goal, open, goals, onClose, onSaved }: { goal: Goal | null;
             {choices.map((a) => <Chip key={a.id} selected={accountId === a.id} onClick={() => setAccountId(a.id)}>{a.name}</Chip>)}
           </div>
           {choices.length === 0 && (
-            <p className="text-footnote text-ink-2">Add a savings, debit or cash account without a goal first, under More → Accounts.</p>
+            <p className="text-footnote text-ink-2">Add a savings, debit or cash account without a goal first, under Accounts.</p>
           )}
           <p className="mt-2 text-footnote text-ink-3">The goal’s progress is this account’s balance — one goal per account.</p>
         </div>

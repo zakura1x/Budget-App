@@ -55,17 +55,27 @@ from app.services import audit_service
 
 # ---------------------------------------------------------------- the rules
 
-TYPES: Tuple[str, ...] = ("cash", "debit", "credit", "savings", "investment")
+TYPES: Tuple[str, ...] = ("cash", "debit", "credit", "savings", "investment", "lent", "borrowed", "member")
 
 # ACC-18. Credit is ON: what you have already spent on the card is money you
 # no longer have, so it is subtracted. Investment is OFF: a fund you cannot
 # spend today is not "in your pockets" (ACC-17).
+#
+# ACC-31. LENT is OFF - money someone owes you is not in your pockets until
+# it comes back. BORROWED (and a loan) is OFF too: it is money you will owe
+# later, which ACC-17 leaves out just as it leaves out installment remainders;
+# the borrowed cash itself already sits in the account it landed in.
+# ACC-32. A MEMBER card (a transport, school or store card) holds prepaid
+# money you will spend, so it is ON.
 COUNTS_IN_CASH_ON_HAND_DEFAULT: Mapping[str, bool] = {
     "cash": True,
     "debit": True,
     "savings": True,
     "credit": True,
     "investment": False,
+    "lent": False,
+    "borrowed": False,
+    "member": True,
 }
 
 DEFAULT_ICON: Mapping[str, str] = {
@@ -74,7 +84,15 @@ DEFAULT_ICON: Mapping[str, str] = {
     "credit": "credit-card",
     "savings": "piggy-bank",
     "investment": "chart",
+    "lent": "hand-coin",
+    "borrowed": "hand-owe",
+    "member": "badge",
 }
+
+# ACC-33. What the account is within its type - "e-wallet", "loan", "crypto",
+# "transport-card" - chosen in the add list and shown as its label. A label
+# only: nothing computes on it, so any short slug is accepted.
+SUBTYPE_MAX = 32
 
 NAME_MAX = 60
 NOTE_MAX = 280
@@ -146,6 +164,29 @@ class Statement:
 
 
 @dataclass(frozen=True)
+class Bill:
+    """
+    ACC-35. One bill as the card's own app lists it - typed, because a BNPL
+    card's bills come from purchases nobody wants to itemise. What is paid of
+    it is derived: payments into the card since the list was saved, oldest bill
+    first. Never stored, so a payment settles a bill by itself.
+    """
+
+    due: date
+    amount: Decimal  # typed + from_plans
+    paid: Decimal
+    left: Decimal
+    overdue: bool
+    typed: Decimal = ZERO  # what the card's app lists for this due date
+    from_plans: Decimal = ZERO  # installments and repeating charges on the card that land on this bill
+    typed_left: Decimal = ZERO  # unpaid of the typed part - payments settle the typed part first
+
+
+# One recurring charge on a card: the day it posts (or will), its amount, and whether its schedule ends.
+Charge = Tuple[date, Decimal, bool]
+
+
+@dataclass(frozen=True)
 class CreditView:
     """Everything about a card that is derived rather than stored (ACC-09/14/19..21)."""
 
@@ -170,6 +211,9 @@ class CreditView:
     period_days: int
     period_days_elapsed: int  # including today
     posting_lag_days: int  # ACC-26, set per card
+    bills: Tuple[Bill, ...] = ()  # ACC-35, typed from the card's app
+    bills_left: Decimal = Decimal("0.00")
+    due_now: Optional[Decimal] = None  # overdue bills + the next one; None without bills
 
 
 @dataclass(frozen=True)
@@ -190,6 +234,11 @@ class AccountView:
     credit: Optional[CreditView] = None
     valuations: Tuple[Valuation, ...] = ()
     current_value: Optional[Decimal] = None  # investment only (ACC-08)
+    subtype: Optional[str] = None  # ACC-33 - a label, never a rule
+    # What this account adds to cash on hand when it counts: its balance - or, for a card with bills
+    # (ACC-35), minus only what is due now.
+    cash_amount: Optional[Decimal] = None
+    counts_in_net_worth: bool = True  # ACC-36 - its own switch; on unless turned off
 
 
 @dataclass(frozen=True)
@@ -199,6 +248,21 @@ class CashOnHand:
     total: Decimal
     account_ids: Tuple[int, ...]
     excluded_ids: Tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class NetWorth:
+    """
+    ACC-36. The grand total, beside cash on hand rather than instead of it:
+    every active account at its full value - savings, investments, money lent
+    - less everything owed in full: cards, loans, and installments not yet
+    billed. Cash on hand says what you can spend this month; this says what you
+    would have if every debt were settled today.
+    """
+
+    total: Decimal
+    assets: Decimal
+    liabilities: Decimal
 
 
 # ------------------------------------------------------------------ reading
@@ -215,7 +279,9 @@ def list_accounts(
     records = AccountRepository(db, cipher).list()
     by_account = _group_postings(postings)
     unpaid = _unpaid_installments(db, cipher)
-    views = [_view(record.id, record.data, by_account.get(record.id, ()), today, unpaid) for record in records]
+    # ACC-35. The recurring charges are read only when some card has bills to add them to.
+    charges = _plan_charges(db, cipher, today) if any(r.data.get("bills") for r in records) else {}
+    views = [_view(record.id, record.data, by_account.get(record.id, ()), today, unpaid, charges) for record in records]
     if not include_archived:
         views = [v for v in views if not v.archived]
     return sorted(views, key=lambda v: (v.archived, v.sort_order, v.name.lower(), v.id))
@@ -233,7 +299,7 @@ def get_account(
     if record is None:
         raise NotFoundException("Account not found")
     return _view(record.id, record.data, _group_postings(postings).get(account_id, ()), today,
-                 _unpaid_installments(db, cipher))
+                 _unpaid_installments(db, cipher), _plan_charges(db, cipher, today) if record.data.get("bills") else {})
 
 
 def cash_on_hand(views: Iterable[AccountView]) -> CashOnHand:
@@ -250,10 +316,31 @@ def cash_on_hand(views: Iterable[AccountView]) -> CashOnHand:
     for view in views:
         (counted if view.counts_in_cash_on_hand and not view.archived else excluded).append(view)
     return CashOnHand(
-        total=total(v.balance for v in counted),
+        # ACC-35: a card with bills subtracts what is due now, not everything it will ever bill.
+        total=total(v.cash_amount if v.cash_amount is not None else v.balance for v in counted),
         account_ids=tuple(v.id for v in counted),
         excluded_ids=tuple(v.id for v in excluded),
     )
+
+
+def net_worth(views: Iterable[AccountView]) -> NetWorth:
+    """
+    ACC-36. Every active account at full value, whatever its cash-on-hand
+    switch says - except one switched out of net worth. Archived ones are gone.
+    """
+    assets = ZERO
+    liabilities = ZERO
+    for view in views:
+        if view.archived or not view.counts_in_net_worth:
+            continue
+        if view.balance > ZERO:
+            assets += view.balance
+        else:
+            liabilities += -view.balance
+        if view.credit is not None:
+            liabilities += view.credit.unpaid_installments
+    return NetWorth(total=(assets - liabilities).quantize(ZERO), assets=assets.quantize(ZERO),
+                    liabilities=liabilities.quantize(ZERO))
 
 
 def statement(
@@ -358,6 +445,55 @@ def update_account(
         )
     db.commit()
     return _view(account_id, updated.data, (), today)
+
+
+MAX_BILLS = 24
+
+
+def set_bills(
+    db: Session, cipher: UserCipher, account_id: int, bills: Sequence[Mapping[str, Any]], *, today: Optional[date] = None
+) -> None:
+    """
+    ACC-35. Replace a card's bills with the unpaid ones its own app lists today.
+    The list is dated: only payments into the card from that day on are applied
+    to it, because a bill already paid is not on the list any more. An empty
+    list removes the bills, and cash on hand goes back to the card's balance.
+    """
+    repo = AccountRepository(db, cipher)
+    record = repo.get(account_id)
+    if record is None:
+        raise NotFoundException("Account not found")
+    if record.data.get("type") != "credit":
+        raise BusinessRuleException("Only a credit card has bills")
+    if len(bills) > MAX_BILLS:
+        raise ValidationException(f"At most {MAX_BILLS} bills")
+
+    cleaned: Dict[date, Decimal] = {}
+    for item in bills:
+        try:
+            due = date.fromisoformat(str(item.get("due")))
+        except ValueError:
+            raise ValidationException("Each bill needs a due date") from None
+        amount = _amount(item.get("amount"), "amount")
+        if amount <= ZERO:
+            raise ValidationException("A bill is more than zero")
+        if due in cleaned:
+            raise ValidationException("Two bills are due on the same day - add them together")
+        cleaned[due] = amount
+
+    data = dict(record.data)
+    if cleaned:
+        data["bills"] = [{"due": due.isoformat(), "amount": str(amount)} for due, amount in sorted(cleaned.items())]
+        data["bills_from"] = (today or date.today()).isoformat()
+    else:
+        data.pop("bills", None)
+        data.pop("bills_from", None)
+    repo.update(account_id, data)
+    audit_service.record(
+        db, audit_service.UPDATE, user_id=cipher.user_id, entity="accounts", entity_id=account_id, cipher=cipher,
+        detail={"name": data.get("name"), "bills": len(cleaned)},
+    )
+    db.commit()
 
 
 def set_archived(db: Session, cipher: UserCipher, account_id: int, archived: bool) -> AccountView:
@@ -496,6 +632,7 @@ def _view(
     postings: Sequence[Posting],
     today: Optional[date],
     unpaid: Optional[Mapping[int, Decimal]] = None,
+    charges: Optional[Mapping[int, Sequence[Charge]]] = None,
 ) -> AccountView:
     kind = str(data.get("type", "cash"))
     opening = money(data.get("opening_balance", ZERO))
@@ -524,13 +661,17 @@ def _view(
         ),
         sort_order=int(data.get("sort_order") or 0),
         note=data.get("note"),
+        counts_in_net_worth=bool(data.get("counts_in_net_worth", True)),
         valuations=valuations,
         current_value=current_value,
+        subtype=data.get("subtype") or None,
     )
     if kind == "credit":
         view = replace(view, credit=_credit_view(account_id, data, opening, view.balance, postings, today,
-                                                 (unpaid or {}).get(account_id, ZERO)))
-    return view
+                                                 (unpaid or {}).get(account_id, ZERO),
+                                                 (charges or {}).get(account_id, ())))
+    due_now = view.credit.due_now if view.credit is not None else None
+    return replace(view, cash_amount=-due_now if due_now is not None else view.balance)
 
 
 def _credit_view(
@@ -541,6 +682,7 @@ def _credit_view(
     postings: Sequence[Posting],
     today: Optional[date],
     unpaid: Decimal = ZERO,
+    charges: Sequence[Charge] = (),
 ) -> CreditView:
     when = today or date.today()
     closing_day, due_day = _card_days(data)
@@ -578,6 +720,18 @@ def _credit_view(
     own = money(data["spending_limit"]) if data.get("spending_limit") is not None else None
     spent = max(purchases - refunds, ZERO).quantize(ZERO)
 
+    # ACC-35. Typed bills, when the card has them, say what is due and when - the reminder follows them.
+    bills = _bills(data, postings, when, charges)
+    due_now: Optional[Decimal] = None
+    if bills:
+        unpaid_bills = [b for b in bills if b.left > ZERO]
+        upcoming = next((b for b in unpaid_bills if not b.overdue), None)
+        due_now = total([b.left for b in unpaid_bills if b.overdue] + ([upcoming.left] if upcoming else [])).quantize(ZERO)
+        nearest = next(iter(unpaid_bills), None)
+        if nearest is not None:
+            payment_due = nearest.due if nearest.overdue else (upcoming.due if upcoming else nearest.due)
+        amount_due = due_now
+
     due_in_days = (payment_due - when).days
     return CreditView(
         limit=limit,
@@ -601,7 +755,86 @@ def _credit_view(
         period_days=(period.closes - period.start).days + 1,
         period_days_elapsed=(when - period.start).days + 1,
         posting_lag_days=_posting_lag(data),
+        bills=bills,
+        bills_left=total(b.left for b in bills).quantize(ZERO),
+        due_now=due_now,
     )
+
+
+def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, charges: Sequence[Charge] = ()) -> Tuple[Bill, ...]:
+    """
+    ACC-35. The typed bills plus every recurring charge on the card, each on
+    the bill of the statement it posts in (its period's due date) - so adding
+    an installment on the card moves the bills, due now and cash on hand.
+
+    A charge is left out when its bill fell due before the list was saved (the
+    card's app already had it), and a charge whose schedule never ends - a
+    subscription - is counted only as far as the last typed bill, so the list
+    does not grow a year of Netflix. Then the payments into the card since the
+    list was saved settle the bills oldest first, the typed part of each first.
+    """
+    typed: Dict[date, Decimal] = {}
+    for item in data.get("bills") or []:
+        try:
+            typed[date.fromisoformat(str(item["due"]))] = money(item["amount"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not typed:
+        return ()
+    try:
+        since: Optional[date] = date.fromisoformat(str(data.get("bills_from")))
+    except ValueError:
+        since = None
+
+    closing_day, due_day = _card_days(data)
+    last_typed = max(typed)
+    planned: Dict[date, Decimal] = {}
+    for day, amount, ends in charges:
+        due = statement_period(day, closing_day, due_day).due
+        if (since is not None and due < since) or (not ends and due > last_typed):
+            continue
+        planned[due] = planned.get(due, ZERO) + amount
+
+    pot = total(
+        p.amount for p in postings
+        if p.amount > ZERO and p.kind in (None, "transfer", "income") and (since is None or p.on >= since)
+    )
+    result = []
+    for due in sorted(set(typed) | set(planned)):
+        own = typed.get(due, ZERO)
+        extra = planned.get(due, ZERO)
+        amount = own + extra
+        paid = min(pot, amount)
+        pot -= paid
+        left = amount - paid
+        result.append(Bill(
+            due=due, amount=amount.quantize(ZERO), paid=paid.quantize(ZERO), left=left.quantize(ZERO),
+            overdue=today > due and left > ZERO, typed=own.quantize(ZERO), from_plans=extra.quantize(ZERO),
+            typed_left=max(own - paid, ZERO).quantize(ZERO),
+        ))
+    return tuple(result)
+
+
+def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dict[int, List[Charge]]:
+    """
+    ACC-35. Every recurring expense per account: those already posted (they
+    carry the rule's id) and those still to come from recurring_service.upcoming()
+    - the one schedule (REC-22), so no date here is worked out twice.
+    Imported here, not at the top: recurring_service imports transaction_service,
+    which imports this module.
+    """
+    from app.services import recurring_service, transaction_service
+
+    when = today or date.today()
+    charges: Dict[int, List[Charge]] = {}
+    for view in transaction_service.views(db, cipher):
+        if view.recurring_id is not None and view.type == "expense":
+            charges.setdefault(view.account_id, []).append((view.card_posted_on or view.txn_date, view.amount, True))
+    start = date.fromordinal(when.toordinal() + 1)
+    for item in recurring_service.upcoming(db, cipher, start, date.fromordinal(when.toordinal() + 366 * 3)):
+        if item.type == "expense" and not item.occurrence.paused:
+            charges.setdefault(item.account_id, []).append((item.on, item.amount, item.kind == "installment"))
+    return charges
 
 
 def _statement(
@@ -775,6 +1008,12 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
                                           "opening_balance"))
     data["colour"] = _colour(payload.get("colour"))
     data["icon"] = _slug(payload.get("icon")) or DEFAULT_ICON.get(kind, "wallet")
+    # ACC-33. An edit that does not mention the subtype keeps it.
+    if "subtype" in payload:
+        subtype = _slug(payload.get("subtype"), what="A subtype")
+        data["subtype"] = subtype or None
+    else:
+        data.setdefault("subtype", None)
     data["archived"] = bool(payload.get("archived", data.get("archived", False)))
     data["counts_in_cash_on_hand"] = bool(
         payload.get(
@@ -782,6 +1021,8 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
             data.get("counts_in_cash_on_hand", COUNTS_IN_CASH_ON_HAND_DEFAULT[kind]),
         )
     )
+    # ACC-36. An edit that does not mention it keeps it; a new account starts in.
+    data["counts_in_net_worth"] = bool(payload.get("counts_in_net_worth", data.get("counts_in_net_worth", True)))
     if payload.get("sort_order") is not None:
         data["sort_order"] = int(payload["sort_order"])
     note = payload.get("note")
@@ -789,7 +1030,7 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
 
     # --- credit terms (ACC-09/14/21), only on a card
     for field in ("statement_closing_day", "payment_due_day", "credit_limit", "spending_limit",
-                  "posting_lag_days", "unpaid_installments", "statement_checks"):
+                  "posting_lag_days", "unpaid_installments", "statement_checks", "bills", "bills_from"):
         data.pop(field, None)
     if kind == "credit":
         data["statement_closing_day"] = _day_of_month(payload.get("statement_closing_day"), "statement_closing_day")
@@ -817,6 +1058,10 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
         checks = (existing or {}).get("statement_checks")
         if checks:
             data["statement_checks"] = list(checks)
+        # ACC-35. Bills are only ever written by set_bills(); an ordinary edit keeps them.
+        for kept in ("bills", "bills_from"):
+            if (existing or {}).get(kept):
+                data[kept] = (existing or {})[kept]
 
     # --- valuation history (ACC-13), only on an investment account, and only
     #     ever appended by add_valuation() - never set from a submitted body.
@@ -872,12 +1117,12 @@ def _colour(value: Any) -> str:
     return text.upper()
 
 
-def _slug(value: Any) -> str:
+def _slug(value: Any, what: str = "An icon") -> str:
     text = str(value or "").strip().lower()
     if not text:
         return ""
-    if len(text) > 32 or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in text):
-        raise ValidationException("An icon is a short name like 'credit-card'")
+    if len(text) > SUBTYPE_MAX or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in text):
+        raise ValidationException(f"{what} is a short name like 'credit-card'")
     return text
 
 

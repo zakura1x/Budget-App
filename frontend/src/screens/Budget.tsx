@@ -10,6 +10,10 @@
  * centavo arithmetic on strings - the same rule as every other amount here.
  * Over-allocating is allowed but said out loud: the budget total is the real
  * limit, and the categories are a plan inside it.
+ *
+ * With a budget, the screen opens on the current period (2026-09-15, after
+ * sample_ui/): a gauge of the budget used, then REMAIN - each category's
+ * spent and remaining - with PLAN, the editor, one switch away.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -17,11 +21,15 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card, SectionTitle } from '../components/ui/Card';
+import { Gauge } from '../components/ui/Gauge';
+import { toneFor } from '../components/ui/Ring';
 import { Segmented } from '../components/ui/Segmented';
 import { TextField } from '../components/ui/TextField';
 import { useLookups } from '../hooks/useLookups';
 import { ApiError } from '../lib/api';
-import { createBudget, getBudget, ratio, updateBudget, type Budget as BudgetShape, type PeriodKind } from '../lib/budgets';
+import {
+  createBudget, getBudget, ratio, updateBudget, type Budget as BudgetShape, type BudgetStatus, type PeriodKind,
+} from '../lib/budgets';
 import { usePreferencesStore } from '../stores/preferencesStore';
 import type { Category } from '../lib/categories';
 import { centavos, formatPHP, fromCentavos, sanitizeAmount, toDecimalString } from '../lib/money';
@@ -53,10 +61,88 @@ function ProgressBar({ used, over, warnAt = 0.8 }: { used: number; over: boolean
   );
 }
 
+type View = 'remain' | 'plan';
+
+/** The period at a glance: a gauge of the budget used, spent and available beneath. */
+function BudgetGauge({ status }: { status: BudgetStatus }) {
+  const a = status.allowance;
+  const used = ratio(a.used_ratio);
+  const over = a.remaining.startsWith('-');
+  const tone = toneFor(used);
+  return (
+    <Card className="pb-4 pt-6">
+      <Gauge progress={used} tone={tone} label={`${Math.round(Math.min(used, 9.99) * 100)} percent of this period's budget used`}>
+        <span className={`text-footnote font-medium ${over ? 'text-danger' : 'text-ink-2'}`}>{over ? 'Exceeding' : 'Remaining'}</span>
+        <span className="num text-title">{formatPHP(over ? a.remaining.slice(1) : a.remaining)}</span>
+        <span className="num text-caption text-ink-3">{Math.round(used * 100)}% used</span>
+      </Gauge>
+      <div className="mt-4 grid grid-cols-2 divide-x divide-line text-center">
+        <div>
+          <p className="text-caption text-ink-3">Spent</p>
+          <p className="num text-headline">{formatPHP(a.spent)}</p>
+        </div>
+        <div>
+          <p className="text-caption text-ink-3">{status.budget.period === 'weekly' ? 'This week' : status.budget.period === 'monthly' ? 'This month' : 'This period'}</p>
+          <p className="num text-headline">{formatPHP(a.available)}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Each budgeted category as a card: spent, what remains, and a bar in money-state colour. */
+function RemainList({ status, categories, onPlan }: { status: BudgetStatus | null; categories: Category[]; onPlan: () => void }) {
+  if (!status) return <div className="skeleton h-40 rounded-card" aria-hidden="true" />;
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const rows = status.categories.filter((c) => byId.has(c.category_id));
+  if (rows.length === 0) {
+    return (
+      <Card className="text-center">
+        <p className="text-body">No category has its own amount yet.</p>
+        <Button variant="secondary" className="mt-3" onClick={onPlan}>Share the budget out</Button>
+      </Card>
+    );
+  }
+  return (
+    <div className="space-y-2.5">
+      {rows.map((row) => {
+        const category = byId.get(row.category_id) as Category;
+        const used = ratio(row.used_ratio);
+        const remainingOver = row.remaining.startsWith('-');
+        return (
+          <Card key={row.category_id} className="space-y-2.5">
+            <div className="flex items-center gap-3">
+              <GlyphTile icon={category.icon} colour={category.colour} size={36} />
+              <span className="min-w-0 flex-1 truncate text-body font-medium">{category.name}</span>
+              <span className="num text-footnote text-ink-3">{formatPHP(row.allocated)}</span>
+            </div>
+            <ProgressBar used={used} over={row.over} />
+            <div className="flex justify-between text-footnote">
+              <span className="text-ink-2">
+                Spent <span className="num font-semibold text-ink">{formatPHP(row.spent)}</span>
+              </span>
+              <span className={remainingOver ? 'text-danger' : 'text-ink-2'}>
+                {remainingOver ? 'Over' : 'Remain'}{' '}
+                <span className="num font-semibold">{formatPHP(remainingOver ? row.remaining.slice(1) : row.remaining)}</span>
+              </span>
+            </div>
+          </Card>
+        );
+      })}
+      {status.unallocated !== '0.00' && !status.unallocated.startsWith('-') && (
+        <p className="px-1 pt-1 text-footnote text-ink-3">
+          <span className="num">{formatPHP(status.unallocated)}</span> of the budget is not given to a category.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function Budget() {
   const navigate = useNavigate();
   const lookups = useLookups();
   const { status, load: loadStatus } = useBudgetStore();
+  const [view, setView] = useState<View>('remain');
 
   const [budget, setBudget] = useState<BudgetShape | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -145,6 +231,9 @@ export function Budget() {
 
   if (!loaded) return <div className="skeleton mt-16 h-96 rounded-card" aria-hidden="true" />;
 
+  const shownView: View = !budget ? 'plan' : view;
+  const current = status?.is_current ? status : null;
+
   return (
     <>
       <ScreenHeader
@@ -152,6 +241,28 @@ export function Budget() {
         subtitle={<button type="button" className="text-accent" onClick={() => navigate('/')}>‹ Home</button>}
       />
 
+      {budget && current && <BudgetGauge status={current} />}
+
+      {budget && (
+        <div className="mb-3 mt-4">
+          <Segmented<View>
+            label="Budget view"
+            value={shownView}
+            onChange={setView}
+            options={[
+              { value: 'remain', label: 'Remain' },
+              { value: 'plan', label: 'Plan' },
+            ]}
+          />
+        </div>
+      )}
+
+      {shownView === 'remain' && (
+        <RemainList status={current} categories={categories} onPlan={() => setView('plan')} />
+      )}
+
+      {shownView === 'plan' && (
+      <>
       <Card className="space-y-5">
         <div>
           <p className="mb-2 text-footnote font-semibold text-ink-2">How often it resets</p>
@@ -280,6 +391,8 @@ export function Budget() {
       <Button variant="ghost" block className="mt-2" onClick={() => navigate('/settings')}>
         Carry-over and daily allowance settings
       </Button>
+      </>
+      )}
     </>
   );
 }

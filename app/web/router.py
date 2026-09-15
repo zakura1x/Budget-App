@@ -103,8 +103,8 @@ async def manifest():
             "scope": f"{base}/",
             "display": "standalone",
             "orientation": "portrait",
-            "background_color": "#f5f6f1",
-            "theme_color": "#2c9669",
+            "background_color": "#f2f2fa",
+            "theme_color": "#4f54aa",
             "icons": [
                 {"src": f"{icons}/icon-192.png", "sizes": "192x192", "type": "image/png"},
                 {"src": f"{icons}/icon-512.png", "sizes": "512x512", "type": "image/png"},

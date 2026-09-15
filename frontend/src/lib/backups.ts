@@ -4,6 +4,7 @@
  * A .budgetbak is ciphertext end to end; downloading one is safe anywhere.
  * A CSV is plaintext, and the screen says so before it downloads.
  */
+import type { AccountType } from './accounts';
 import { api, apiBlob } from './api';
 
 export interface BackupInfo {
@@ -97,6 +98,62 @@ export const previewImport = (body: { csv: string; mapping: Record<string, strin
 
 export const runImport = (body: { csv: string; mapping: Record<string, string>; date_format: DateFormat; skip_duplicates: boolean }) =>
   api<{ created: number; skipped_duplicates: number }>('/data/import', { method: 'POST', body });
+
+/** DAT-21 - one account the Budget app's backup would bring in or reuse. */
+export interface BudgetAppAccount {
+  key: string;
+  name: string;
+  type: AccountType;
+  subtype: string | null;
+  exists: boolean;
+  /** What the imported history adds to the balance. */
+  history: string;
+  /** A person's loan: what they still owe, as it would be typed. */
+  suggested: string | null;
+  /** The balance is typed as an amount owed - a card or a loan. */
+  owed: boolean;
+  archived: boolean;
+  transactions: number;
+}
+
+export interface BudgetAppPreview {
+  exported_at: string | null;
+  app_version: string | null;
+  first_date: string | null;
+  last_date: string | null;
+  accounts: BudgetAppAccount[];
+  categories_new: number;
+  categories_existing: number;
+  transactions: number;
+  ready: number;
+  duplicates: number;
+  adjustments_folded: number;
+  loan_records_folded: number;
+  unassigned: number;
+  skipped: number;
+}
+
+export interface BudgetAppResult {
+  accounts_created: number;
+  categories_created: number;
+  transactions: number;
+  skipped_duplicates: number;
+  archived: number;
+}
+
+/** The file travels as base64 inside a JSON body: never in a URL, never kept in the browser. */
+export async function fileToBase64(file: Blob): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let text = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(text);
+}
+
+export const previewBudgetApp = (file: string) =>
+  api<BudgetAppPreview>('/data/import/budget-app/preview', { method: 'POST', body: { file } });
+
+export const runBudgetApp = (file: string, balances: Record<string, string>) =>
+  api<BudgetAppResult>('/data/import/budget-app', { method: 'POST', body: { file, balances } });
 
 /** "1.2 MB" - for a file size, never money. */
 export function fileSize(bytes: number): string {

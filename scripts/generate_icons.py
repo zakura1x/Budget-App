@@ -4,7 +4,7 @@ the PNGs are committed, like the bundle.
 
     python scripts/generate_icons.py
 
-A green tile with the Home ring on it: the one image the app is about. Pillow
+An indigo tile (the theme.css accent) with the Home ring on it: the one image the app is about. Pillow
 is used here only; the server never needs it.
 
     icon-192.png, icon-512.png   rounded tile, transparent corners
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-ACCENT = (44, 150, 105, 255)
+ACCENT = (79, 84, 170, 255)
 RING_TRACK = (255, 255, 255, 90)
 WHITE = (255, 255, 255, 255)
 SCALE = 4  # draw large, shrink down - smooth edges without an antialiasing library

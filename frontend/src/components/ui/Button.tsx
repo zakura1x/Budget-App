@@ -12,8 +12,8 @@ const VARIANTS: Record<Variant, string> = {
 
 // Both sizes clear the 44px minimum touch target.
 const SIZES: Record<Size, string> = {
-  md: 'min-h-tap px-4 text-body font-semibold rounded-xl',
-  lg: 'min-h-[3.25rem] px-5 text-headline rounded-2xl',
+  md: 'min-h-tap px-4 text-body font-semibold rounded-full',
+  lg: 'min-h-[3.25rem] px-5 text-headline rounded-full',
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

@@ -11,7 +11,8 @@
 import { api, ApiError } from './api';
 import { localToday } from './transactions';
 
-export type AccountType = 'cash' | 'debit' | 'credit' | 'savings' | 'investment';
+/** lent / borrowed (ACC-31) and member (ACC-32) since 2026-09-15. */
+export type AccountType = 'cash' | 'debit' | 'credit' | 'savings' | 'investment' | 'lent' | 'borrowed' | 'member';
 
 /** One closed statement (ACC-19/20/24). `difference` is null until the bank's total is entered. */
 export interface Statement {
@@ -29,7 +30,28 @@ export interface Statement {
   posting_lag_days: number;
 }
 
+/** ACC-35 - one bill typed from the card's own app; what is paid of it is derived. */
+export interface Bill {
+  due: string;
+  /** typed + from_plans */
+  amount: string;
+  paid: string;
+  left: string;
+  overdue: boolean;
+  /** What was typed from the card's app for this due date (0.00 for a date only a plan bills). */
+  typed: string;
+  /** Installment payments and repeating charges on this card that land on this bill. */
+  from_plans: string;
+  /** What is still unpaid of the typed part - what an edit starts from. */
+  typed_left: string;
+}
+
 export interface Credit {
+  /** ACC-35. Empty unless the bills were typed. */
+  bills: Bill[];
+  bills_left: string;
+  /** Overdue bills + the next one; null without bills. Cash on hand subtracts this, not the balance. */
+  due_now: string | null;
   limit: string | null;
   statement_closing_day: number;
   payment_due_day: number;
@@ -65,17 +87,23 @@ export interface Account {
   id: number;
   name: string;
   type: AccountType;
+  /** ACC-33 - "e-wallet", "loan", "crypto"; a label, never a rule. */
+  subtype: string | null;
   opening_balance: string;
   balance: string;
   colour: string;
   icon: string;
   archived: boolean;
   counts_in_cash_on_hand: boolean;
+  /** ACC-36 - on unless turned off; only net worth reads it. */
+  counts_in_net_worth: boolean;
   sort_order: number;
   note: string | null;
   credit: Credit | null;
   valuations: Valuation[];
   current_value: string | null;
+  /** What it adds to cash on hand when counted: the balance, or minus a card's bill due now. */
+  cash_amount: string;
 }
 
 export interface CashOnHand {
@@ -84,9 +112,17 @@ export interface CashOnHand {
   excluded_ids: number[];
 }
 
+/** ACC-36 - every active account at full value, all debts in full. */
+export interface NetWorth {
+  total: string;
+  assets: string;
+  liabilities: string;
+}
+
 export interface AccountList {
   accounts: Account[];
   cash_on_hand: CashOnHand;
+  net_worth: NetWorth;
 }
 
 /** ACC-28. What to do with the difference between a typed balance and the account's own. */
@@ -95,11 +131,13 @@ export type BalanceAction = 'adjust' | 'fix_opening';
 export interface AccountDraft {
   name: string;
   type: AccountType;
+  subtype?: string | null;
   /** Set when creating an account; an edit changes the current balance instead. */
   opening_balance?: string;
   colour?: string;
   icon?: string;
   counts_in_cash_on_hand?: boolean;
+  counts_in_net_worth?: boolean;
   note?: string | null;
   statement_closing_day?: number;
   payment_due_day?: number;
@@ -126,6 +164,9 @@ export const TYPE_LABEL: Record<AccountType, string> = {
   credit: 'Credit card',
   savings: 'Savings',
   investment: 'Investment',
+  lent: 'Lent',
+  borrowed: 'Borrowed',
+  member: 'Member card',
 };
 
 /** What each type is for, in the words someone setting one up would use. */
@@ -135,6 +176,9 @@ export const TYPE_HINT: Record<AccountType, string> = {
   credit: 'Billed monthly, paid later',
   savings: 'Money set aside',
   investment: 'A value you type in yourself',
+  lent: 'Money someone owes you',
+  borrowed: 'Money you owe someone',
+  member: 'A prepaid or member card',
 };
 
 export const TYPE_ICON: Record<AccountType, string> = {
@@ -143,7 +187,84 @@ export const TYPE_ICON: Record<AccountType, string> = {
   credit: 'credit-card',
   savings: 'piggy-bank',
   investment: 'chart',
+  lent: 'hand-coin',
+  borrowed: 'hand-owe',
+  member: 'badge',
 };
+
+/**
+ * Accounts whose balance is money you OWE, shown as a positive "owed" figure:
+ * a card, and a loan or money borrowed (ACC-31). Stored balances stay signed.
+ */
+export const isOwed = (type: AccountType) => type === 'credit' || type === 'borrowed';
+
+export interface AccountKind {
+  subtype: string;
+  label: string;
+  hint: string;
+  type: AccountType;
+  icon: string;
+  example: string;
+}
+
+/**
+ * The Add Account list (after sample_ui/, 2026-09-15): every entry is one of
+ * the account types with its own label and icon, stored as `subtype` (ACC-33).
+ */
+export const ACCOUNT_KINDS: { group: string; items: AccountKind[] }[] = [
+  {
+    group: 'Debit',
+    items: [
+      { subtype: 'debit-card', label: 'Debit card', hint: 'A card that spends from your bank', type: 'debit', icon: 'card', example: 'BPI Debit' },
+      { subtype: 'cash', label: 'Cash', hint: 'Money in your pocket', type: 'cash', icon: 'cash', example: 'Wallet' },
+      { subtype: 'bank', label: 'Bank account', hint: 'Savings or payroll account you spend from', type: 'debit', icon: 'bank', example: 'BDO Savings' },
+      { subtype: 'e-wallet', label: 'E-wallet', hint: 'GCash, Maya, ShopeePay…', type: 'debit', icon: 'wallet', example: 'GCash' },
+      { subtype: 'paypal', label: 'PayPal', hint: 'Online balance', type: 'debit', icon: 'globe', example: 'PayPal' },
+      { subtype: 'other-debit', label: 'Other debit account', hint: 'Anything else you spend from', type: 'debit', icon: 'piggy-bank', example: 'Coins jar' },
+    ],
+  },
+  {
+    group: 'Credit',
+    items: [
+      { subtype: 'credit-card', label: 'Credit card', hint: 'Billed monthly, paid later', type: 'credit', icon: 'credit-card', example: 'BPI Gold' },
+      { subtype: 'other-credit', label: 'Other credit account', hint: 'SPayLater, Home Credit, buy now pay later', type: 'credit', icon: 'card', example: 'SPayLater' },
+    ],
+  },
+  {
+    group: 'Borrow / Lend',
+    items: [
+      { subtype: 'lent', label: 'Lent', hint: 'Money someone owes you', type: 'lent', icon: 'hand-coin', example: 'Juan' },
+      { subtype: 'borrowed', label: 'Borrowed', hint: 'Money you owe a person', type: 'borrowed', icon: 'hand-owe', example: 'Tita Grace' },
+      { subtype: 'loan', label: 'Loan', hint: 'A bank, car or salary loan', type: 'borrowed', icon: 'contract', example: 'SSS salary loan' },
+    ],
+  },
+  {
+    group: 'Invest',
+    items: [
+      { subtype: 'savings', label: 'Savings', hint: 'Money set aside', type: 'savings', icon: 'piggy-bank', example: 'Emergency fund' },
+      { subtype: 'stock', label: 'Stock', hint: 'A value you type in yourself', type: 'investment', icon: 'chart', example: 'COL Financial' },
+      { subtype: 'fund', label: 'Fund', hint: 'Mutual fund, UITF, Pag-IBIG MP2', type: 'investment', icon: 'trend', example: 'Pag-IBIG MP2' },
+      { subtype: 'crypto', label: 'Crypto currencies', hint: 'A value you type in yourself', type: 'investment', icon: 'crypto', example: 'Coins.ph' },
+      { subtype: 'real-estate', label: 'Real estate', hint: 'A lot, a house, a condo', type: 'investment', icon: 'home', example: 'Condo unit' },
+      { subtype: 'precious-metal', label: 'Precious metal', hint: 'Gold and silver', type: 'investment', icon: 'coins', example: 'Gold' },
+    ],
+  },
+  {
+    group: 'Member account',
+    items: [
+      { subtype: 'membership', label: 'Membership', hint: 'Store and loyalty cards with a balance', type: 'member', icon: 'badge', example: 'SM Advantage' },
+      { subtype: 'transport-card', label: 'Transport card', hint: 'Beep and other fare cards', type: 'member', icon: 'bus', example: 'Beep card' },
+      { subtype: 'school-card', label: 'School card', hint: 'Campus ID with load', type: 'member', icon: 'graduation', example: 'School ID' },
+      { subtype: 'other-member', label: 'Other member card', hint: 'Any other prepaid card', type: 'member', icon: 'id-card', example: 'Gym card' },
+    ],
+  },
+];
+
+const KIND_BY_SUBTYPE = new Map(ACCOUNT_KINDS.flatMap((g) => g.items).map((k) => [k.subtype, k]));
+
+/** "E-wallet", "Loan", "Transport card" - or the type's own label. */
+export const kindLabelOf = (type: AccountType, subtype: string | null | undefined) =>
+  (subtype && KIND_BY_SUBTYPE.get(subtype)?.label) || TYPE_LABEL[type];
 
 const today = () => `today=${localToday()}`;
 
@@ -156,6 +277,10 @@ export const updateAccount = (id: number, body: AccountDraft) =>
 
 export const setArchived = (id: number, archived: boolean) =>
   api<Account>(`/accounts/${id}/archive?${today()}`, { method: 'POST', body: { archived } });
+
+/** ACC-35 - replace a card's bills with the unpaid ones its app shows today; [] removes them. */
+export const setBills = (id: number, bills: { due: string; amount: string }[]) =>
+  api<Account>(`/accounts/${id}/bills?${today()}`, { method: 'PUT', body: { bills } });
 
 export const addValuation = (id: number, value: string, on?: string) =>
   api<Account>(`/accounts/${id}/valuations?${today()}`, { method: 'POST', body: { value, on } });

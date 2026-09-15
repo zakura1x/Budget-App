@@ -7,6 +7,8 @@ staged on disk, and audited. The screen that calls it says so before the
 download starts.
 """
 
+import base64
+import binascii
 from datetime import date
 from typing import Optional
 
@@ -14,10 +16,18 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas.data import ImportIn, ImportPreviewOut, ImportResultOut
+from app.api.v1.schemas.data import (
+    BudgetAppImportIn,
+    BudgetAppPreviewOut,
+    BudgetAppResultOut,
+    ImportIn,
+    ImportPreviewOut,
+    ImportResultOut,
+)
 from app.core.deps import UnlockedContext, get_unlocked_context
+from app.core.exceptions import ValidationException
 from app.db.session import get_db
-from app.services import import_export_service
+from app.services import budget_app_import_service, import_export_service
 
 router = APIRouter(prefix="/data", tags=["data"])
 
@@ -60,3 +70,30 @@ def run_import(
         skip_duplicates=body.skip_duplicates,
     )
     return ImportResultOut.model_validate(result)
+
+
+def _file(body: BudgetAppImportIn) -> bytes:
+    try:
+        return base64.b64decode(body.file, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValidationException("The file did not arrive intact - choose it again") from None
+
+
+@router.post("/import/budget-app/preview", response_model=BudgetAppPreviewOut)
+def preview_budget_app(
+    body: BudgetAppImportIn,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> BudgetAppPreviewOut:
+    """DAT-21. What the Budget app's backup would become - writes nothing."""
+    return BudgetAppPreviewOut.model_validate(budget_app_import_service.preview(db, ctx.cipher, _file(body)))
+
+
+@router.post("/import/budget-app", response_model=BudgetAppResultOut)
+def run_budget_app(
+    body: BudgetAppImportIn,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> BudgetAppResultOut:
+    result = budget_app_import_service.run_import(db, ctx.cipher, _file(body), body.balances)
+    return BudgetAppResultOut.model_validate(result)

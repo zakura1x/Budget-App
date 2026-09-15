@@ -50,9 +50,9 @@ import {
 } from '../lib/transactions';
 import { listTags, type Tag } from '../lib/tags';
 import { useLedgerStore } from '../stores/ledgerStore';
-import { useUiStore } from '../stores/uiStore';
+import { useUiStore, type RuleSheetRequest } from '../stores/uiStore';
 import { ReceiptControl } from './ReceiptControl';
-import { GlyphTile } from './StylePicker';
+import { DEFAULT_COLOUR, GlyphTile, PALETTE } from './StylePicker';
 import { Button } from './ui/Button';
 import { NumPad, type NumPadKey } from './ui/NumPad';
 import { Segmented } from './ui/Segmented';
@@ -105,6 +105,61 @@ function Chip({
   );
 }
 
+/**
+ * REC-31. What "Recurring" on the + button offers. Each opens the rule sheet
+ * already set up - on the account the sheet was opened for, and a card
+ * payment as a monthly transfer into the first card.
+ */
+function RepeatingChoices({
+  accounts,
+  accountId,
+  onChoose,
+}: {
+  accounts: Account[];
+  accountId: number | null;
+  onChoose: (request: RuleSheetRequest) => void;
+}) {
+  const active = accounts.filter((a) => !a.archived);
+  const chosen = active.find((a) => a.id === accountId);
+  const card = chosen?.type === 'credit' ? chosen : active.find((a) => a.type === 'credit');
+  const payer = active.find((a) => a.type !== 'credit' && a.type !== 'borrowed' && a.type !== 'lent');
+  const on = chosen?.id ?? payer?.id;
+  const choices: { title: string; hint: string; icon: string; colour: string; request: RuleSheetRequest }[] = [
+    { title: 'Bill or income', hint: 'Rent, salary, an allowance, a monthly transfer', icon: 'home', colour: PALETTE[5] ?? DEFAULT_COLOUR,
+      request: { kind: 'standard', rule: null, prefill: { kind: 'standard', type: 'expense', account_id: on } } },
+    { title: 'Subscription', hint: 'Netflix, Spotify, a gym — with a reminder', icon: 'play', colour: PALETTE[8] ?? DEFAULT_COLOUR,
+      request: { kind: 'subscription', rule: null, prefill: { kind: 'subscription', type: 'expense', account_id: on } } },
+    { title: 'Installment', hint: 'A purchase paid over months, like a phone on a card', icon: 'credit-card', colour: PALETTE[6] ?? DEFAULT_COLOUR,
+      request: { kind: 'installment', rule: null, prefill: { kind: 'installment', type: 'expense', account_id: card?.id ?? on } } },
+  ];
+  if (card && payer) {
+    choices.push({
+      title: 'Credit card payment', hint: `What you pay ${card.name} every month`, icon: 'undo', colour: PALETTE[3] ?? DEFAULT_COLOUR,
+      request: { kind: 'standard', rule: null, prefill: {
+        kind: 'standard', type: 'transfer', name: `${card.name} payment`, account_id: payer.id,
+        counter_account_id: card.id, frequency: 'monthly', start: card.credit?.payment_due ?? localToday(),
+      } },
+    });
+  }
+  return (
+    <div className="space-y-2 pb-2">
+      <p className="px-1 text-footnote text-ink-2">Set it up once — it records itself on its day, and shows in Months ahead.</p>
+      <div className="divide-y divide-line overflow-hidden rounded-card bg-surface-2/60">
+        {choices.map((choice) => (
+          <button key={choice.title} type="button" onClick={() => onChoose(choice.request)}
+            className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left transition active:bg-line">
+            <GlyphTile icon={choice.icon} colour={choice.colour} size={40} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-body font-medium">{choice.title}</span>
+              <span className="block truncate text-footnote text-ink-3">{choice.hint}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TransactionSheet() {
   const open = useUiStore((s) => s.addSheetOpen);
   const editing = useUiStore((s) => s.editing);
@@ -114,6 +169,9 @@ export function TransactionSheet() {
   const ledger = useLedgerStore();
 
   const [kind, setKind] = useState<EntryType>('expense');
+  /** REC-31: "Recurring" chosen - the sheet shows what can repeat instead of the numpad. */
+  const [repeating, setRepeating] = useState(false);
+  const openRuleSheet = useUiStore((s) => s.openRuleSheet);
   const [typed, setTyped] = useState('0');
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [accountId, setAccountId] = useState<number | null>(null);
@@ -147,10 +205,12 @@ export function TransactionSheet() {
           // The screen that opened the sheet may know the account ("a purchase I
           // forgot" on a card); otherwise the account you used last is the one.
           const preset = addPreset?.accountId;
+          const into = active.some((a) => a.id === addPreset?.counterAccountId) ? addPreset?.counterAccountId : undefined;
           const recent = ledger.items.find((row) => row.id > 0)?.account_id;
-          const chosen = [preset, recent].find((id) => id !== undefined && active.some((a) => a.id === id));
-          setAccountId(chosen ?? active[0]?.id ?? null);
-          setCounterId(active[1]?.id ?? null);
+          const chosen = [preset, recent].find((id) => id !== undefined && id !== into && active.some((a) => a.id === id));
+          const from = chosen ?? active.find((a) => a.id !== into)?.id ?? null;
+          setAccountId(from);
+          setCounterId(into ?? active.find((a) => a.id !== from)?.id ?? null);
         }
       })
       .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
@@ -180,6 +240,7 @@ export function TransactionSheet() {
       );
     } else {
       setKind(addPreset?.type ?? 'expense');
+      setRepeating(false);
       setTyped('0');
       setCategoryId(null);
       setTxnDate(addOn ?? localToday());
@@ -373,13 +434,19 @@ export function TransactionSheet() {
       ));
 
   return (
-    <Sheet open={open} onClose={close} title={editing ? 'Edit transaction' : 'New transaction'}>
+    <Sheet open={open} onClose={close} title={editing ? 'Edit transaction' : repeating ? 'Something that repeats' : 'New transaction'}>
       <div className="space-y-3">
         {(!editing || editing.type !== 'transfer') && (
-          <Segmented
+          <Segmented<EntryType | 'recurring'>
             label="Type"
-            value={kind}
+            compact={!editing}
+            value={repeating ? 'recurring' : kind}
             onChange={(next) => {
+              if (next === 'recurring') {
+                setRepeating(true);
+                return;
+              }
+              setRepeating(false);
               // A transfer is two rows; the server will not convert one.
               if (editing && (next === 'transfer') !== (editing.type === 'transfer')) return;
               setKind(next);
@@ -389,11 +456,19 @@ export function TransactionSheet() {
             options={[
               { value: 'expense', label: 'Expense' },
               { value: 'income', label: 'Income' },
-              ...(!editing ? [{ value: 'transfer' as const, label: 'Transfer' }] : []),
+              ...(!editing ? [{ value: 'transfer' as const, label: 'Transfer' }, { value: 'recurring' as const, label: 'Recurring' }] : []),
             ]}
           />
         )}
 
+        {repeating ? (
+          <RepeatingChoices
+            accounts={accounts}
+            accountId={addPreset?.accountId ?? accountId}
+            onChoose={(request) => openRuleSheet(request)}
+          />
+        ) : (
+        <>
         <output
           aria-live="polite"
           className={`num block pt-2 text-center text-display ${kind === 'income' ? 'text-ok' : 'text-ink'}`}
@@ -587,6 +662,8 @@ export function TransactionSheet() {
           <Button variant="ghost" block className="text-danger" onClick={() => void remove()} disabled={busy}>
             Delete {editing.type === 'transfer' ? 'transfer' : 'transaction'}
           </Button>
+        )}
+        </>
         )}
       </div>
     </Sheet>

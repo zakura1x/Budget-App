@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CategorySheet } from '../components/CategorySheet';
-import { PlusIcon } from '../components/Icons';
+import { ChevronRightIcon, PlusIcon } from '../components/Icons';
 import { ReorderList } from '../components/ReorderList';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
@@ -48,12 +48,16 @@ function Row({
         <GlyphTile icon={category.icon} colour={category.colour} size={child ? 32 : 40} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-body">{category.name}</span>
-          {category.usage > 0 && (
+          {(category.usage > 0 || category.archived) && (
             <span className="block text-footnote text-ink-3">
-              {category.usage} transaction{category.usage === 1 ? '' : 's'}
+              {category.usage > 0 && `${category.usage} transaction${category.usage === 1 ? '' : 's'}`}
+              {category.usage > 0 && category.archived && ' · '}
+              {category.archived && 'archived'}
             </span>
           )}
         </span>
+        {/* Says the row opens - on a PC nothing else did, and the editor looked missing. */}
+        <ChevronRightIcon size={18} className="shrink-0 text-ink-3" />
       </button>
       {onAddChild && (
         <button
@@ -160,6 +164,7 @@ export function Categories() {
 
       {shown.length > 0 && (
         <div className="mt-4 space-y-4">
+          <p className="px-1 text-footnote text-ink-2">Tap a category to change or delete it.</p>
           <ReorderList
             label={`${kind} categories`}
             items={shown}

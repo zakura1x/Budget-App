@@ -16,7 +16,19 @@ import { GlyphTile } from './StylePicker';
 
 const NEUTRAL = '#8E8E93';
 
-export function TransactionRow({ row, lookups }: { row: Transaction; lookups: Lookups }) {
+/** Did this row put money INTO its own account? Each transfer leg carries its direction. */
+export function moneyIn(row: Transaction): boolean {
+  if (row.type === 'income') return true;
+  if (row.type === 'expense') return false;
+  return row.direction === 'in';
+}
+
+/**
+ * `accountId` shows the row from ONE account's side - the account page's
+ * trail: a transfer is signed by which way the money went for that account,
+ * and money in is green, as income is everywhere.
+ */
+export function TransactionRow({ row, lookups, accountId }: { row: Transaction; lookups: Lookups; accountId?: number }) {
   const account = lookups.accountById.get(row.account_id);
   const first = row.splits[0];
   const category = first?.category_id != null ? lookups.categoryById.get(first.category_id) : undefined;
@@ -44,6 +56,23 @@ export function TransactionRow({ row, lookups }: { row: Transaction; lookups: Lo
     title = row.merchant ?? (split ? 'Split' : category?.name ?? 'Transaction');
     const tags = (row.tag_ids ?? []).map((id) => lookups.tagById.get(id)?.name).filter(Boolean).join(', ');
     subtitle = [row.merchant ? label : null, account?.name, tags || null, row.notes].filter(Boolean).join(' · ');
+  }
+
+  if (accountId !== undefined) {
+    const inward = moneyIn(row);
+    return (
+      <span className={`flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left ${isPending(row) ? 'opacity-60' : ''}`}>
+        <GlyphTile icon={icon} colour={colour} size={40} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-body">{title}</span>
+          {subtitle && <span className="block truncate text-footnote text-ink-2">{subtitle}</span>}
+        </span>
+        <span className={`num shrink-0 text-body font-semibold ${inward ? 'text-ok' : 'text-ink'}`}>
+          {inward ? '+' : ''}
+          {formatPHP(inward ? row.amount : `-${row.amount}`)}
+        </span>
+      </span>
+    );
   }
 
   const amount =

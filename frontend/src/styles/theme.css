@@ -1,5 +1,6 @@
 /*
- * Colour tokens - a soft, calm palette in the spirit of the iOS app.
+ * Colour tokens - lavender ground, white rounded tiles, an indigo accent
+ * (the look of sample_ui/, adopted 2026-09-15).
  *
  * Values are bare "R G B" triplets so Tailwind can apply opacity
  * (bg-accent/10). Light is the default; dark follows the system unless the
@@ -8,21 +9,26 @@
  *
  * Money states use ok -> warn -> danger, and nothing else uses those three -
  * so green, amber and red always mean the same thing in this app.
+ *
+ * `highlight` marks WHERE you are - today on the calendar, the chosen period -
+ * and is never used for an amount, so it cannot be read as the amber of warn.
  */
 
 :root {
   color-scheme: light;
-  --c-bg: 245 246 241;
+  --c-bg: 242 242 250;
   --c-surface: 255 255 255;
-  --c-surface-2: 237 239 232;
-  --c-ink: 24 29 26;
-  --c-ink-2: 92 101 95;
-  --c-ink-3: 146 153 148;
-  --c-line: 224 227 219;
-  --c-accent: 44 150 105;
-  --c-accent-soft: 222 241 231;
+  --c-surface-2: 235 235 246;
+  --c-ink: 27 28 48;
+  --c-ink-2: 94 96 124;
+  --c-ink-3: 146 148 172;
+  --c-line: 225 225 238;
+  --c-accent: 79 84 170;
+  --c-accent-soft: 230 231 250;
   --c-on-accent: 255 255 255;
-  --c-ok: 44 150 105;
+  --c-highlight: 255 222 110;
+  --c-on-highlight: 48 40 8;
+  --c-ok: 40 156 104;
   --c-warn: 214 146 42;
   --c-danger: 214 76 64;
 }
@@ -30,16 +36,18 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --c-bg: 16 19 17;
-    --c-surface: 26 30 28;
-    --c-surface-2: 36 41 38;
-    --c-ink: 236 239 234;
-    --c-ink-2: 162 170 164;
-    --c-ink-3: 112 120 114;
-    --c-line: 46 52 48;
-    --c-accent: 76 192 140;
-    --c-accent-soft: 30 56 44;
-    --c-on-accent: 10 22 16;
+    --c-bg: 16 16 28;
+    --c-surface: 27 27 44;
+    --c-surface-2: 38 38 58;
+    --c-ink: 236 236 248;
+    --c-ink-2: 166 168 194;
+    --c-ink-3: 116 118 144;
+    --c-line: 48 48 70;
+    --c-accent: 152 158 245;
+    --c-accent-soft: 44 46 86;
+    --c-on-accent: 16 16 40;
+    --c-highlight: 232 192 84;
+    --c-on-highlight: 30 24 6;
     --c-ok: 76 192 140;
     --c-warn: 236 178 76;
     --c-danger: 238 110 98;
@@ -48,16 +56,18 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --c-bg: 16 19 17;
-  --c-surface: 26 30 28;
-  --c-surface-2: 36 41 38;
-  --c-ink: 236 239 234;
-  --c-ink-2: 162 170 164;
-  --c-ink-3: 112 120 114;
-  --c-line: 46 52 48;
-  --c-accent: 76 192 140;
-  --c-accent-soft: 30 56 44;
-  --c-on-accent: 10 22 16;
+  --c-bg: 16 16 28;
+  --c-surface: 27 27 44;
+  --c-surface-2: 38 38 58;
+  --c-ink: 236 236 248;
+  --c-ink-2: 166 168 194;
+  --c-ink-3: 116 118 144;
+  --c-line: 48 48 70;
+  --c-accent: 152 158 245;
+  --c-accent-soft: 44 46 86;
+  --c-on-accent: 16 16 40;
+  --c-highlight: 232 192 84;
+  --c-on-highlight: 30 24 6;
   --c-ok: 76 192 140;
   --c-warn: 236 178 76;
   --c-danger: 238 110 98;

@@ -12,6 +12,13 @@ backups/
 # scripts/create_admin_account.py. The password in it opens that account.
 admin-account.txt
 
+# Exports from other budget apps, kept here to import - real personal finances.
+budget_app_backup/
+*.xlsx
+# Reference screenshots from the old app - they show real balances, and a
+# release zip is built from HEAD.
+sample_ui/
+
 # ============================================
 # Python
 # ============================================

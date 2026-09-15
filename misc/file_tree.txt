@@ -159,7 +159,8 @@ Budget App/
 │   │   │   ├── carry_over.py            # symmetric surplus/deficit roll-forward
 │   │   │   └── alerts.py                # over / approaching / pace (in-app only),
 │   │   │                                #   card due + card limit on the statement cycle
-│   │   ├── account_service.py
+│   │   ├── account_service.py           # balances, cards, cash on hand; typed card
+│   │   │                                #   bills + due now (ACC-35); net worth (ACC-36)
 │   │   ├── category_service.py
 │   │   ├── transaction_service.py
 │   │   ├── recurring_service.py         # the ONE engine: standard |
@@ -176,6 +177,9 @@ Budget App/
 │   │   ├── tag_service.py               # delete walks every transaction's tag_ids
 │   │   ├── goal_service.py
 │   │   ├── import_export_service.py     # CSV in/out (the one warned opening)
+│   │   ├── budget_app_import_service.py # DAT-21 the "Budget" phone app's .xlsx: safe zip/XML
+│   │   │                                #   read in memory, plan, preview, typed balances
+│   │   │                                #   land in openings; never a balance adjustment
 │   │   ├── attachment_service.py        # receipts: sniffed, sealed, per-user files
 │   │   ├── backup_service/              # ★ full encrypted .budgetbak
 │   │   │   ├── references.py            #   ★ every in-ciphertext reference + insert order
@@ -236,7 +240,15 @@ Budget App/
 │       │   └── txnStore.ts
 │       │
 │       ├── components/
-│       │   ├── BottomTabBar.tsx         # Home · Calendar · [+] · Stats · More
+│       │   ├── BottomTabBar.tsx         # Home · Accounts · [+] · Calendar · More (floating pill)
+│       │   ├── CalendarSwitch.tsx       # Calendar | Stats, both routes kept
+│       │   ├── CategoryGrid.tsx         # Home's category tiles with rings
+│       │   ├── CreditDetails.tsx        # a card's bill line, own limit, statement check
+│       │   ├── CardBills.tsx            # ACC-35 bills typed from the card's app (+ plans)
+│       │   ├── CardPayments.tsx         # ACC-34 plans, "Does it balance?", monthly payment
+│       │   ├── RuleSheetHost.tsx        # REC-31 the one rule sheet for + and card pages
+│       │   ├── BudgetAppImportSheet.tsx # DAT-21 preview, typed balances, import
+│       │   ├── ReorderList.tsx          # drag to reorder; captures the pointer only once lifted
 │       │   ├── Icons.tsx                # inline SVG - nothing for the CSP to allow
 │       │   ├── AuthLayout.tsx           # the frame for signed-out screens
 │       │   ├── PasswordStrength.tsx     # live checklist against the server's policy
@@ -249,8 +261,8 @@ Budget App/
 │       │   ├── CategoryChips.tsx
 │       │   ├── TransactionRow.tsx
 │       │   ├── CalendarGrid.tsx
-│       │   └── ui/                      # Button, Sheet, Card, ListRow, TextField,
-│       │                                #   Ring (progress ring), NumPad (no OS keyboard)
+│       │   └── ui/                      # Button, Sheet, Card, ListRow, TextField, Segmented,
+│       │                                #   Ring (progress ring), Gauge (half circle), NumPad
 │       │
 │       ├── screens/
 │       │   ├── Login.tsx
@@ -264,7 +276,9 @@ Budget App/
 │       │   ├── Stats.tsx                # forecast, donut drill-down, trend, lists
 │       │   ├── Tags.tsx
 │       │   ├── Transactions.tsx
-│       │   ├── Accounts.tsx
+│       │   ├── Accounts.tsx             # tiles by type; cash on hand | net worth flip
+│       │   ├── AccountDetail.tsx        # /accounts/:id - balance banner, trail in/out,
+│       │   │                            #   card bills, plans and payments
 │       │   ├── Budgets.tsx
 │       │   ├── Categories.tsx
 │       │   ├── Recurring.tsx            # tabs: bills & pay · subscriptions (+ detected)
@@ -338,6 +352,10 @@ Budget App/
 │   ├── test_recurring.py                # the engine, installments, subscriptions and
 │   │                                    #   projection: projected == what later posts
 │   ├── test_card_bills.py               # paid bill clears; limit per statement cycle
+│   ├── test_card_app_bills.py           # ACC-35/36 typed bills, due now, plans on bills,
+│   │                                    #   net worth switch, months ahead takes the bills
+│   ├── test_budget_app_import.py        # DAT-21 every sheet mapped, typed balances exact,
+│   │                                    #   second import adds nothing, DOCTYPE refused
 │   ├── test_statement_check.py          # difference -> 0 after each resolution;
 │   │                                    #   late posting moves statement, not budget
 │   ├── test_balance_adjustment.py       # asked first; audit ONLY when accepted;
@@ -348,6 +366,8 @@ Budget App/
 │   ├── test_stats.py                    # splits, exclusions, forecast; a year < 50 ms warm
 │   └── test_api_integration.py
 │
+├── budget_app_backup/                   # gitignored - the old app's .xlsx, real finances
+├── sample_ui/                           # gitignored - reference screenshots, real balances
 ├── logs/                                # gitignored
 ├── uploads/                             # encrypted receipts, gitignored
 │   └── <user_id>/                       # per-user, so receipts cannot collide

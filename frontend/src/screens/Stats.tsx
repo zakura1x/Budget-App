@@ -21,6 +21,7 @@
 import { addDays, format, parseISO } from 'date-fns';
 import { useEffect, useMemo, useState } from 'react';
 import { Cell, Line, LineChart, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CalendarSwitch } from '../components/CalendarSwitch';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Card, SectionTitle } from '../components/ui/Card';
@@ -418,6 +419,7 @@ export function Stats() {
 
   return (
     <>
+      <CalendarSwitch />
       <ScreenHeader
         title="Stats"
         subtitle={overview ? rangeLabel(overview.start, overview.end) : ' '}

@@ -185,12 +185,87 @@ const GLYPHS: Record<string, ReactElement> = {
     </>
   ),
   dots: <path d="M6 12h.01M12 12h.01M18 12h.01" strokeWidth={3} />,
+  // Account kinds (ACC-31..33, 2026-09-15)
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.9-3.5 8.5c-2.5-2.6-3.5-5.4-3.5-8.5s1-5.9 3.5-8.5Z" />
+    </>
+  ),
+  'hand-coin': (
+    <>
+      <circle cx="15" cy="6.5" r="3" />
+      <path d="M2.5 14h3l3 1.5h4.5a1.5 1.5 0 0 1 0 3H9" />
+      <path d="M5.5 20.5 9 19h6l5.2-4.3a1.5 1.5 0 0 0-2-2.2L14.5 15" />
+    </>
+  ),
+  'hand-owe': (
+    <>
+      <path d="M15 2.5v7M12.5 7 15 9.5 17.5 7" />
+      <path d="M2.5 14h3l3 1.5h4.5a1.5 1.5 0 0 1 0 3H9" />
+      <path d="M5.5 20.5 9 19h6l5.2-4.3a1.5 1.5 0 0 0-2-2.2L14.5 15" />
+    </>
+  ),
+  contract: (
+    <>
+      <path d="M6 3.5h8.5L18 7v13.5H6Z" />
+      <path d="M14.5 3.5V7H18M9 12h6M9 15.5h6" />
+    </>
+  ),
+  trend: (
+    <>
+      <path d="M3.5 17 9 11.5l3.5 3.5 8-8" />
+      <path d="M15 7h5.5v5.5" />
+    </>
+  ),
+  crypto: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M10 7.5v9M10 8h3a2 2 0 0 1 0 4h-3M10 12h3.5a2.2 2.2 0 0 1 0 4.4H10M11.5 6v1.5M11.5 16.5V18" />
+    </>
+  ),
+  coins: (
+    <>
+      <ellipse cx="9" cy="7" rx="5.5" ry="2.5" />
+      <path d="M3.5 7v4c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5V7" />
+      <path d="M9.5 13.5V17c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-4c0-1.4-2.5-2.5-5.5-2.5" />
+    </>
+  ),
+  badge: (
+    <>
+      <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
+      <path d="m6 9.5 1.5 5 1.5-5M12 9.5v5M15 14.5v-5h1.8a1.6 1.6 0 0 1 0 3.2H15" />
+    </>
+  ),
+  bus: (
+    <>
+      <rect x="5" y="3.5" width="14" height="14" rx="2.5" />
+      <path d="M5 11h14M8 20.5v-3M16 20.5v-3" />
+      <path d="M8.5 14.5h.01M15.5 14.5h.01" strokeWidth={2.5} />
+    </>
+  ),
+  graduation: (
+    <>
+      <path d="M2.5 9 12 4.5 21.5 9 12 13.5Z" />
+      <path d="M6.5 11v4.5c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3V11M21.5 9v5" />
+    </>
+  ),
+  'id-card': (
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+      <circle cx="8.5" cy="10.5" r="2" />
+      <path d="M5.5 16c.5-1.5 1.7-2.2 3-2.2s2.5.7 3 2.2M14 10h4.5M14 13.5h3" />
+    </>
+  ),
 };
 
 /** Every slug the picker offers, in the order it shows them. */
 export const GLYPH_NAMES = Object.keys(GLYPHS);
 
-export const ACCOUNT_GLYPHS = ['cash', 'card', 'credit-card', 'piggy-bank', 'chart', 'wallet', 'bank'];
+export const ACCOUNT_GLYPHS = [
+  'cash', 'card', 'credit-card', 'piggy-bank', 'chart', 'wallet', 'bank', 'globe', 'hand-coin', 'hand-owe',
+  'contract', 'trend', 'crypto', 'home', 'coins', 'badge', 'bus', 'graduation', 'id-card',
+];
 
 export function Glyph({ name, size = 24, ...rest }: Props) {
   return (

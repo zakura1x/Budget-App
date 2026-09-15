@@ -10,13 +10,16 @@
  * recomputes. When the period's money is gone the hero says ₱0.00 and how far
  * over - never a negative daily figure.
  *
- * Swipe the card, or use the arrows, to look at other periods. Alerts come in
+ * Under the card, what that period was spent on as a grid of category tiles
+ * (CategoryGrid, 2026-09-15). Swipe the card, or use the arrows, to look at
+ * other periods - the grid follows. Alerts come in
  * the same response as the figures (BUD-12/14/15), and every write answers
  * with a fresh status, so the ring animates without a second request.
  */
 import { format, parseISO } from 'date-fns';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CategoryGrid } from '../components/CategoryGrid';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TransactionRow } from '../components/TransactionRow';
 import { Button } from '../components/ui/Button';
@@ -26,6 +29,7 @@ import { useLookups, type Lookups } from '../hooks/useLookups';
 import { ratio, type Alert, type BudgetStatus } from '../lib/budgets';
 import { formatPHP } from '../lib/money';
 import { expandRecurring } from '../lib/recurring';
+import { localToday } from '../lib/transactions';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useLedgerStore } from '../stores/ledgerStore';
@@ -269,6 +273,12 @@ export function Home() {
       ) : (
         <div className="skeleton h-[26rem] rounded-card" aria-hidden="true" />
       )}
+
+      <CategoryGrid
+        range={status ? { from: status.period.start, to: status.period.end } : { span: 'month', on: localToday() }}
+        progress={status?.categories ?? []}
+        lookups={lookups}
+      />
 
       <div className="flex items-end justify-between">
         <SectionTitle>Recent</SectionTitle>

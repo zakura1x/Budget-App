@@ -121,7 +121,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
     setName(source?.name ?? prefill?.name ?? '');
     setMerchant(source?.merchant ?? prefill?.merchant ?? '');
     setAccountId(source?.account_id ?? prefill?.account_id ?? lookups.accounts.find((a) => !a.archived)?.id ?? null);
-    setCounterId(source?.counter_account_id ?? null);
+    setCounterId(source?.counter_account_id ?? prefill?.counter_account_id ?? null);
     setCategoryId(source?.category_id ?? prefill?.category_id ?? null);
     setAmount(source ? typedFrom(source.installment ? '0.00' : source.amount) : prefill?.amount ? typedFrom(prefill.amount) : '');
     setAmountFrom(localToday());

@@ -30,6 +30,8 @@ export default {
         accent: token('accent'),
         'accent-soft': token('accent-soft'),
         'on-accent': token('on-accent'),
+        highlight: token('highlight'),
+        'on-highlight': token('on-highlight'),
         ok: token('ok'),
         warn: token('warn'),
         danger: token('danger'),
@@ -54,7 +56,7 @@ export default {
       },
       spacing: {
         tap: '2.75rem', // 44px - the minimum touch target, everywhere
-        tabbar: '4rem',
+        tabbar: '4.5rem', // the floating bar, 4rem, and the gap under it
         'safe-b': 'env(safe-area-inset-bottom)',
         'safe-t': 'env(safe-area-inset-top)',
       },
@@ -62,7 +64,8 @@ export default {
         app: '32rem', // desktop is a widened phone, never a separate design
       },
       boxShadow: {
-        card: '0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.04)',
+        card: '0 1px 2px rgb(var(--c-accent) / 0.05), 0 4px 16px rgb(var(--c-accent) / 0.06)',
+        bar: '0 8px 28px rgb(var(--c-accent) / 0.16), 0 1px 3px rgb(0 0 0 / 0.06)',
         raised: '0 6px 20px rgb(var(--c-accent) / 0.35)',
         sheet: '0 -8px 32px rgb(0 0 0 / 0.12)',
       },

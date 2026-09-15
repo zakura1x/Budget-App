@@ -15,6 +15,7 @@
 import { format, parseISO } from 'date-fns';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BudgetAppImportSheet } from '../components/BudgetAppImportSheet';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Button } from '../components/ui/Button';
 import { Card, SectionTitle } from '../components/ui/Card';
@@ -28,6 +29,7 @@ import {
   fileSize,
   IMPORT_FIELDS,
   listBackups,
+  fileToBase64,
   previewImport,
   restoreBackup,
   runImport,
@@ -342,6 +344,8 @@ export function Backup() {
   const [confirmExport, setConfirmExport] = useState(false);
   const backupInput = useRef<HTMLInputElement>(null);
   const csvInput = useRef<HTMLInputElement>(null);
+  const budgetAppInput = useRef<HTMLInputElement>(null);
+  const [budgetAppFile, setBudgetAppFile] = useState<{ name: string; data: string } | null>(null);
 
   const load = useCallback((signal?: AbortSignal) =>
     listBackups(signal).then((found) => {
@@ -456,6 +460,23 @@ export function Backup() {
         )}
       </Card>
 
+      <SectionTitle>Import from Budget App</SectionTitle>
+      <Card>
+        <p className="text-footnote text-ink-2">
+          The .xlsx backup the Budget phone app makes. Accounts, categories, every transaction and who owes what come across; you
+          type each account’s balance today so it matches exactly. Import again later and only what is new is added.
+        </p>
+        <Button className="mt-3" block variant="secondary" disabled={busy} onClick={() => budgetAppInput.current?.click()}>
+          Choose the .xlsx backup
+        </Button>
+        <input ref={budgetAppInput} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden"
+          onChange={(e) => {
+            const chosen = e.target.files?.[0];
+            e.target.value = '';
+            if (chosen) void act(async () => setBudgetAppFile({ name: chosen.name, data: await fileToBase64(chosen) }), 'That file could not be read.');
+          }} />
+      </Card>
+
       <SectionTitle>Import from CSV</SectionTitle>
       <Card>
         <p className="text-footnote text-ink-2">
@@ -473,6 +494,7 @@ export function Backup() {
 
       <RestoreSheet source={source} onClose={() => setSource(null)} onDone={() => void load()} />
       <ImportSheet file={csvFile} onClose={() => setCsvFile(null)} />
+      <BudgetAppImportSheet file={budgetAppFile} onClose={() => setBudgetAppFile(null)} />
     </>
   );
 }

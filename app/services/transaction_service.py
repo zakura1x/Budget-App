@@ -479,6 +479,30 @@ def post_recurring(
     return [repo.create({**_clean(db, cipher, payload, kind, existing=None), **marks})]
 
 
+def reprice_recurring(
+    db: Session,
+    cipher: UserCipher,
+    transaction_id: int,
+    *,
+    amount: Decimal,
+    splits: Sequence[Mapping[str, Any]],
+) -> TransactionView:
+    """
+    REC-29. Correct a posted installment payment to what the bank billed - its
+    amount and splits only. Its date, account, plan and statement stay, and it
+    is validated like any entry. Only recurring_service calls this; it neither
+    commits nor audits, so the plan and its payments change in one commit.
+    """
+    record = _record(db, cipher, transaction_id)
+    if record.data.get("type") != "expense" or record.data.get("recurring_id") is None:
+        raise BusinessRuleException("Only a posted installment payment can be corrected this way")
+    payload = {**record.data, "amount": str(amount), "splits": [dict(s) for s in splits]}
+    payload.pop("category_id", None)
+    cleaned = _clean(db, cipher, payload, "expense", existing=record.data)
+    updated = TransactionRepository(db, cipher).update(transaction_id, {**record.data, **cleaned})
+    return _view(updated)
+
+
 def validate_entry(db: Session, cipher: UserCipher, payload: Mapping[str, Any]) -> Dict[str, Any]:
     """DAT-04. Clean a would-be entry exactly as create_transaction would, and write nothing."""
     kind = _type(payload.get("type"))

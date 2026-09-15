@@ -155,19 +155,20 @@ This project adds one rule of its own, and it is absolute:
 |---|---|
 | *(no service)* | Key handling lives in `app/core/crypto/`. Its façade is `UserCipher`: repositories are handed one, services pass it along, and neither ever holds a key |
 | `auth_service/` | Login, JWT issue/refresh, lockout, PIN, password rules |
-| `account_service` | Cash, debit, credit, savings, investment accounts; balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit |
+| `account_service` | Cash, debit, credit, savings, investment, lent, borrowed and member accounts (with a `subtype` label); balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit; bills typed from a card's own app and what is due now (ACC-35); cash on hand and net worth (ACC-36) |
 | `statement_service` | Checks a card statement against the bank's total and applies what you say the difference was (§4.4). Writes only through `transaction_service` and `recurring_service`; nothing imports it |
 | `category_service` | Categories and sub-categories, icons, colours, ordering |
 | `transaction_service` | Expense/income/transfer/adjustment CRUD; the write path |
 | `budget_service/` | Periods, per-category allocations, **daily allowance** |
 | `recurring_service` | Rule expansion — daily/weekly/monthly/custom. The one engine behind standard rules, subscriptions and installments |
 | `subscription_service` | Your recurring merchant charges (Netflix, gym). A **view over** `recurring_rules`, never a second expansion engine |
-| `projection_service` | The months ahead: salary, bills, installments and card statements laid out from the rules (§4.5). **Read-only** — it never posts a transaction |
+| `projection_service` | The months ahead: salary, bills, installments, card statements and typed card bills laid out from the rules (§4.5). **Read-only** — it never posts a transaction |
 | `stats_service` | Every chart series; all aggregation, since SQL cannot. One overview per range: category shares from splits, trend, comparison, merchants, accounts, tags and the forecast. Transfers, balance adjustments and revaluations never count |
 | `calendar_service` | Day-by-day spending heatmap, shaded against the budget per day (or a typical day) |
 | `tag_service` | Tags (name, colour). Transactions carry `tag_ids`, checked on write; deleting a tag removes its id from every transaction in the same commit |
 | `goal_service` | Savings goals and progress |
 | `import_export_service` | CSV in and out, encrypted attachments |
+| `budget_app_import_service` | DAT-21: the "Budget" phone app's `.xlsx` backup, read in memory (zip sizes capped, any DOCTYPE refused), previewed, then written through `transaction_service.import_entries`. Today's balances are typed and land in the opening balances; it never writes a balance adjustment |
 | `audit_service` | Records who changed what, with encrypted detail |
 
 ---
@@ -303,14 +304,25 @@ deleted, and the database could not catch it.
 Payments behave like any recurring expense: they reduce the account and the
 daily allowance on the due date. The full price is never posted up front.
 
-**The app has no net worth figure.** Its headline number is **cash on hand**
-(ACC-17): the sum of the balances of accounts whose payload has
-`counts_in_cash_on_hand = true`. Defaults by type are cash, debit, savings and
-credit on, investment off (ACC-18). Nothing you own is modelled as an asset, and
-an installment's unpaid remainder is never subtracted — it shows on the
-installment card instead. So cash on hand drops ₱5,000 a month for the
-motorcycle, never ₱180,000 at once. The asset-and-debt alternative is out
-(REC-18); FEATURES.md §19 records why.
+**The headline number is cash on hand** (ACC-17): the sum of what each account
+whose payload has `counts_in_cash_on_hand = true` adds — its balance
+(`AccountView.cash_amount`). Defaults by type are cash, debit, savings, credit
+and member on; investment, lent and borrowed off (ACC-18/31/32). An installment's
+unpaid remainder is never subtracted — it shows on the installment card instead.
+So cash on hand drops ₱5,000 a month for the motorcycle, never ₱180,000 at once.
+
+**A card with typed bills** (ACC-35, added 2026-09-15) adds `-due_now` instead
+of its balance: the overdue bills plus the next one, as its own app lists them
+(`bills` + `bills_from` in the account payload, written only by
+`account_service.set_bills`). What is paid of each bill is derived — payments
+into the card since the list was saved, oldest bill first — and the plan
+charges on the card are added to the bill of the statement they post in.
+
+**Net worth sits beside it, never instead of it** (ACC-36, added 2026-09-15 at
+the user's request): every active account with its own
+`counts_in_net_worth` switch on, at full balance, less every debt in full —
+card balances, loans, and installments not yet billed (`account_service.net_worth`).
+The Accounts tab flips between the two.
 
 **Credit-card installments** post the monthly amount to the card each month.
 `available credit` still subtracts the whole unpaid remainder, because the bank
@@ -365,7 +377,8 @@ recomputes to zero and nothing else needs updating:
 | Choice | Writes |
 |---|---|
 | One-time fee or interest | An expense on the card, dated the closing date, in Financial › Bank fees or Interest |
-| Interest on this installment (REC-29) | The same, linked to the plan by `recurring_id`, plus the plan's terms updated |
+| Interest on this installment (REC-29) | The plan's terms updated, and its payments already posted corrected to carry the interest (`transaction_service.reprice_recurring`, their price split untouched) |
+| The installment payment changed (REC-29) | The plan's `interest_changes` gains the new interest from that payment on; posted payments from there are corrected the same way |
 | A purchase I forgot | Whatever the add sheet saves |
 | Posted on the next statement | `card_posted_on` on the purchase |
 
@@ -444,8 +457,9 @@ every payload field, it needs no migration; a rule without one uses its single
 ```
 income     = income occurrences into counted accounts
 committed  = expense occurrences on counted accounts (cards included, §19)
+bills      = typed card bills entering cash on hand this month (ACC-35)
 spending   = max(budget for the month, committed)     REC-23
-closing    = opening + income − spending              → next month's opening
+closing    = opening + income − spending − bills      → next month's opening
 low point  = lowest running balance over the dated occurrences,   REC-24
              with (spending − committed) set aside on day 1
 ```
@@ -459,6 +473,11 @@ low point  = lowest running balance over the dated occurrences,   REC-24
   budget, so there is nothing to carry.
 - **Transfers** follow ACC-18. Between two counted accounts they change nothing;
   into an uncounted one they reduce cash on hand.
+- **Typed card bills** (ACC-35). Cash on hand already holds the bill due now;
+  each later bill enters the day after the bill before it falls due. Its typed
+  part is `bills`, taken on top of the budget (past purchases); its plan part is
+  a fixed charge (`committed`) on that day. A card charge that lands on one of
+  these bills is not counted again on the day it posts.
 
 **Credit-card look-ahead (REC-25)** groups each card's occurrences by statement
 period, using the same `date_utils` statement cycle as ACC-09. A card charge
@@ -906,9 +925,13 @@ and the bundle share an origin and CORS is irrelevant.
 The design target is a 390 px iPhone viewport. Desktop is a widened version of
 the phone layout, never a separate design.
 
-- **Bottom tab bar**, thumb-reachable: Home · Calendar · **[+]** · Stats · More.
-  The `[+]` is centre, raised, and larger than the rest — it is the action the
-  app exists for.
+- **Bottom tab bar**, thumb-reachable: Home · Accounts · **[+]** · Calendar · More
+  (2026-09-15; was Home · Calendar · [+] · Stats · More). The `[+]` is centre,
+  raised, and larger than the rest — it is the action the app exists for.
+  Accounts is a tab because editing one should never be a trip through More;
+  Stats sits behind a Calendar | Stats switch at the top of both screens, each
+  still its own route. The look follows `sample_ui/`: lavender ground, white
+  rounded tiles, indigo accent, a floating pill bar — all tokens in `theme.css`.
 - **Add-transaction is a bottom sheet with a numpad**, not a form with a text
   input. It opens with the amount field focused and the numpad already up.
   Two taps and a number should complete an entry.

@@ -27,10 +27,14 @@ LOWER bank total is never offered as a charge: owing less than the app thinks
 is a refund or a late posting, and calling it interest would invent a cost.
 
     installment_interest   REC-29: the interest on a plan bought without
-                  knowing it. The plan's terms are confirmed and payment 1's
-                  interest posts on the closing date, linked to the plan -
+                  knowing it. The plan's terms are confirmed and every
+                  payment already posted is corrected to carry it -
                   suggested FIRST when exactly one unconfirmed plan has a
                   payment on this statement
+    installment_change     REC-29: a confirmed plan's payment was billed at a
+                  different amount. The plan carries the new interest from
+                  that payment on, and the posted payments from there are
+                  corrected - offered on a higher OR a lower total
 
 This service writes only through transaction_service and recurring_service,
 and nothing imports it.
@@ -47,7 +51,7 @@ from app.core.exceptions import BusinessRuleException, ValidationException
 from app.core.utils.money import ZERO, money
 from app.services import account_service, audit_service, recurring_service, transaction_service
 
-CHOICES = ("charge", "posted_next", "installment_interest")
+CHOICES = ("charge", "posted_next", "installment_interest", "installment_change")
 
 
 @dataclass(frozen=True)
@@ -71,7 +75,7 @@ def get(db: Session, cipher: UserCipher, account_id: int, closes: date, *, today
         transaction_service.card_purchases(db, cipher, account_id, closes - timedelta(days=lag - 1), closes)
         if lag > 0 else []
     )
-    plans = recurring_service.unconfirmed_on_statement(db, cipher, account_id, found.start, closes)
+    plans = recurring_service.plans_on_statement(db, cipher, account_id, found.start, closes)
     return StatementCheck(
         statement=found,
         checked=found.difference is not None and found.difference == ZERO,
@@ -117,7 +121,9 @@ def resolve(
     elif choice == "posted_next":
         _posted_next(db, cipher, closes, difference, current.late_candidates, payload)
     elif choice == "installment_interest":
-        _installment_interest(db, cipher, closes, difference, current.installments, payload, today)
+        _installment_interest(db, cipher, difference, current.installments, payload, today)
+    elif choice == "installment_change":
+        _installment_change(db, cipher, current.statement.start, closes, difference, current.installments, payload, today)
     else:
         raise ValidationException(f"choice must be one of: {', '.join(CHOICES)}")
     return get(db, cipher, account_id, closes, today=today)
@@ -129,33 +135,61 @@ def resolve(
 def _suggest(difference, candidates, plans=()) -> List[str]:
     if difference is None or difference == ZERO:
         return []
+    provisional = [p for p in plans if p.terms != "confirmed"]
+    confirmed = [p for p in plans if p.terms == "confirmed"]
+    changed = ["installment_change"] if confirmed else []
     if difference > ZERO:
         # Exactly one unconfirmed plan on the statement is the likeliest reason;
         # with several, the user picks which, so it is offered after a charge.
-        if len(plans) == 1:
-            return ["installment_interest", "charge", "forgot"]
-        return ["charge"] + (["installment_interest"] if plans else []) + ["forgot"]
-    # A lower total is never interest.
-    return (["posted_next"] if candidates else []) + ["forgot"]
+        first = ["installment_interest"] if len(provisional) == 1 else []
+        later = ["installment_interest"] if len(provisional) > 1 else []
+        return first + ["charge"] + later + changed + ["forgot"]
+    # A lower total is never interest - but it can be a payment the bank lowered.
+    return (["posted_next"] if candidates else []) + changed + ["forgot"]
 
 
-def _installment_interest(db, cipher, closes, difference, plans, payload, today) -> None:
-    if difference <= ZERO:
-        raise BusinessRuleException("The bank shows less than the app, which is never interest")
+def _one_plan(plans, payload, message):
     rule_id = payload.get("rule_id")
     if rule_id is None and len(plans) == 1:
         rule_id = plans[0].rule_id
-    if not any(plan.rule_id == rule_id for plan in plans):
-        raise BusinessRuleException("Choose an installment with a payment on this statement whose interest is unknown")
+    for plan in plans:
+        if plan.rule_id == rule_id:
+            return plan
+    raise BusinessRuleException(message)
+
+
+def _installment_interest(db, cipher, difference, plans, payload, today) -> None:
+    if difference <= ZERO:
+        raise BusinessRuleException("The bank shows less than the app, which is never interest")
+    plan = _one_plan([p for p in plans if p.terms != "confirmed"], payload,
+                     "Choose an installment with a payment on this statement whose interest is unknown")
     try:
         amount = money(payload.get("amount"))
     except (ValueError, TypeError):
-        raise ValidationException("amount is the interest the bank added to this payment") from None
+        raise ValidationException("amount is the interest the bank added to each payment") from None
     if amount <= ZERO or amount > difference:
         raise BusinessRuleException("The interest is more than zero and no more than the difference")
-    recurring_service.confirm_interest(
-        db, cipher, rule_id, amount, on=closes, category_id=payload.get("category_id"), today=today,
-    )
+    recurring_service.confirm_interest(db, cipher, plan.rule_id, amount, category_id=payload.get("category_id"),
+                                       today=today)
+
+
+def _installment_change(db, cipher, start, closes, difference, plans, payload, today) -> None:
+    plan = _one_plan([p for p in plans if p.terms == "confirmed"], payload,
+                     "Choose an installment with confirmed terms that has a payment on this statement")
+    try:
+        amount = money(payload.get("amount"))
+    except (ValueError, TypeError):
+        raise ValidationException("amount is the payment as the bank billed it") from None
+    if amount <= ZERO:
+        raise ValidationException("A payment is more than zero")
+    # What the new payment explains on THIS statement must be part of its difference, the same way round.
+    explained = amount * plan.payments_on_statement - plan.on_statement
+    if explained == ZERO:
+        raise BusinessRuleException("That is the payment the app already has")
+    if (explained > ZERO) != (difference > ZERO) or abs(explained) > abs(difference):
+        raise BusinessRuleException("That payment does not explain this statement's difference")
+    recurring_service.change_installment_payment(db, cipher, plan.rule_id, amount, start=start, closes=closes,
+                                                 category_id=payload.get("category_id"), today=today)
 
 
 def _charge(db, cipher, account_id, closes, difference, payload, today) -> None:

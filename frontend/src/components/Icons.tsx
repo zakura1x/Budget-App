@@ -61,6 +61,19 @@ export const PlusIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const TransferIcon = (p: IconProps) => (
+  <Icon strokeWidth={2.25} {...p}>
+    <path d="M4.5 8.5h15M15.5 4.5l4 4-4 4" />
+    <path d="M19.5 15.5h-15M8.5 11.5l-4 4 4 4" />
+  </Icon>
+);
+
+export const CloseIcon = (p: IconProps) => (
+  <Icon strokeWidth={2.25} {...p}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </Icon>
+);
+
 export const BackspaceIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M9 5h10.5c.83 0 1.5.67 1.5 1.5v11c0 .83-.67 1.5-1.5 1.5H9l-6-7 6-7Z" />

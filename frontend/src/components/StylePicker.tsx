@@ -4,8 +4,9 @@
  * The colour a category is given shows up in the ledger, the pie and the
  * budget bars, so it is stored data rather than theme - which is why these
  * twelve hex values live here and not in theme.css. They are picked to stay
- * apart from each other in both light and dark, and none of them is the
- * accent green: an account should never be mistaken for a control.
+ * apart from each other in both light and dark. They are stored per account
+ * and category, so changing the accent (green to indigo, 2026-09-15) never
+ * rewrites them.
  */
 import { GLYPH_NAMES, Glyph } from './Glyph';
 

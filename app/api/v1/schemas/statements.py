@@ -21,12 +21,14 @@ class StatementResolveIn(BaseModel):
     never reach the server: one is the ordinary add sheet, the other nothing.
     """
 
-    choice: Literal["charge", "posted_next", "installment_interest"]
-    amount: Optional[Money] = None  # charge / installment_interest: the part of the difference it explains
+    choice: Literal["charge", "posted_next", "installment_interest", "installment_change"]
+    # charge: the part of the difference it explains; installment_interest: the
+    # interest on each payment; installment_change: the payment as billed
+    amount: Optional[Money] = None
     category_id: Optional[int] = None  # charge: Financial > Interest or Bank fees, usually
     note: Optional[str] = Field(default=None, max_length=500)
     transaction_id: Optional[int] = None  # posted_next: the purchase the bank posted later
-    rule_id: Optional[int] = None  # installment_interest: which plan, when more than one is on the statement
+    rule_id: Optional[int] = None  # installment_*: which plan, when more than one is on the statement
 
 
 class StatementPlanOut(BaseModel):
@@ -35,6 +37,10 @@ class StatementPlanOut(BaseModel):
     rule_id: int
     name: str
     per_payment: Money
+    terms: Literal["provisional", "confirmed"]
+    payments_posted: int
+    payments_on_statement: int
+    on_statement: Money
 
 
 class StatementCheckOut(BaseModel):
@@ -43,5 +49,5 @@ class StatementCheckOut(BaseModel):
     statement: StatementOut
     checked: bool
     late_candidates: List[TransactionOut]
-    suggestions: List[Literal["charge", "posted_next", "forgot", "installment_interest"]]
+    suggestions: List[Literal["charge", "posted_next", "forgot", "installment_interest", "installment_change"]]
     installments: List[StatementPlanOut] = []

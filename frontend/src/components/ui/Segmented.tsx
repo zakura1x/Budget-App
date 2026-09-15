@@ -3,18 +3,20 @@ export interface SegmentedProps<T extends string> {
   value: T;
   onChange: (value: T) => void;
   label: string;
+  /** Smaller type and padding, for four choices on a phone. */
+  compact?: boolean;
 }
 
 /** Two or three mutually exclusive views - expense/income, and later the
  *  transaction types. Arrow keys move between them, as a tablist should. */
-export function Segmented<T extends string>({ options, value, onChange, label }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ options, value, onChange, label, compact = false }: SegmentedProps<T>) {
   const move = (delta: number) => {
     const at = (options.findIndex((o) => o.value === value) + delta + options.length) % options.length;
     const next = options[at];
     if (next) onChange(next.value);
   };
   return (
-    <div role="tablist" aria-label={label} className="flex gap-1 rounded-2xl bg-surface-2 p-1">
+    <div role="tablist" aria-label={label} className="flex gap-1 rounded-full bg-surface-2 p-1">
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -30,8 +32,8 @@ export function Segmented<T extends string>({ options, value, onChange, label }:
               if (e.key === 'ArrowLeft') move(-1);
             }}
             className={[
-              'min-h-tap flex-1 rounded-xl px-3 text-body font-semibold transition',
-              selected ? 'bg-surface text-ink shadow-card' : 'text-ink-2 active:bg-line',
+              `min-h-tap flex-1 rounded-full font-semibold transition ${compact ? 'px-1.5 text-footnote' : 'px-3 text-body'}`,
+              selected ? 'bg-accent text-on-accent shadow-card' : 'text-ink-2 active:bg-line',
             ].join(' ')}
           >
             {option.label}
