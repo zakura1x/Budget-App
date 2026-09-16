@@ -54,7 +54,8 @@ npm run build        # type-checks, then writes into ../app/web/static/dist/
 
 Then COMMIT app/web/static/dist/. It is deliberately not gitignored.
 The server has no Node and no npm - it only serves these bytes.
-Deploy is: git pull + restart. Nothing is built on the server, ever.
+Deploy is: copy the release zip over (misc/DEPLOY.md). Nothing is built
+on the server, ever.
 uvicorn picks up a new build without a restart (it re-reads the manifest).
 
 
@@ -262,6 +263,9 @@ DEPLOY TO THE SERVER  (IIS, same host as QUOT)
 ═══════════════════════════════════════════════════════════════════
 Updates are COPIED to the server (there is no git remote). The zip holds
 only committed files, so it can never carry your local .env or data.
+
+FULL GUIDE: misc/DEPLOY.md - prerequisites, the first deploy, every update,
+rolling back, and what to check when something is wrong. The short version:
 
 EVERY UPDATE
   a. On your PC:  cd frontend  then  npm run build   (the server has no npm)

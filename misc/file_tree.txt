@@ -14,6 +14,7 @@ Budget App/
 │   ├── ARCHITECTURE_OVERVIEW.md         # Diagrams + the end-to-end flows
 │   ├── FEATURES.md                      # Feature catalogue + scope decisions (start here)
 │   ├── phases.md                        # Build log, 9 phases + standing defect list
+│   ├── DEPLOY.md                        # IIS deploy: release zip, first deploy, updates, rollback
 │   ├── file_tree.txt                    # This file
 │   └── how-to-run.txt
 │

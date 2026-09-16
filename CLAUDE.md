@@ -22,7 +22,8 @@ conventions this project deliberately mirrors.
 | `misc/ARCHITECTURE.md` | The same system in full detail, numbered §1–§14. Code comments cite these section numbers. |
 | `misc/FEATURES.md` | Feature-by-feature scope with IDs (`TXN-01`, `BUD-06`, `SEC-14`…) referenced throughout the code. |
 | `misc/phases.md` | Build order, phase by phase, and what is actually done. |
-| `misc/how-to-run.txt` | Setup, recovery, deploy, and backup runbook. |
+| `misc/how-to-run.txt` | Setup, recovery, and backup runbook. |
+| `misc/DEPLOY.md` | Deploying to IIS: the release zip, first deploy, every update, rollback, troubleshooting. |
 
 ## Commands
 
@@ -105,9 +106,9 @@ style issue.
 9. **`app/web/static/dist/` is committed on purpose** and `.gitattributes`
    marks it `-text`. Rebuild and commit it whenever frontend source changes;
    the server has no npm. Deploys are COPIED, not pulled (there is no git
-   remote): `scripts/make_release.py` zips the last commit, and the runbook
-   in `misc/how-to-run.txt` says which server folders to replace and which
-   (`.env`, `uploads/`, `backups/`, `logs/`) never to touch.
+   remote): `scripts/make_release.py` zips the last commit, and `misc/DEPLOY.md`
+   says which server folders to replace and which (`.env`, `uploads/`,
+   `backups/`, `logs/`) never to touch.
 10. **Nothing from the API is persisted in browser storage** (localStorage,
     IndexedDB, Cache API) — the browser origin is shared with other company
     apps (SEC-29).
