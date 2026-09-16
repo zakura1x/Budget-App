@@ -63,6 +63,21 @@ def get_transaction(
     return TransactionOut.model_validate(transaction_service.get_transaction(db, ctx.cipher, transaction_id))
 
 
+def _body(body: TransactionIn) -> dict:
+    """
+    The submitted entry as the service wants it.
+
+    `exclude_none` is what makes "left out keeps what is there" work for tags
+    and the rest - but TXN-22 needs the one thing it hides: a cashback sent as
+    null means TAKE IT AWAY, not "say nothing". So it is put back when, and
+    only when, the client actually sent it.
+    """
+    data = body.model_dump(mode="python", exclude_none=True)
+    if "cashback" in body.model_fields_set and body.cashback is None:
+        data["cashback"] = None
+    return data
+
+
 @router.post("", response_model=OutcomeOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(
     body: TransactionIn,
@@ -71,7 +86,7 @@ def create_transaction(
     db: Session = Depends(get_db),
 ) -> OutcomeOut:
     result = transaction_service.create_transaction(
-        db, ctx.cipher, body.model_dump(mode="python", exclude_none=True), today=today
+        db, ctx.cipher, _body(body), today=today
     )
     return OutcomeOut.model_validate(result)
 
@@ -96,7 +111,7 @@ def update_transaction(
     db: Session = Depends(get_db),
 ) -> OutcomeOut:
     result = transaction_service.update_transaction(
-        db, ctx.cipher, transaction_id, body.model_dump(mode="python", exclude_none=True), today=today
+        db, ctx.cipher, transaction_id, _body(body), today=today
     )
     return OutcomeOut.model_validate(result)
 

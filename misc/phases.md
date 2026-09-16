@@ -1949,6 +1949,101 @@ Found while building Phase 10 (2026-09-15):
     landed on the <li>, not the row's button. It now captures only once a
     row is lifted and swallows the click after a drag. The category sheet
     pins Save and Delete to its bottom, and rows show a chevron.
+  - LEFT TO SPEND 2026-09-16 (user: "I can only see what I owed"): a card's
+    remaining credit is shown on its tile, its page banner and its details
+    card, and the account sheet edits it both ways - type Amount owed or Left
+    to spend and the other follows (limit - owed - plans still to bill).
+  - CATEGORY DRILL-DOWN 2026-09-16 (user): the add sheet's chip row lists MAIN
+    categories only; choosing one reveals its sub-categories underneath, to
+    take or leave. Editing an entry filed under a sub opens with both rows
+    set; the split editor keeps the flat list.
+  - DAILY SAVINGS INTEREST 2026-09-16 (user, MariBank/SeaBank help pages):
+    ACC-37. app/core/utils/interest.py (pure bands, tax, carry) +
+    app/services/interest_service.py (the catch-up) + POST
+    /accounts/interest/accrue, called beside expandRecurring on every open.
+    Decided with the user: ONE ENTRY PER DAY (so the balance matches the bank
+    daily) and the NET only (what the bank deposits; gross and tax shown, not
+    posted). Yesterday's closing balance, compounding, sub-centavo carry,
+    today never accrued, marker and rows in one commit. Months ahead adds one
+    estimated interest month per counted account (kind "interest") from the
+    same pure helper. InterestFields in the account sheet, with a
+    SeaBank/MariBank preset; the account page says what a day and a year are
+    worth and what has been earned this month.
+  - CASHBACK 2026-09-16 (user: "some of my purchase has cashback… based on
+    percentage or the user can just input it"): TXN-22 as a LINKED PAIR, not a
+    discount - the purchase keeps its full amount (spending stays gross) and
+    the money back is an income row on the account and day chosen, joined by
+    cashback_id / cashback_of and moved, edited and deleted together.
+    ACC-38 keeps a card's usual rate to fill the field in (a suggestion only;
+    no monthly cap was built). money.percentOf does the suggestion in BigInt
+    integer arithmetic - never a float, and never rounding up.
+  - FIXED 2026-09-16 (user: "installments ... does not show the charges ...
+    I can only see it at recurring page"): three things, decided with the user.
+    (1) A plan is OWED in full from day one - AccountView.plans_unbilled on
+    every type, CreditView.owed_with_plans on a card - so the card says
+    "Owed ₱12,000 · ₱0.00 billed · ₱12,000.00 of plans still to bill" and a
+    loan says "You owe ₱48,000". The budget still sees the monthly payment
+    only (user's choice), cash on hand still ignores it (ACC-17), and net
+    worth now counts it on ANY account, not just a card. (2) AccountPlans:
+    the plans list, extracted from CardPayments, now shows on every account -
+    an installment on a loan or a borrowed account was invisible outside the
+    Recurring page. (3) The card's "Does it balance?" compared bills_left
+    (typed + plan charges) against owed + unbilled and reported a difference
+    that did not exist; with typed bills it now reads the bills, and "Make it
+    match" is hidden there because the bills are the truth. The user chose to
+    KEEP plan charges joining typed bills (ACC-35 unchanged).
+  - FIXED 2026-09-16 (user: "the first payment is in October 15, but it shows
+    in November 15 Bill"): an installment payment was mapped onto the bills
+    through statement_period(), the route a PURCHASE takes - billed with the
+    cycle it falls in, due the month after. A plan payment's date is the day
+    the bank bills it, so it now joins the first bill due on or after it
+    (account_service._bill_on_or_after), keeping the last typed bill's day of
+    the month beyond the typed list. projection_service._lands_on_bill was
+    still asking the old way and counted such a payment twice - inside a bill
+    and again on its own day; it now asks the same question. Charge became a
+    NamedTuple with an `installment` flag so the two kinds stay apart.
+  - FIXED 2026-09-16 (user: "if I put the installment in borrowed/loans I
+    can't pay the installment in any way"): the monthly payment - a recurring
+    transfer into the account, with the payoff month from /projection - was
+    inside CardPayments and reachable only on a credit card. It is now
+    AccountPayments, shown on loans, borrowed and any account carrying a plan.
+    The money side was already right: a plan's charge grows what you owe and a
+    transfer in brings it down; there was simply no way to set one up.
+  - LOOKED AT THE USER'S OWN ACCOUNT 2026-09-16 (read-only, at their request,
+    through decrypt_query-style scripts; nothing written). The Motorcycle plan
+    on "Papa bern" had never posted a payment: created with a later start and
+    corrected to 15 Sep three minutes later, its posted_through marker stayed
+    at 29 Sep. FIXED: update_rule pulls the marker back when a start moves
+    earlier (capped at a year; the posted-dates check prevents doubles). Their
+    ₱5,000 + ₱10,000 test transfers came from two plain transfer rules and were
+    never linked to the plan - which is what REC-32 answers.
+  - PAYING A PLAN, EXTRA PAYMENTS 2026-09-16 (user: "every time the user pays,
+    the system will ask if this would reduce the monthly payment or still have
+    the same monthly payment but the later payments will be deducted"): REC-32.
+    Chosen with the user beforehand: on a loan the debt lives IN THE PLAN and
+    the plan counts the money paid on it. pay_plan() records a transfer tagged
+    with the plan, covers what is due, and asks (PREPAYMENT_CHOICE) what any
+    extra does - lower (₱170,000 over the same 36 = ₱4,722.22) or shorten (34
+    payments of ₱5,000, done Jul 2029 instead of Sep). installment_plan() is
+    now the one place a plan's payment amounts come from; occurrences() reads
+    it. PlanPaymentSheet; Pay on every plan row; Pay back on a loan with a plan
+    pays the plan. Verified in the browser on the user's own numbers.
+  - CATEGORY PICKER 2026-09-16 (user, "category bloat"): the recurring /
+    installment sheet showed every category at once; it now uses the add
+    sheet's two-step picker (mains, then that main's sub-categories).
+  - FIXED 2026-09-16 (user): a transfer INTO an investment account was logged
+    and the account's balance did not move - _view took the typed valuation as
+    the whole truth and threw every posting away (ACC-08). An investment's
+    balance is now the value last typed PLUS the postings dated AFTER that
+    valuation; anything on or before it is already inside the figure typed, so
+    typing a new value resets the base and no contribution is counted twice.
+    current_value stays the typed figure, and the account page names the
+    difference ("₱100,000.00 last valued · ₱5,000.00 moved in since").
+    Revaluation still writes no transaction and is still not income (ACC-12).
+  - FIXED 2026-09-16: money.ts helpers throw on more than two decimal places,
+    and a RATE carries four ("3.2500") - percentOf crashed the add sheet until
+    it parsed the rate on its own terms. Same shape as the places=0 crash the
+    day before: never hand a non-money string to a money helper.
 
 To revisit after Phase 1's benchmark:
   - If cold load > 1500ms, adopt bucket columns (ARCHITECTURE.md §5.7) and

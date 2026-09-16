@@ -66,7 +66,12 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Set, 
 from sqlalchemy.orm import Session
 
 from app.core.crypto.user_cipher import UserCipher
-from app.core.exceptions import BusinessRuleException, NotFoundException, ValidationException
+from app.core.exceptions import (
+    BusinessRuleException,
+    NotFoundException,
+    PrepaymentChoiceException,
+    ValidationException,
+)
 from app.core.utils.date_utils import add_months, clamp_day
 from app.core.utils.money import CENTS, ZERO, money, total
 from app.db.repositories.account_repository import AccountRepository
@@ -83,6 +88,7 @@ NAME_MAX = 60
 MERCHANT_MAX = 80
 NOTES_MAX = 500
 MAX_RULES = 200
+MAX_PULL_BACK_DAYS = 366  # how far back moving a start may reopen the catch-up (REC-05)
 MAX_PAYMENTS = 360
 MAX_INTERVAL = 52
 MAX_TAGS = 10
@@ -125,6 +131,15 @@ class InstallmentStatus:
     payments_posted: int
     payoff_on: Optional[date]  # the final scheduled payment, after any skips
     closed: bool
+    # REC-32. The plan in MONEY terms - what you have actually paid on it and
+    # what is left to pay, which is what "you owe" means on a loan. `paid` and
+    # `remaining` above stay the CHARGES: what has been billed, and what is
+    # still to bill (the figure a card's available credit holds back).
+    money_paid: Decimal = ZERO
+    left_to_pay: Decimal = ZERO
+    current_payment: Decimal = ZERO  # the next payment still to post - lower after an extra payment
+    payments_left: int = 0  # scheduled payments not posted yet, after any shortening
+    prepaid: Decimal = ZERO  # every extra payment so far
 
 
 @dataclass(frozen=True)
@@ -263,6 +278,92 @@ def amount_on(data: Mapping[str, Any], day: date) -> Decimal:
     return money(chosen["amount"])
 
 
+PREPAYMENT_MODES: Tuple[str, ...] = ("lower", "shorten")
+
+PlanRow = Tuple[date, Decimal, Decimal]  # (day, price part, interest part)
+
+
+def installment_plan(data: Mapping[str, Any]) -> List[PlanRow]:
+    """
+    REC-32. Every payment an installment makes, in order, with extra payments
+    already taken into account - the rows occurrences() hands out.
+
+    Built from the plan's own terms (price and interest split per payment,
+    REC-16), then its later interest (REC-29), then each extra payment in the
+    order it was made. An extra payment only ever touches the payments AFTER
+    the one it was made alongside (`after`):
+
+      * "shorten" keeps the monthly amount and takes the extra off the END -
+        the last payments disappear, and the new last one is reduced by what
+        is left over.
+      * "lower" keeps the number of payments and spreads what is left over
+        them, so every later payment is smaller.
+
+    Either way the price and the interest each stay exact to the centavo: the
+    extra comes off the price first, then the interest.
+    """
+    payments = int(data["payments"])
+    skips = {_as_date(d) for d in data.get("skips") or []}
+    start = _as_date(data["start"])
+    horizon = start + timedelta(days=min(366 * (payments * int(data.get("interval") or 1) + 1), 366 * 2000))
+    days: List[date] = []
+    for day in schedule_dates(data, horizon):
+        if day in skips:
+            continue
+        days.append(day)
+        if len(days) == payments:
+            break
+
+    prices = split_schedule(money(data["price"]), payments)
+    interest = money(data.get("interest") or ZERO)
+    interests = split_schedule(interest, payments) if interest > ZERO else [ZERO] * payments
+    changes = sorted((_as_date(c["from"]), money(c["per_payment"])) for c in data.get("interest_changes") or [])
+    rows: List[PlanRow] = []
+    for index, day in enumerate(days):
+        interest_part = interests[index]
+        for since, per_payment in changes:
+            if since <= day:
+                interest_part = per_payment
+        rows.append((day, prices[index], interest_part))
+
+    for extra in sorted(data.get("prepayments") or [], key=lambda p: (str(p["on"]), str(p.get("after")))):
+        rows = _apply_prepayment(rows, _as_date(extra.get("after") or extra["on"]), money(extra["amount"]),
+                                 str(extra.get("mode") or "shorten"))
+    return [row for row in rows if row[1] + row[2] > ZERO]
+
+
+def _apply_prepayment(rows: Sequence[PlanRow], after: date, amount: Decimal, mode: str) -> List[PlanRow]:
+    """One extra payment, applied to the payments dated after `after` (see installment_plan)."""
+    kept = [row for row in rows if row[0] <= after]
+    later = [row for row in rows if row[0] > after]
+    if mode == "lower":
+        price_total = total(row[1] for row in later)
+        interest_total = total(row[2] for row in later)
+        from_price = min(amount, price_total)
+        from_interest = min(amount - from_price, interest_total)
+        count = len(later)
+        if count:
+            new_prices = split_schedule(price_total - from_price, count)
+            left_interest = interest_total - from_interest
+            new_interests = split_schedule(left_interest, count) if left_interest > ZERO else [ZERO] * count
+            later = [(row[0], new_prices[i], new_interests[i]) for i, row in enumerate(later)]
+        return kept + later
+
+    left = amount
+    while later and left > ZERO:
+        day, price, interest = later[-1]
+        if price + interest <= left:
+            later.pop()
+            left -= price + interest
+            continue
+        cut = min(price, left)
+        price, left = price - cut, left - cut
+        cut = min(interest, left)
+        interest, left = interest - cut, left - cut
+        later[-1] = (day, price, interest)
+    return kept + later
+
+
 def occurrences(rule_id: int, data: Mapping[str, Any], start: date, end: date) -> List[Occurrence]:
     """
     THE schedule (REC-22): the occurrences in [start, end], numbered from the
@@ -281,15 +382,12 @@ def occurrences(rule_id: int, data: Mapping[str, Any], start: date, end: date) -
     end_after = data.get("end_after")
 
     installment = data.get("kind") == "installment"
-    prices: List[Decimal] = []
-    interests: Optional[List[Decimal]] = None
-    changes: List[Tuple[date, Decimal]] = []
+    plan: List[PlanRow] = []
     if installment:
-        end_after = int(data["payments"])
-        prices = split_schedule(money(data["price"]), end_after)
-        interest = money(data.get("interest") or ZERO)
-        interests = split_schedule(interest, end_after) if interest > ZERO else None
-        changes = sorted((_as_date(c["from"]), money(c["per_payment"])) for c in data.get("interest_changes") or [])
+        # REC-32. The plan's payments with extra payments applied - a shortened
+        # plan simply has fewer of them.
+        plan = installment_plan(data)
+        end_after = len(plan)
 
     limit = end if end_on is None else min(end, end_on)
     if closed_on is not None:
@@ -312,11 +410,7 @@ def occurrences(rule_id: int, data: Mapping[str, Any], start: date, end: date) -
         if day < start:
             continue
         if installment:
-            price_part = prices[number - 1]
-            interest_part = interests[number - 1] if interests else ZERO
-            for since, per_payment in changes:  # REC-29: a later bill's interest, from its payment on
-                if since <= day:
-                    interest_part = per_payment
+            _, price_part, interest_part = plan[number - 1]
             splits: Tuple[Tuple[Optional[int], Decimal], ...] = ((data.get("category_id"), price_part),)
             if interest_part > ZERO:
                 splits += ((data.get("interest_category_id"), interest_part),)
@@ -457,6 +551,16 @@ def update_rule(
     context = _Context.load(db, cipher)
     posted = [v for v in context.posted.get(rule_id, []) if v.recurring_on is not None]
     data = _clean(db, cipher, payload, record.data, today, posted_count=len(posted))
+    # REC-05, fixed 2026-09-16 (a real plan lost its first payment this way).
+    # A start moved EARLIER has to bring the catch-up marker back with it, or
+    # every occurrence between the new start and the old marker is treated as
+    # already handled and can never post. Nothing can double up: expansion
+    # skips the occurrence dates already in the working set. The pull-back is
+    # capped at a year so that dragging a start into the distant past cannot
+    # post years of charges in one go.
+    floor = max(_as_date(data["start"]), today - timedelta(days=MAX_PULL_BACK_DAYS)) - ONE_DAY
+    if floor < _as_date(data["posted_through"]):
+        data["posted_through"] = floor.isoformat()
     repo.update(rule_id, data)
 
     if data["kind"] == "subscription" and payload.get("reminder_days") is not None:
@@ -559,6 +663,29 @@ def pay_off(db: Session, cipher: UserCipher, rule_id: int, *, today: Optional[da
     if status.closed:
         raise BusinessRuleException("This plan is already paid")
 
+    left = _close_plan(db, cipher, rule_id, data, posted, status, today)
+    audit_service.record(
+        db, audit_service.PAYOFF, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
+        cipher=cipher, detail={"name": data.get("name"), "amount": str(left)},
+    )
+    db.commit()
+    return get_rule(db, cipher, rule_id, today=today)
+
+
+def _close_plan(
+    db: Session,
+    cipher: UserCipher,
+    rule_id: int,
+    data: Dict[str, Any],
+    posted: Sequence[TransactionView],
+    status: InstallmentStatus,
+    on: date,
+) -> Decimal:
+    """
+    REC-13. Charge everything the plan has still to bill as one expense dated
+    `on`, split into price and interest, and close the plan. Returns the
+    amount. Never commits or audits - its callers do, in their own words.
+    """
     interest_category = data.get("interest_category_id")
     interest_paid = total(
         split.amount for v in posted if v.type == "expense" for split in v.splits
@@ -570,20 +697,160 @@ def pay_off(db: Session, cipher: UserCipher, rule_id: int, *, today: Optional[da
     if interest_left > ZERO:
         splits.append({"category_id": interest_category, "amount": str(interest_left)})
 
+    if price_left + interest_left > ZERO:
+        transaction_service.post_recurring(db, cipher, {
+            "type": "expense", "amount": str(price_left + interest_left), "account_id": data["account_id"],
+            "txn_date": on.isoformat(), "merchant": data.get("merchant"),
+            "notes": f"Paid off - {data.get('name')}", "splits": splits, "tag_ids": data.get("tag_ids") or [],
+        }, recurring_id=rule_id, recurring_on=None)
+    data["closed_on"] = on.isoformat()
+    data["posted_through"] = max(_as_date(data["posted_through"]), on).isoformat()
+    RecurringRuleRepository(db, cipher).update(rule_id, data)
+    return price_left + interest_left
+
+
+def pay_plan(
+    db: Session,
+    cipher: UserCipher,
+    rule_id: int,
+    *,
+    amount: Any,
+    from_account_id: Any,
+    on: Optional[date] = None,
+    mode: Optional[str] = None,
+    today: Optional[date] = None,
+) -> RuleView:
+    """
+    REC-32. Money paid on an installment plan - the way a loan from a person or
+    a store is actually paid (2026-09-16, user).
+
+    The money is a transfer from the account you pay out of into the plan's
+    account, carrying the plan's id, so the plan can say how much you have
+    paid and how much is left. It covers what is DUE first: every payment dated
+    on or before the payment day not yet covered - or, when nothing is due yet,
+    the next payment, paid early. Anything above that is EXTRA, and the user
+    chooses what it does, because the two are genuinely different:
+
+      * "lower"   - same number of payments, each one smaller;
+      * "shorten" - same monthly payment, the last ones disappear.
+
+    Asked, not assumed: without a `mode` an extra payment answers
+    PREPAYMENT_CHOICE with both outcomes worked out, and nothing is written.
+    The extra is charged at once - to the plan's category, split price then
+    interest, exactly what came off the schedule - so the schedule, the budget
+    and what you owe all move together. Paying everything that is left closes
+    the plan (REC-13) and asks nothing.
+    """
+    today = today or date.today()
+    on = on or today
+    if on > today:
+        raise BusinessRuleException("A payment is made today or on a day already past")
+    repo = RecurringRuleRepository(db, cipher)
+    record = _record(repo, rule_id)
+    data = dict(record.data)
+    if data.get("kind") != "installment":
+        raise BusinessRuleException("Only an installment plan takes payments")
+    if not isinstance(from_account_id, int) or isinstance(from_account_id, bool):
+        raise ValidationException("Choose the account you pay from")
+    if from_account_id == int(data["account_id"]):
+        raise BusinessRuleException("Pay from a different account than the plan's own")
+    amount = _positive(amount, "amount")
+
+    context = _Context.load(db, cipher)
+    posted = context.posted.get(rule_id, [])
+    status = _installment_status(rule_id, data, posted)
+    if status.closed:
+        raise BusinessRuleException("This plan is already paid")
+    if amount > status.left_to_pay:
+        raise BusinessRuleException(f"That is more than the {status.left_to_pay} left to pay on this plan")
+
+    rows = installment_plan(data)
+    due, boundary = _due_part(rows, status.money_paid - status.prepaid, on)
+    regular = min(amount, due)
+    extra = amount - regular
+    settles = amount == status.left_to_pay
+
+    if extra > ZERO and not settles:
+        if mode is None:
+            raise PrepaymentChoiceException(
+                "Choose what the extra payment does",
+                extra={"due": str(regular), "extra": str(extra),
+                       **{choice: _outcome(data, boundary, extra, choice) for choice in PREPAYMENT_MODES}},
+            )
+        if mode not in PREPAYMENT_MODES:
+            raise ValidationException(f"mode must be one of: {', '.join(PREPAYMENT_MODES)}")
+
+    # The money, both legs, carrying the plan's id - never a schedule date, so
+    # the catch-up can never mistake it for a payment it posted itself.
     transaction_service.post_recurring(db, cipher, {
-        "type": "expense", "amount": str(price_left + interest_left), "account_id": data["account_id"],
-        "txn_date": today.isoformat(), "merchant": data.get("merchant"),
-        "notes": f"Paid off - {data.get('name')}", "splits": splits, "tag_ids": data.get("tag_ids") or [],
+        "type": "transfer", "amount": str(amount), "account_id": from_account_id,
+        "counter_account_id": data["account_id"], "txn_date": on.isoformat(),
+        "notes": f"Payment - {data.get('name')}",
     }, recurring_id=rule_id, recurring_on=None)
-    data["closed_on"] = today.isoformat()
-    data["posted_through"] = max(_as_date(data["posted_through"]), today).isoformat()
-    repo.update(rule_id, data)
+
+    if settles:
+        _close_plan(db, cipher, rule_id, data, posted, status, on)
+    elif extra > ZERO:
+        extra_row = {"on": on.isoformat(), "after": boundary.isoformat(), "amount": str(extra), "mode": mode}
+        after = installment_plan({**data, "prepayments": list(data.get("prepayments") or []) + [extra_row]})
+        price_cut = total(r[1] for r in rows) - total(r[1] for r in after)
+        interest_cut = total(r[2] for r in rows) - total(r[2] for r in after)
+        splits = [{"category_id": data["category_id"], "amount": str(price_cut)}] if price_cut > ZERO else []
+        if interest_cut > ZERO:
+            splits.append({"category_id": data.get("interest_category_id"), "amount": str(interest_cut)})
+        transaction_service.post_recurring(db, cipher, {
+            "type": "expense", "amount": str(extra), "account_id": data["account_id"],
+            "txn_date": on.isoformat(), "merchant": data.get("merchant") or data.get("name"),
+            "notes": f"Extra payment - {data.get('name')}", "splits": splits, "tag_ids": data.get("tag_ids") or [],
+        }, recurring_id=rule_id, recurring_on=None)
+        data["prepayments"] = list(data.get("prepayments") or []) + [extra_row]
+        repo.update(rule_id, data)
+
     audit_service.record(
-        db, audit_service.PAYOFF, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
-        cipher=cipher, detail={"name": data.get("name"), "amount": str(price_left + interest_left)},
+        db, audit_service.PLAN_PAYMENT, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
+        cipher=cipher, detail={"name": data.get("name"), "amount": str(amount), "extra": str(extra),
+                               "mode": "settled" if settles else mode},
     )
     db.commit()
     return get_rule(db, cipher, rule_id, today=today)
+
+
+def _due_part(rows: Sequence[PlanRow], covered: Decimal, on: date) -> Tuple[Decimal, date]:
+    """
+    REC-32. (what a payment made on `on` covers before anything counts as
+    extra, the day after which an extra payment changes the schedule).
+
+    Earlier payments cover the plan oldest first. What is due is every payment
+    dated on or before `on` that they have not covered; when nothing is due,
+    the next payment counts instead - paying it early is not paying extra.
+    """
+    left = covered
+    due = ZERO
+    upcoming: Optional[Tuple[Decimal, date]] = None
+    for day, price, interest in rows:
+        amount = price + interest
+        taken = min(left, amount)
+        left -= taken
+        uncovered = amount - taken
+        if day <= on:
+            due += uncovered
+        elif upcoming is None:
+            upcoming = (uncovered, day)
+    if due > ZERO or upcoming is None:
+        return due, on
+    return upcoming[0], (upcoming[1] if upcoming[0] > ZERO else on)
+
+
+def _outcome(data: Mapping[str, Any], after: date, extra: Decimal, mode: str) -> Dict[str, Any]:
+    """The plan as it would be with this extra payment applied this way - the numbers the question shows."""
+    row = {"on": after.isoformat(), "after": after.isoformat(), "amount": str(extra), "mode": mode}
+    later = [r for r in installment_plan({**data, "prepayments": list(data.get("prepayments") or []) + [row]})
+             if r[0] > after]
+    return {
+        "payment": str(later[0][1] + later[0][2]) if later else "0.00",
+        "payments": len(later),
+        "payoff_on": later[-1][0].isoformat() if later else None,
+    }
 
 
 def confirm_interest(
@@ -864,16 +1131,21 @@ def _installment_status(rule_id: int, data: Mapping[str, Any], posted: Sequence[
     # Far enough for the last payment of any schedule; the loop stops at the payment count anyway.
     horizon = start + timedelta(days=min(366 * (payments * int(data.get("interval") or 1) + 1), 366 * 2000))
     schedule = occurrences(rule_id, {**data, "closed_on": None}, start, horizon)
-    if len(schedule) == payments:
+    prepaid = total(money(p["amount"]) for p in data.get("prepayments") or [])
+    if len(schedule) == len(installment_plan(data)):
         # The schedule IS the plan: with a later change of interest (REC-29) the
-        # total is what each payment carries, not one figure times the count.
-        whole = total(o.amount for o in schedule)
+        # total is what each payment carries, not one figure times the count -
+        # and an extra payment (REC-32) is part of it, taken off the schedule.
+        whole = total(o.amount for o in schedule) + prepaid
     else:
         whole = price + money(data.get("interest") or ZERO)
     interest = whole - price
     paid = total(v.amount for v in posted if v.type == "expense")
     remaining = max(whole - paid, ZERO)
     per_payment = schedule[0].amount if schedule else split_schedule(price, payments)[0]
+    money_paid = total(v.amount for v in posted if v.type == "transfer" and v.direction == "in")
+    posted_days = {v.recurring_on for v in posted if v.type == "expense" and v.recurring_on is not None}
+    to_come = [o for o in schedule if o.on not in posted_days]
     return InstallmentStatus(
         price=price,
         interest=interest,
@@ -886,6 +1158,11 @@ def _installment_status(rule_id: int, data: Mapping[str, Any], posted: Sequence[
         payments_posted=sum(1 for v in posted if v.type == "expense" and v.recurring_on is not None),
         payoff_on=_opt_date(data.get("closed_on")) or (schedule[-1].on if schedule else None),
         closed=data.get("closed_on") is not None or remaining == ZERO,
+        money_paid=money_paid,
+        left_to_pay=max(whole - money_paid, ZERO),
+        current_payment=to_come[0].amount if to_come else ZERO,
+        payments_left=0 if data.get("closed_on") else len(to_come),
+        prepaid=prepaid,
     )
 
 
@@ -1011,7 +1288,7 @@ def _pure(
         data.update({"price": str(price), "payments": payments, "end_after": payments, "end_on": None,
                      "interest": str(interest) if interest is not None else None, "terms": terms})
         data.pop("amounts", None)
-        if existing and posted_count:
+        if existing and (posted_count or existing.get("prepayments")):
             fixed = ("price", "payments", "interest", "start", "frequency", "interval", "days")
             if any(_same(data.get(k)) != _same(existing.get(k)) for k in fixed):
                 raise BusinessRuleException(

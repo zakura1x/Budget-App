@@ -13,7 +13,6 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import BusinessRuleException, ValidationException
-from app.core.utils.date_utils import statement_period
 from app.services import account_service, category_service, projection_service, recurring_service, transaction_service
 
 TODAY = date(2026, 9, 15)
@@ -93,14 +92,61 @@ def test_an_installment_on_the_card_is_added_to_the_bills_it_lands_on(session, o
     credit = by_name["Spaylater"].credit
     assert credit.bills_left == Decimal("27901.97")  # 15,901.97 typed + 12,000.00 of the plan
     assert sum((b.from_plans for b in credit.bills), Decimal("0")) == Decimal("12000.00")
-    first = next(b for b in credit.bills if b.due == statement_period(date(2026, 10, 5), 15, 5).due)
-    assert (first.from_plans, first.typed) == (Decimal("2000.00"), Decimal("0.00"))
-    assert credit.due_now == Decimal("7754.49")  # the October bill is still the one due now
+    # A payment dated 5 October is billed in October (fixed 2026-09-16, user): it
+    # joins the first bill falling due on or after it, not the statement it would
+    # have been "bought" in, which falls due a month later.
+    october = next(b for b in credit.bills if b.due == date(2026, 10, 15))
+    assert (october.from_plans, october.typed) == (Decimal("2000.00"), Decimal("7754.49"))
+    assert credit.due_now == Decimal("9754.49")  # October's bill, the plan payment included
+    # Past the last typed bill the plan keeps that bill's day of the month.
+    assert [b.due for b in credit.bills][-2:] == [date(2027, 2, 15), date(2027, 3, 15)]
 
     # Editing the bills starts from the typed part only, so saving again does not count the plan twice.
     retyped = [{"due": b.due.isoformat(), "amount": str(b.typed_left)} for b in credit.bills if b.typed_left > 0]
     account_service.set_bills(session, owner, card.id, retyped, today=TODAY)
     assert views(session, owner, TODAY)[1]["Spaylater"].credit.bills_left == Decimal("27901.97")
+
+
+def test_the_first_payment_lands_on_the_bill_of_its_own_month(session, owner):
+    """
+    The reported case (2026-09-16): a plan whose first payment is 15 October,
+    on a card whose bills fall due on the 15th, was showing up on the 15
+    NOVEMBER bill - the statement route treated the payment as a purchase.
+    """
+    card = account_service.create_account(session, owner, {
+        "name": "SPayLater", "type": "credit", "statement_closing_day": 15, "payment_due_day": 15,
+    })
+    gadgets = category_service.create_category(session, owner, {"name": "Gadgets"})
+    account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "3000.00"},
+                                                        {"due": "2026-11-15", "amount": "3000.00"}], today=TODAY)
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "type": "expense", "name": "iPhone", "account_id": card.id, "category_id": gadgets.id,
+        "frequency": "monthly", "start": "2026-10-15", "price": "12000.00", "payments": 6}, today=TODAY)
+
+    credit = views(session, owner, TODAY)[1]["SPayLater"].credit
+    by_due = {b.due: b for b in credit.bills}
+    assert by_due[date(2026, 10, 15)].from_plans == Decimal("2000.00")
+    assert by_due[date(2026, 10, 15)].amount == Decimal("5000.00")  # 3,000 typed + the first payment
+    assert by_due[date(2026, 11, 15)].amount == Decimal("5000.00")
+    assert credit.due_now == Decimal("5000.00")
+
+
+def test_an_ordinary_charge_still_takes_the_statement_route(session, owner):
+    """A purchase is billed with the cycle it falls in, which falls due the month after - unchanged."""
+    card = account_service.create_account(session, owner, {
+        "name": "SPayLater", "type": "credit", "statement_closing_day": 15, "payment_due_day": 15,
+    })
+    fun = category_service.create_category(session, owner, {"name": "Fun"})
+    account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "3000.00"},
+                                                        {"due": "2026-11-15", "amount": "3000.00"}], today=TODAY)
+    recurring_service.create_rule(session, owner, {
+        "kind": "subscription", "type": "expense", "name": "Netflix", "account_id": card.id, "category_id": fun.id,
+        "frequency": "monthly", "start": "2026-10-15", "amount": "549.00", "reminder_days": 3}, today=TODAY)
+
+    credit = views(session, owner, TODAY)[1]["SPayLater"].credit
+    by_due = {b.due: b for b in credit.bills}
+    assert by_due[date(2026, 10, 15)].from_plans == Decimal("0.00")  # charged 15 Oct, billed next cycle
+    assert by_due[date(2026, 11, 15)].from_plans == Decimal("549.00")
 
 
 def test_a_subscription_on_the_card_counts_only_as_far_as_the_typed_bills(session, owner):
@@ -135,7 +181,8 @@ def test_months_ahead_counts_a_plan_on_a_billed_card_once(session, owner):
     months = projection_service.project(session, owner, today=TODAY, months=12).months
     assert months[-1].closing == Decimal("-7901.97")  # 20,000 - 15,901.97 typed - 12,000.00 of the plan, once
     assert not any(i.kind == "installment" for m in months for i in m.items)  # only as part of the bills
-    assert sum((m.committed for m in months), Decimal("0")) == Decimal("12000.00")  # the plan part stays a fixed charge
+    # 10,000, not 12,000: October's payment is inside the bill cash on hand already holds.
+    assert sum((m.committed for m in months), Decimal("0")) == Decimal("10000.00")
     assert sum((m.bills for m in months), Decimal("0")) == Decimal("8147.48")  # the typed bills after October's
 
 

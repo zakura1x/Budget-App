@@ -55,6 +55,29 @@ export function fromCentavos(value: number): string {
 }
 
 /**
+ * TXN-22. A percentage of an amount - "2% of ₱1,000" -> "20.00" - as a
+ * SUGGESTION for the cashback field, rounded down to the centavo.
+ *
+ * Integer arithmetic only, the way every other figure here is handled: the
+ * rate becomes hundredths of a per cent (2.5% -> 250), and centavos × that
+ * stays exact in a double for any amount this app can hold. The result is only
+ * ever a starting point the user can overwrite; what is recorded is whatever
+ * ends up in the field.
+ */
+export function percentOf(amount: string, rate: string): string {
+  // A rate is NOT money: the server sends four places ("3.2500"), which the
+  // two-place helpers refuse - so it is parsed here, on its own terms.
+  const match = /^(\d+)(?:\.(\d{0,4}))?\d*$/.exec(rate.trim());
+  if (!match) return '0.00';
+  const scaled = BigInt(`${match[1]}${(match[2] ?? '').padEnd(4, '0')}`); // rate x 10,000
+  if (scaled <= 0n) return '0.00';
+  // BigInt because centavos x rate can pass what a double holds exactly, and
+  // integer division rounds down - a suggestion never rounds up into money
+  // that was not earned.
+  return fromCentavos(Number((BigInt(Math.abs(centavos(amount))) * scaled) / 1000000n));
+}
+
+/**
  * Keep only what a typed amount can contain: digits, one decimal point, two
  * places - and one leading minus when `allowNegative`.
  */

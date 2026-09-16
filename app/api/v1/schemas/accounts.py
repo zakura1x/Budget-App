@@ -11,10 +11,52 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.v1.schemas.common import Colour, DayOfMonth, IconName, Money
+from app.api.v1.schemas.common import Colour, DayOfMonth, Exact, IconName, Money, Rate
 
 # lent / borrowed (ACC-31) and member (ACC-32) since 2026-09-15.
 AccountType = Literal["cash", "debit", "credit", "savings", "investment", "lent", "borrowed", "member"]
+
+
+class InterestBandIn(BaseModel):
+    """One tier: `up_to` is the balance this rate applies up to, empty on the last band."""
+
+    up_to: Optional[Money] = None
+    rate: Rate
+
+
+class InterestIn(BaseModel):
+    """
+    ACC-37 - what a savings account earns. Sent whole: bands, tax and where the
+    money lands. `null` in place of this object turns interest off and leaves
+    everything already credited alone.
+
+    `started` is only read when interest is first turned on; after that the day
+    it began is fixed, because the days since have already been credited.
+    """
+
+    bands: List[InterestBandIn] = Field(min_length=1, max_length=5)
+    basis: Literal[365, 360] = 365
+    tax_rate: Rate = Decimal("0")  # 20 in the Philippines, withheld at source
+    category_id: int
+    started: Optional[date] = None
+
+
+class CashbackRuleIn(BaseModel):
+    """
+    ACC-38 - what this account usually pays back, and where that lands. A
+    default the add sheet fills in (TXN-22), never a total in its own right;
+    null, or a rate of zero, means none.
+    """
+
+    rate: Rate
+    category_id: int
+
+
+class CashbackRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    rate: Rate
+    category_id: Optional[int] = None
 
 
 class AccountIn(BaseModel):
@@ -43,9 +85,50 @@ class AccountIn(BaseModel):
     balance_action: Optional[Literal["adjust", "fix_opening"]] = None
     balance_note: Optional[str] = Field(default=None, max_length=280)
 
+    # ACC-37, on cash, debit, savings and member accounts. Left out on an edit
+    # it keeps what the account had; sent as null it turns interest off.
+    interest: Optional[InterestIn] = None
+    # ACC-38, on anything you spend from. Same rule: left out keeps it, null removes it.
+    cashback: Optional[CashbackRuleIn] = None
+
 
 class ArchiveIn(BaseModel):
     archived: bool
+
+
+class InterestBandOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    up_to: Optional[Money] = None
+    rate: Rate
+
+
+class InterestOut(BaseModel):
+    """The terms, plus what they are worth at today's balance (ACC-37)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    bands: List[InterestBandOut]
+    basis: int
+    tax_rate: Rate
+    category_id: Optional[int] = None
+    started: date
+    credited_through: date  # never today: today's closing balance is not closed
+    per_day: Money
+    per_year: Money
+    carry: Exact  # the fraction of a centavo still owed
+
+
+class InterestAccrualOut(BaseModel):
+    """What a catch-up credited - safe to call on every open (ACC-37)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    posted: int
+    accounts: int
+    credited: Money
+    through: Optional[date] = None
+    needs_attention: List[int] = []
 
 
 class ValuationIn(BaseModel):
@@ -121,8 +204,9 @@ class CreditOut(BaseModel):
     payment_due: date
     due_for_statement_closing: date
     period_spend: Money
-    owed: Money
+    owed: Money  # what is on the card now
     unpaid_installments: Money
+    owed_with_plans: Money = Decimal("0.00")  # REC-14 - plus what the plans have still to bill
     available: Optional[Money]
     due_in_days: int
     due_soon: bool
@@ -156,6 +240,9 @@ class AccountOut(BaseModel):
     current_value: Optional[Money] = None
     cash_amount: Optional[Money] = None  # what it adds to cash on hand when counted (ACC-35)
     counts_in_net_worth: bool = True
+    interest: Optional[InterestOut] = None  # ACC-37
+    cashback: Optional[CashbackRuleOut] = None  # ACC-38
+    plans_unbilled: Money = Decimal("0.00")  # REC-14 - installments still to be charged here
 
 
 class NetWorthOut(BaseModel):

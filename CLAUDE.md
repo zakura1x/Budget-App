@@ -321,6 +321,57 @@ counts purchases, not payments. Two rules to keep:
   `txn_date` and nothing else. `statement_service` writes through
   `transaction_service`, and nothing imports it.
 
+A plan charge joins a card's bills by WHAT IT IS: an installment payment's date
+is the day it is billed, so it lands on the first bill due on or after it; any
+other recurring charge is a purchase and takes the statement cycle, due the
+month after. `account_service._bills` and `projection_service._lands_on_bill`
+must keep answering that the same way.
+
+A plan can be PAID on the plan (REC-32, `recurring_service.pay_plan`): a
+transfer into the plan's account carrying the plan's id and NO `recurring_on`.
+What is due is covered first; an extra part answers 409 PREPAYMENT_CHOICE
+until the user picks `lower` or `shorten`, is charged at once, and is stored in
+`prepayments`. Extra payments are applied inside `installment_plan()`, which
+`occurrences()` reads - never adjust a plan's amounts anywhere else.
+`InstallmentStatus.paid`/`remaining` are CHARGES; `money_paid`/`left_to_pay`
+are MONEY - do not mix them up. `update_rule` pulls `posted_through` back when
+a start moves earlier.
+
+An installment is OWED in full from the day it is taken (REC-14):
+`AccountView.plans_unbilled` holds the unbilled remainder on every account
+type, and `CreditView.owed_with_plans = owed + unpaid_installments` is what a
+card's page and tile show. `balance`, `owed` and cash on hand deliberately do
+NOT include it - the reminder, the statement check and ACC-17 each read the
+figure they mean. Net worth does, on any account. A plan is listed on the
+account it runs on (`AccountPlans`), not only on the Recurring screen.
+
+An INVESTMENT account's balance (ACC-08/12) is the value last typed plus every
+posting dated AFTER that valuation - money moved in or out is not market
+movement, and a transfer into a fund must move it. Postings on or before the
+valuation's day are already inside the typed figure, so a new value resets the
+base. `AccountView.current_value` stays the typed figure; only `balance` adds
+the contributions.
+
+**Interest and cashback** (2026-09-16, ARCHITECTURE §4.6/§4.7):
+
+- Daily savings interest (ACC-37) is credited by `interest_service.accrue()`,
+  a CATCH-UP like the recurring engine - `POST /accounts/interest/accrue` is
+  called on every open beside `expandRecurring`. It never accrues today (that
+  balance is not closed), credits the NET of withholding tax, compounds, and
+  carries sub-centavo interest in `carry` until it reaches ₱0.01. Postings and
+  each account's `credited_through` marker move in ONE commit, and every entry
+  carries `interest_on`, so a second run posts nothing and a deleted entry is
+  never written back. The arithmetic is pure, in `app/core/utils/interest.py`,
+  and `projection_service` uses the SAME helper - never its own formula.
+- Cashback (TXN-22) is a linked pair, not a discount: the purchase keeps its
+  full amount (spending stays gross) and the money back is an income row joined
+  by `cashback_id` / `cashback_of`. Only `transaction_service` writes it, and
+  both rows move, change and go together. An account's usual rate (ACC-38) is a
+  suggestion for the sheet and is never applied to anything by itself.
+- **A rate is not money.** `money.ts` and `money.py` quantise to two places and
+  REFUSE more; rates carry four ("3.2500"). Use `percentOf` / the interest
+  helper, never `formatPHP` or `splitDecimal`, on a rate.
+
 **Calendar, stats and tags** (Phase 6): `stats_service.overview` and
 `calendar_service.month` read `transaction_service.views()` - both legs of
 every transfer - and count ONLY expense and income splits; adjustments are

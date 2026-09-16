@@ -39,6 +39,15 @@ A PURCHASE THE BANK POSTED LATE (ACC-26) carries `card_posted_on`. It moves
 the purchase to a later card statement and changes nothing else: the budget
 reads `txn_date` and only `txn_date`.
 
+CASHBACK (TXN-22) is a linked pair too, and for the same reason transfers are:
+the money really does arrive, often days later, and a balance that did not
+move would be a lie. The purchase keeps its full amount and carries
+`cashback` - what was earned, where it lands and when - plus `cashback_id`,
+the income row that credits it; that row carries `cashback_of` back. The pair
+is written, edited and deleted together. Spending stats therefore stay GROSS
+(confirmed by the user 2026-09-16): a PHP 1,000 purchase with PHP 20 back is
+PHP 1,000 of spending and PHP 20 of income, never PHP 980 of spending.
+
 Reads never touch SQL beyond the first cold load - they filter, sort, search
 and page in Python over TransactionRepository.cached() (TXN-12/13).
 """
@@ -88,6 +97,22 @@ class Split:
 
 
 @dataclass(frozen=True)
+class Cashback:
+    """
+    TXN-22. What a purchase earns back: the amount, the account it lands in and
+    the day it does. `rate` is kept only to say where the amount came from -
+    "2% of what you spent" reads better than a bare figure - and nothing
+    recomputes from it, so a rate that changes later cannot rewrite history.
+    """
+
+    amount: Decimal
+    account_id: int
+    category_id: int
+    on: date
+    rate: Optional[Decimal] = None
+
+
+@dataclass(frozen=True)
 class TransactionView:
     id: int
     type: str
@@ -103,6 +128,10 @@ class TransactionView:
     tag_ids: Tuple[int, ...] = ()
     recurring_id: Optional[int] = None
     recurring_on: Optional[date] = None  # the occurrence it posted as; None for a payment against a plan
+    interest_on: Optional[date] = None  # ACC-37 - the day of savings interest this credited
+    cashback: Optional["Cashback"] = None  # TXN-22 - what this purchase earns back
+    cashback_id: Optional[int] = None  # the income row that credits it
+    cashback_of: Optional[int] = None  # on that row: the purchase it came from
     attachment_id: Optional[int] = None  # TXN-15 - the receipt
     created_at: Optional[datetime] = None
     card_posted_on: Optional[date] = None  # ACC-26 - the statement it landed on, when later
@@ -312,7 +341,13 @@ def create_transaction(
         records = [out_leg, in_leg]
     else:
         data = _clean(db, cipher, payload, kind, existing=None)
-        records = [repo.create(data)]
+        record = repo.create(data)
+        records = [record]
+        # TXN-22. The credit rides along in the same commit as the purchase.
+        block = _cashback_for(db, cipher, payload, data, kind, existing=None)
+        if block is not None:
+            record, credit = _reconcile_cashback(db, cipher, record, block)
+            records = [record] + ([credit] if credit is not None else [])
 
     audit_service.record(
         db, audit_service.CREATE, user_id=cipher.user_id, entity="transactions",
@@ -354,7 +389,16 @@ def update_transaction(
         ]
     else:
         data = _clean(db, cipher, payload, kind, existing=record.data)
-        records = [repo.update(transaction_id, data)]
+        updated = repo.update(transaction_id, data)
+        records = [updated]
+        if updated.data.get("cashback_of"):
+            # This IS the credit. Editing it keeps the purchase's block honest,
+            # rather than leaving it claiming money that moved (TXN-22).
+            records.append(_follow_cashback(db, cipher, updated))
+        elif kind == "expense" or updated.data.get("cashback_id"):
+            block = _cashback_for(db, cipher, payload, data, kind, existing=record.data)
+            updated, credit = _reconcile_cashback(db, cipher, updated, block)
+            records = [updated] + ([credit] if credit is not None else [])
 
     audit_service.record(
         db, audit_service.UPDATE, user_id=cipher.user_id, entity="transactions",
@@ -369,6 +413,14 @@ def delete_transaction(db: Session, cipher: UserCipher, transaction_id: int, *, 
     repo = TransactionRepository(db, cipher)
     record = _record(db, cipher, transaction_id)
     doomed = list(_legs(db, cipher, record)) if record.data.get("type") == "transfer" else [record]
+    # TXN-22. A purchase takes its cashback with it; deleting the credit on its
+    # own leaves the purchase, with nothing left claiming money that is gone.
+    credit_id = record.data.get("cashback_id")
+    if credit_id:
+        doomed.append(_record(db, cipher, credit_id))
+    if record.data.get("cashback_of"):
+        purchase = _record(db, cipher, record.data["cashback_of"])
+        repo.update(purchase.id, {**purchase.data, "cashback": None, "cashback_id": None})
 
     for leg in doomed:
         repo.soft_delete(leg.id)
@@ -477,6 +529,26 @@ def post_recurring(
         out_leg = repo.update(out_leg.id, {**out_data, **marks, "pair_id": in_leg.id})
         return [out_leg, in_leg]
     return [repo.create({**_clean(db, cipher, payload, kind, existing=None), **marks})]
+
+
+def post_interest(
+    db: Session,
+    cipher: UserCipher,
+    payload: Mapping[str, Any],
+    *,
+    on: date,
+) -> Record:
+    """
+    ACC-37. Write one day's savings interest as ordinary income, validated
+    exactly like a typed entry, carrying the day it was earned for.
+
+    Only interest_service calls this. Like post_recurring it neither commits
+    nor audits: the whole catch-up and every account's marker move in ONE
+    commit. `interest_on` is what makes a second catch-up a no-op, and it
+    survives an edit, so a day can never be credited twice.
+    """
+    data = _clean(db, cipher, payload, _type(payload.get("type")), existing=None)
+    return TransactionRepository(db, cipher).create({**data, "interest_on": on.isoformat()})
 
 
 def reprice_recurring(
@@ -617,6 +689,15 @@ def _clean(
         "tag_ids": _tags(db, cipher, payload, existing),
         "recurring_id": (existing or {}).get("recurring_id"),
         "recurring_on": (existing or {}).get("recurring_on"),
+        # ACC-37. The day this interest was earned for, kept through an edit so
+        # the catch-up still knows that day is settled.
+        "interest_on": (existing or {}).get("interest_on"),
+        # TXN-22. The cashback block and the links between a purchase and its
+        # credit are the service's to move (_reconcile_cashback), never a
+        # submitted body's - _clean only carries them through untouched.
+        "cashback": (existing or {}).get("cashback"),
+        "cashback_id": (existing or {}).get("cashback_id"),
+        "cashback_of": (existing or {}).get("cashback_of"),
         "attachment_id": (existing or {}).get("attachment_id"),
     }
     # ACC-26. A late posting date belongs to one purchase on one card on one
@@ -667,6 +748,154 @@ def _record(db: Session, cipher: UserCipher, transaction_id: int) -> Record:
     raise NotFoundException("Transaction not found")
 
 
+def _cashback_view(raw: Any) -> Optional[Cashback]:
+    """The stored block as the API returns it, or None. Never raises - a read must not fail."""
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        return Cashback(
+            amount=money(raw.get("amount", ZERO)),
+            account_id=int(raw["account_id"]),
+            category_id=int(raw["category_id"]),
+            on=date.fromisoformat(str(raw["on"])),
+            rate=Decimal(str(raw["rate"])) if raw.get("rate") else None,
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _clean_cashback(
+    db: Session,
+    cipher: UserCipher,
+    raw: Any,
+    *,
+    amount: Decimal,
+    purchase_date: date,
+    account_id: int,
+    existing: Optional[Mapping[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """
+    TXN-22. Validate the cashback on a purchase into the block that gets
+    sealed, or None for no cashback.
+
+    It defaults to the card it was earned on, on the day of the purchase, which
+    is what a wallet does; a card that pays at the end of the cycle gets its own
+    date, and cashback paid somewhere else gets its own account. A rate is
+    remembered, never re-applied.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValidationException("Cashback is an amount and where it lands")
+
+    earned = _positive(raw.get("amount"), "cashback")
+    if earned > amount:
+        raise BusinessRuleException("Cashback cannot be more than what you spent")
+
+    lands_in = raw.get("account_id") or account_id
+    kept = existing or {}
+    checked = _account(db, cipher, lands_in, "cashback account", allow_archived_if=kept.get("account_id"))
+
+    category_id = raw.get("category_id")
+    if not category_id:
+        raise ValidationException("Choose the income category cashback lands in")
+    category = _categories(db, cipher).get(int(category_id))
+    if category is None:
+        raise ValidationException("That cashback category does not exist")
+    if category.get("kind") != "income":
+        raise BusinessRuleException("Cashback is income, so it needs an income category")
+    if category.get("archived") and int(category_id) != kept.get("category_id"):
+        raise BusinessRuleException("That cashback category is archived")
+
+    return {
+        "amount": str(earned),
+        "account_id": checked,
+        "category_id": int(category_id),
+        "on": _date(raw.get("on") or purchase_date.isoformat()).isoformat(),
+        "rate": str(raw["rate"]) if raw.get("rate") else None,
+    }
+
+
+def _cashback_for(
+    db: Session,
+    cipher: UserCipher,
+    payload: Mapping[str, Any],
+    data: Mapping[str, Any],
+    kind: str,
+    *,
+    existing: Optional[Mapping[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """
+    TXN-22. The cashback block a write means: the one submitted, or - when the
+    write says nothing about it - the one already there, checked again against
+    the amount as it now stands. An edit that drops the purchase below what it
+    paid back is refused rather than quietly clamped.
+    """
+    raw = payload.get("cashback") if "cashback" in payload else (existing or {}).get("cashback")
+    if raw is not None and kind != "expense":
+        raise BusinessRuleException("Only a purchase earns cashback")
+    return _clean_cashback(
+        db, cipher, raw, amount=money(data["amount"]),
+        purchase_date=date.fromisoformat(str(data["txn_date"])), account_id=int(data["account_id"]),
+        existing=(existing or {}).get("cashback"),
+    )
+
+
+def _follow_cashback(db: Session, cipher: UserCipher, credit: Record) -> Record:
+    """TXN-22. Copy an edited credit's amount, account and date back onto the purchase's block."""
+    repo = TransactionRepository(db, cipher)
+    purchase = _record(db, cipher, credit.data["cashback_of"])
+    block = dict(purchase.data.get("cashback") or {})
+    block.update({"amount": credit.data["amount"], "account_id": credit.data["account_id"],
+                  "on": credit.data["txn_date"],
+                  "category_id": (credit.data.get("splits") or [{}])[0].get("category_id")})
+    return repo.update(purchase.id, {**purchase.data, "cashback": block})
+
+
+def _reconcile_cashback(
+    db: Session,
+    cipher: UserCipher,
+    record: Record,
+    block: Optional[Mapping[str, Any]],
+) -> Tuple[Record, Optional[Record]]:
+    """
+    TXN-22. Bring the purchase's credit row into line with its cashback block:
+    write one, correct it, or take it away. Returns (purchase, credit) as
+    stored - the rows themselves, because a row written in this transaction is
+    not in the working set until COMMIT and could not be read back by id.
+
+    It never commits: the purchase and its credit move in ONE database
+    transaction, so a ledger can never hold half a pair.
+    """
+    repo = TransactionRepository(db, cipher)
+    data = record.data
+    existing_id = data.get("cashback_id")
+    existing = next((r for r in repo.cached() if r.id == existing_id), None) if existing_id else None
+
+    if block is None:
+        if existing is not None:
+            repo.soft_delete(existing.id)
+        if data.get("cashback") is None and existing_id is None:
+            return record, None
+        return repo.update(record.id, {**data, "cashback": None, "cashback_id": None}), None
+
+    leg = {
+        "type": "income",
+        "amount": block["amount"],
+        "account_id": block["account_id"],
+        "txn_date": block["on"],
+        "merchant": data.get("merchant") or "Cashback",
+        "category_id": block["category_id"],
+    }
+    if existing is not None:
+        cleaned = _clean(db, cipher, leg, "income", existing=existing.data)
+        credit = repo.update(existing.id, {**cleaned, "cashback_of": record.id})
+    else:
+        cleaned = _clean(db, cipher, leg, "income", existing=None)
+        credit = repo.create({**cleaned, "cashback_of": record.id})
+    return repo.update(record.id, {**data, "cashback": dict(block), "cashback_id": credit.id}), credit
+
+
 def _legs(db: Session, cipher: UserCipher, record: Record) -> Tuple[Record, Record]:
     """(out leg, in leg) of the transfer this record belongs to."""
     pair_id = record.data.get("pair_id")
@@ -697,6 +926,10 @@ def _view(record: Record) -> TransactionView:
         tag_ids=tuple(data.get("tag_ids") or ()),
         recurring_id=data.get("recurring_id"),
         recurring_on=date.fromisoformat(str(data["recurring_on"])) if data.get("recurring_on") else None,
+        interest_on=date.fromisoformat(str(data["interest_on"])) if data.get("interest_on") else None,
+        cashback=_cashback_view(data.get("cashback")),
+        cashback_id=data.get("cashback_id"),
+        cashback_of=data.get("cashback_of"),
         attachment_id=data.get("attachment_id"),
         created_at=record.row_created,
         card_posted_on=date.fromisoformat(str(data["card_posted_on"])) if data.get("card_posted_on") else None,

@@ -10,8 +10,9 @@ from app.api.v1.schemas.budgets import Ratio
 from app.api.v1.schemas.common import Money
 
 Kind = Literal["standard", "subscription", "installment"]
-# A projected item can also be a typed card bill entering cash on hand (ACC-35): its typed part, or its plan part.
-ProjectedKind = Literal["standard", "subscription", "installment", "bill", "bill_plans"]
+# A projected item can also be a typed card bill entering cash on hand (ACC-35):
+# its typed part, or its plan part - or a month of savings interest (ACC-37).
+ProjectedKind = Literal["standard", "subscription", "installment", "bill", "bill_plans", "interest"]
 RuleType = Literal["expense", "income", "transfer"]
 Frequency = Literal["daily", "weekly", "monthly", "yearly", "semi_monthly"]
 
@@ -56,6 +57,19 @@ class SkipIn(BaseModel):
     on: date
 
 
+class PlanPaymentIn(BaseModel):
+    """
+    REC-32 - money paid on an installment plan, from another account. When it
+    is more than what is due, the first try answers 409 PREPAYMENT_CHOICE with
+    both outcomes; send it again with `mode` to say what the extra does.
+    """
+
+    amount: Money
+    from_account_id: int
+    on: Optional[date] = None  # the client's today when left out
+    mode: Optional[Literal["lower", "shorten"]] = None
+
+
 class OccurrenceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,6 +101,12 @@ class InstallmentOut(BaseModel):
     payments_posted: int
     payoff_on: Optional[date] = None
     closed: bool
+    # REC-32 - the plan in money terms, beside the charges above.
+    money_paid: Money = Decimal("0.00")
+    left_to_pay: Money = Decimal("0.00")
+    current_payment: Money = Decimal("0.00")
+    payments_left: int = 0
+    prepaid: Money = Decimal("0.00")
 
 
 class RuleOut(BaseModel):

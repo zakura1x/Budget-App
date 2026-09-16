@@ -9,6 +9,7 @@
  * whether a payment is due soon all turn on the user's day (ACC-19..22).
  */
 import { api, ApiError } from './api';
+import { centavos, fromCentavos } from './money';
 import { localToday } from './transactions';
 
 /** lent / borrowed (ACC-31) and member (ACC-32) since 2026-09-15. */
@@ -60,8 +61,11 @@ export interface Credit {
   payment_due: string;
   due_for_statement_closing: string;
   period_spend: string;
+  /** What is ON the card now - what a payment would clear. */
   owed: string;
   unpaid_installments: string;
+  /** REC-14 - owed plus what the plans have still to bill: what the card's own app calls your balance. */
+  owed_with_plans: string;
   available: string | null;
   due_in_days: number;
   due_soon: boolean;
@@ -81,6 +85,32 @@ export interface Valuation {
   on: string;
   value: string;
   note: string | null;
+}
+
+/** ACC-37 - one tier of a savings rate; `up_to` is empty on the top band. */
+export interface InterestBand {
+  up_to: string | null;
+  /** Per cent a year, as a string: "3.2500". */
+  rate: string;
+}
+
+/**
+ * ACC-37 - what an account earns while the money sits there, plus what that is
+ * worth at today's balance. `per_day` and `per_year` are net of tax and come
+ * from the server, which uses the same arithmetic as the daily credits.
+ */
+export interface Interest {
+  bands: InterestBand[];
+  basis: number;
+  tax_rate: string;
+  category_id: number | null;
+  started: string;
+  /** Never today: a day's interest is earned on its closing balance. */
+  credited_through: string;
+  per_day: string;
+  per_year: string;
+  /** The fraction of a centavo still owed - more places than money. */
+  carry: string;
 }
 
 export interface Account {
@@ -104,6 +134,23 @@ export interface Account {
   current_value: string | null;
   /** What it adds to cash on hand when counted: the balance, or minus a card's bill due now. */
   cash_amount: string;
+  /** ACC-37 - null on a card, an investment, or any account that earns nothing. */
+  interest: Interest | null;
+  /** ACC-38 - what this account usually pays back, to fill the add sheet in (TXN-22). */
+  cashback: CashbackRule | null;
+  /**
+   * REC-14 - what this account's installment plans have still to charge. Money
+   * you already owe, on a card or a loan alike, before any charge has posted.
+   * The balance never includes it; what you OWE and net worth do.
+   */
+  plans_unbilled: string;
+}
+
+/** ACC-38 - a suggestion for the add sheet, never a total in its own right. */
+export interface CashbackRule {
+  /** Per cent of what you spend, as a string: "2.0000". */
+  rate: string;
+  category_id: number | null;
 }
 
 export interface CashOnHand {
@@ -149,6 +196,22 @@ export interface AccountDraft {
   balance?: string;
   balance_action?: BalanceAction;
   balance_note?: string | null;
+  /**
+   * ACC-37. Left out, an edit keeps the account's interest; sent as null it
+   * turns it off and leaves everything already credited alone. `started` is
+   * read only the first time - after that the day it began is fixed.
+   */
+  interest?: InterestDraft | null;
+  /** ACC-38. Same rule: left out keeps it, null removes it. */
+  cashback?: { rate: string; category_id: number } | null;
+}
+
+export interface InterestDraft {
+  bands: { up_to: string | null; rate: string }[];
+  basis?: number;
+  tax_rate?: string;
+  category_id: number;
+  started?: string;
 }
 
 /** The server's question when a typed balance differs (409 BALANCE_DIFFERS). */
@@ -197,6 +260,22 @@ export const TYPE_ICON: Record<AccountType, string> = {
  * a card, and a loan or money borrowed (ACC-31). Stored balances stay signed.
  */
 export const isOwed = (type: AccountType) => type === 'credit' || type === 'borrowed';
+
+/**
+ * REC-14. What an account owes INCLUDING installments not billed yet - the
+ * figure a card's own app shows. A plan you take out is money owed from the
+ * day you take it, even though the first charge has not posted.
+ */
+export function owedWithPlans(account: Account): string {
+  if (account.credit) return account.credit.owed_with_plans;
+  // A debt is stored as a minus, so what you owe is the balance turned round,
+  // and a plan not billed yet is owed on top of it.
+  return fromCentavos(-centavos(account.balance) + centavos(account.plans_unbilled));
+}
+
+/** The same account's own balance, shown the way its type means it. */
+export const shownFigure = (account: Account): string =>
+  isOwed(account.type) ? owedWithPlans(account) : account.balance;
 
 export interface AccountKind {
   subtype: string;
@@ -281,6 +360,35 @@ export const setArchived = (id: number, archived: boolean) =>
 /** ACC-35 - replace a card's bills with the unpaid ones its app shows today; [] removes them. */
 export const setBills = (id: number, bills: { due: string; amount: string }[]) =>
   api<Account>(`/accounts/${id}/bills?${today()}`, { method: 'PUT', body: { bills } });
+
+/**
+ * ACC-37. Credit every day of savings interest up to yesterday that has not
+ * been credited yet. Safe on every open, like expandRecurring: the days
+ * already credited are skipped and a second call changes nothing.
+ */
+export const accrueInterest = () =>
+  api<{ posted: number; accounts: number; credited: string; through: string | null; needs_attention: number[] }>(
+    `/accounts/interest/accrue?${today()}`, { method: 'POST' },
+  );
+
+/**
+ * The banks this app is used with, as a one-tap preset (ACC-37). Rates checked
+ * 2026-09-16; a bank that changes its rate is edited by hand.
+ */
+export const INTEREST_PRESETS: { label: string; hint: string; bands: InterestBand[]; tax_rate: string }[] = [
+  {
+    label: 'SeaBank / MariBank',
+    hint: '3.25% a year, 3.75% above ₱1M',
+    bands: [{ up_to: '1000000.00', rate: '3.25' }, { up_to: null, rate: '3.75' }],
+    tax_rate: '20',
+  },
+  {
+    label: 'GoTyme / Maya',
+    hint: 'One rate on the whole balance',
+    bands: [{ up_to: null, rate: '4.00' }],
+    tax_rate: '20',
+  },
+];
 
 export const addValuation = (id: number, value: string, on?: string) =>
   api<Account>(`/accounts/${id}/valuations?${today()}`, { method: 'POST', body: { value, on } });

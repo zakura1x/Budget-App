@@ -37,8 +37,11 @@ import {
   type AccountType,
   type BalanceAction,
   type BalanceQuestion,
+  type InterestDraft,
 } from '../lib/accounts';
-import { formatPHP, toDecimalString } from '../lib/money';
+import { flatten, listCategories, type Category } from '../lib/categories';
+import { InterestFields } from './InterestFields';
+import { centavos, formatPHP, fromCentavos, toDecimalString } from '../lib/money';
 import { ColourPicker, GlyphTile, IconPicker } from './StylePicker';
 import { ACCOUNT_GLYPHS } from './Glyph';
 import { Button } from './ui/Button';
@@ -46,10 +49,31 @@ import { Sheet } from './ui/Sheet';
 import { TextField } from './ui/TextField';
 import { Toggle } from './ui/Toggle';
 
+/** ACC-37. Mirrors account_service.EARNS_INTEREST - where a bank actually pays. */
+const EARNS_INTEREST: AccountType[] = ['cash', 'debit', 'savings', 'member'];
+
+/** ACC-38. Mirrors account_service.GIVES_CASHBACK - the accounts you spend FROM. */
+const GIVES_CASHBACK: AccountType[] = ['cash', 'debit', 'credit', 'savings', 'member'];
+
 /** Mirrors account_service.COUNTS_IN_CASH_ON_HAND_DEFAULT (ACC-18/31/32). */
 const COUNTS_BY_DEFAULT: Record<AccountType, boolean> = {
   cash: true, debit: true, savings: true, credit: true, investment: false, lent: false, borrowed: false, member: true,
 };
+
+/**
+ * ACC-37. The typed rates as the server wants them: amounts as decimal
+ * strings, an empty ceiling on the top band, and nothing turned into a Number.
+ */
+function cleanInterest(draft: InterestDraft): InterestDraft {
+  return {
+    ...draft,
+    tax_rate: toDecimalString((draft.tax_rate ?? '20').trim() || '0'),
+    bands: draft.bands.map((band, index) => ({
+      rate: toDecimalString((band.rate ?? '').trim() || '0'),
+      up_to: index === draft.bands.length - 1 || !band.up_to?.trim() ? null : toDecimalString(band.up_to.trim()),
+    })),
+  };
+}
 
 /** The balance field on an existing account, in the words of what its balance means. */
 function balanceWords(type: AccountType): { label: string; hint: string } {
@@ -101,6 +125,8 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   const [icon, setIcon] = useState('cash');
   const [counts, setCounts] = useState(true);
   const [inNetWorth, setInNetWorth] = useState(true);
+  /** ACC-14/27 - the same balance read the other way round: limit - owed - plans still to bill. */
+  const [leftToSpend, setLeftToSpend] = useState('');
   const [closingDay, setClosingDay] = useState('');
   const [dueDay, setDueDay] = useState('');
   const [limit, setLimit] = useState('');
@@ -114,11 +140,45 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   const [kindLabel, setKindLabel] = useState<{ label: string; hint: string } | null>(null);
   const [subtype, setSubtype] = useState<string | null>(null);
   const [balanceNote, setBalanceNote] = useState('');
+  const [interest, setInterest] = useState<InterestDraft | null>(null);
+  /** ACC-38 - what this account usually pays back, and where it lands. */
+  const [cashbackRate, setCashbackRate] = useState('');
+  const [cashbackCategory, setCashbackCategory] = useState<number | null>(null);
+  /** The income categories both blocks pick from - fetched once, here. */
+  const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   /** What the balance field shows for an account: a card's balance as the amount owed. */
   const shownBalance = (a: Account) => (isOwed(a.type) ? negate(a.balance) : a.balance);
+
+  /** Centavos in a typed amount, or 0 while it is half-typed. */
+  const cents = (typed: string) => {
+    try {
+      return centavos(toDecimalString(typed.trim() || '0'));
+    } catch {
+      return 0;
+    }
+  };
+  const limitCents = cents(limit);
+  const unpaidCents = centavos(account?.credit?.unpaid_installments ?? '0.00');
+  const typeOwed = (value: string) => {
+    setCurrent(value);
+    if (limitCents > 0) setLeftToSpend(fromCentavos(limitCents - unpaidCents - cents(value)));
+  };
+  const typeLeft = (value: string) => {
+    setLeftToSpend(value);
+    if (limitCents > 0) setCurrent(fromCentavos(limitCents - unpaidCents - cents(value)));
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    listCategories(controller.signal)
+      .then((tree) => setIncomeCategories(flatten(tree).filter((c) => c.kind === 'income' && !c.archived)))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -136,6 +196,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       setName(account.name);
       setOpening(account.opening_balance);
       setCurrent(shownBalance(account));
+      setLeftToSpend(account.credit?.available ?? '');
       setColour(account.colour);
       setIcon(account.icon);
       setCounts(account.counts_in_cash_on_hand);
@@ -144,6 +205,17 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       setLimit(account.credit?.limit ?? '');
       setOwnLimit(account.credit?.spending_limit ?? '');
       setLag(account.credit ? String(account.credit.posting_lag_days) : '3');
+      // ACC-37. The terms as stored; the marker and the carry are the server's.
+      setInterest(account.interest
+        ? {
+            bands: account.interest.bands.map((band) => ({ ...band })),
+            basis: account.interest.basis,
+            tax_rate: account.interest.tax_rate,
+            category_id: account.interest.category_id ?? 0,
+          }
+        : null);
+      setCashbackRate(account.cashback ? account.cashback.rate.replace(/0+$/, '').replace(/\.$/, '') : '');
+      setCashbackCategory(account.cashback?.category_id ?? null);
     } else {
       setType('cash');
       setName('');
@@ -157,6 +229,9 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       setLimit('');
       setOwnLimit('');
       setLag('3');
+      setInterest(null);
+      setCashbackRate('');
+      setCashbackCategory(null);
     }
   }, [open, account]);
 
@@ -190,6 +265,19 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
               spending_limit: ownLimit.trim() ? toDecimalString(ownLimit.trim()) : null,
               // Empty keeps what the card has (or the default for a new one).
               ...(lag.trim() ? { posting_lag_days: Number(lag) } : {}),
+            }
+          : {}),
+        // ACC-37. Sent whole, or null to turn it off; the server keeps the
+        // marker and the carry, so saving the same terms changes nothing.
+        ...(EARNS_INTEREST.includes(type)
+          ? { interest: interest && interest.category_id ? cleanInterest(interest) : null }
+          : {}),
+        // ACC-38. A rate with somewhere to land, or nothing at all.
+        ...(GIVES_CASHBACK.includes(type)
+          ? {
+              cashback: cashbackRate.trim() && cashbackCategory
+                ? { rate: toDecimalString(cashbackRate.trim()), category_id: cashbackCategory }
+                : null,
             }
           : {}),
       };
@@ -372,7 +460,21 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
           autoComplete="off"
         />
 
-        {editing && type !== 'investment' ? (
+        {editing && type === 'credit' && limitCents > 0 ? (
+          // ACC-27. A card is read either way round: what it owes, or what is left to spend on it.
+          // Type one and the other follows the limit; both save as the same balance.
+          <div className="grid grid-cols-2 gap-3">
+            <TextField label="Amount owed" value={current} inputMode="decimal" placeholder="0.00"
+              onChange={(e) => typeOwed(clean(e.target.value))} />
+            <TextField label="Left to spend" value={leftToSpend} inputMode="decimal" placeholder="0.00"
+              onChange={(e) => typeLeft(clean(e.target.value))} />
+            <p className="col-span-2 text-footnote text-ink-3">
+              Either one — the other follows your {formatPHP(fromCentavos(limitCents))} limit
+              {unpaidCents > 0 && `, less the ${formatPHP(fromCentavos(unpaidCents))} of plans still to bill`}. Changing it
+              asks how to record the difference.
+            </p>
+          </div>
+        ) : editing && type !== 'investment' ? (
           <TextField
             label={balanceWords(type).label}
             value={current}
@@ -418,7 +520,13 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
             <TextField
               label="Credit limit"
               value={limit}
-              onChange={(e) => setLimit(clean(e.target.value))}
+              onChange={(e) => {
+                const next = clean(e.target.value);
+                setLimit(next);
+                // What is left follows the limit, so a corrected limit does not leave a stale figure.
+                const ceiling = cents(next);
+                if (ceiling > 0) setLeftToSpend(fromCentavos(ceiling - unpaidCents - cents(current)));
+              }}
               inputMode="decimal"
               placeholder="50,000.00"
               hint="What the bank allows. Leave empty if you would rather not track it."
@@ -447,6 +555,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
           <div className="space-y-3 rounded-2xl bg-surface-2 p-4">
             <p className="text-footnote text-ink-2">
               Type what it is worth today. Each value is kept with its date, and none of it counts as income.
+              Money you transfer in or out after that day is added to it, so a contribution is never lost.
             </p>
             <TextField
               label="Value today"
@@ -468,6 +577,42 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
                 ))}
               </ul>
             )}
+          </div>
+        )}
+
+        {EARNS_INTEREST.includes(type) && (
+          <InterestFields value={interest} onChange={setInterest} saved={account?.interest ?? null}
+            categories={incomeCategories} />
+        )}
+
+        {GIVES_CASHBACK.includes(type) && incomeCategories.length > 0 && (
+          <div className="space-y-2 rounded-2xl bg-surface-2 p-4">
+            <p className="text-footnote font-semibold text-ink-2">Usual cashback</p>
+            <div className="flex items-end gap-2">
+              <TextField
+                className="w-28"
+                label="Rate"
+                value={cashbackRate}
+                onChange={(e) => setCashbackRate(clean(e.target.value).replace('-', ''))}
+                inputMode="decimal"
+                placeholder="2"
+                trailing={<span className="pr-3.5 text-footnote text-ink-3">%</span>}
+              />
+              <select
+                value={cashbackCategory ?? ''}
+                onChange={(e) => setCashbackCategory(Number(e.target.value) || null)}
+                aria-label="Cashback category"
+                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 text-body"
+              >
+                <option value="">Lands in…</option>
+                {incomeCategories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.parent_id ? `  ${c.name}` : c.name}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-footnote text-ink-3">
+              Only a suggestion: every purchase on this account offers this much back, and you can change or clear it there.
+            </p>
           </div>
         )}
 

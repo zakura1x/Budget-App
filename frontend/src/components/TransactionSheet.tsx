@@ -5,7 +5,8 @@
  * the account already chosen, so an expense is a category chip and the digits.
  * Everything else is one tap away and never in the way:
  *
- *  - Category chips scroll sideways, most-used first (TXN-05).
+ *  - Category chips scroll sideways, most-used first (TXN-05). MAIN categories
+ *    only: choose one and its sub-categories appear under it, to take or leave.
  *  - Repeat last entry (TXN-17) sits where a fresh sheet has nothing typed yet
  *    - the second-most-used action, right under the thumb that opened this.
  *  - SPLIT (TXN-16) is hidden until asked for. Splits are the exception, and a
@@ -36,6 +37,7 @@ import {
   centavos,
   formatPHP,
   fromCentavos,
+  percentOf,
   sanitizeAmount,
   toDecimalString,
 } from '../lib/money';
@@ -186,6 +188,13 @@ export function TransactionSheet() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [showTags, setShowTags] = useState(false);
+  /** TXN-22. What this purchase pays back, typed or suggested by the card's own rate. */
+  const [cashback, setCashback] = useState('');
+  const [cashbackOn, setCashbackOn] = useState<string | null>(null);
+  const [cashbackTo, setCashbackTo] = useState<number | null>(null);
+  const [cashbackCategory, setCashbackCategory] = useState<number | null>(null);
+  const [cashbackRate, setCashbackRate] = useState<string | null>(null);
+  const [showCashback, setShowCashback] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -223,6 +232,12 @@ export function TransactionSheet() {
       setShowNote(Boolean(editing.notes));
       setTagIds(editing.tag_ids ?? []);
       setShowTags((editing.tag_ids ?? []).length > 0);
+      setCashback(editing.cashback ? typedFrom(editing.cashback.amount) : '');
+      setCashbackOn(editing.cashback?.on ?? null);
+      setCashbackTo(editing.cashback?.account_id ?? null);
+      setCashbackCategory(editing.cashback?.category_id ?? null);
+      setCashbackRate(editing.cashback?.rate ?? null);
+      setShowCashback(Boolean(editing.cashback));
       if (editing.type === 'transfer') {
         const out = editing.direction !== 'in';
         setAccountId(out ? editing.account_id : editing.counter_account_id);
@@ -250,6 +265,12 @@ export function TransactionSheet() {
       setShowTags(false);
       setSplitting(false);
       setLines([]);
+      setCashback('');
+      setCashbackOn(null);
+      setCashbackTo(null);
+      setCashbackCategory(null);
+      setCashbackRate(null);
+      setShowCashback(false);
     }
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -265,10 +286,51 @@ export function TransactionSheet() {
       .map(({ c }) => c);
   }, [tree, kind]);
 
+  /**
+   * TXN-05. The row offers MAIN categories only; the sub-categories of the one
+   * chosen appear under it, and picking one is optional - a main category on
+   * its own is a complete answer. Ordered by how much the whole branch is used,
+   * so a main whose children you use constantly comes first.
+   */
+  const mains = useMemo(() => {
+    if (kind === 'transfer') return [];
+    return tree
+      .filter((c) => c.kind === kind && !c.archived)
+      .map((c, order) => ({ c, order, used: c.usage + c.children.reduce((sum, child) => sum + child.usage, 0) }))
+      .sort((a, b) => b.used - a.used || a.order - b.order)
+      .map(({ c }) => c);
+  }, [tree, kind]);
+  const chosenCategory = categoryId !== null ? chips.find((c) => c.id === categoryId) : undefined;
+  // A sub-category keeps its main selected, so editing an old entry opens on both rows.
+  const mainId = chosenCategory ? chosenCategory.parent_id ?? chosenCategory.id : null;
+  const main = mains.find((c) => c.id === mainId);
+  const subs = (main?.children ?? []).filter((c) => !c.archived);
+
   const amount = toDecimalString(typed);
   const amountCents = cents(typed);
   const allocated = lines.reduce((sum, line) => sum + cents(line.amount), 0);
   const remaining = amountCents - allocated;
+
+  /**
+   * TXN-22. The account's own rate (ACC-38), if it has one - what the Cashback
+   * button offers and what fills the field in. The amount is a suggestion:
+   * whatever is in the field when you save is what is recorded.
+   */
+  const cashbackRule = accounts.find((a) => a.id === accountId)?.cashback ?? null;
+  const incomeCategories = useMemo(
+    () => flatten(tree).filter((c) => c.kind === 'income' && !c.archived),
+    [tree],
+  );
+  const suggestion = cashbackRule && amountCents > 0 ? percentOf(amount, cashbackRule.rate) : null;
+
+  const openCashback = () => {
+    setShowCashback(true);
+    if (cashback.trim()) return;
+    const guess = incomeCategories.find((c) => /cashback|rebate|refund/i.test(c.name)) ?? incomeCategories[0];
+    setCashbackCategory(cashbackRule?.category_id ?? guess?.id ?? null);
+    setCashbackRate(cashbackRule?.rate ?? null);
+    if (suggestion && suggestion !== '0.00') setCashback(typedFrom(suggestion));
+  };
 
   const startSplit = () => {
     setSplitting(true);
@@ -301,13 +363,31 @@ export function TransactionSheet() {
     if (kind === 'transfer') return { ...base, counter_account_id: counterId as number };
     // Only ids that still exist - a tag deleted while the sheet was open would be refused.
     const tagged = { ...base, tag_ids: tagIds.filter((id) => tags.some((t) => t.id === id)) };
+    const withCashback = {
+      ...tagged,
+      // Sent as null only when this entry HAD cashback and no longer does -
+      // that is what takes the credit row away (TXN-22).
+      ...(kind === 'expense' && showCashback && cents(cashback) > 0
+        ? {
+            cashback: {
+              amount: toDecimalString(cashback),
+              category_id: cashbackCategory as number,
+              ...(cashbackTo !== null ? { account_id: cashbackTo } : {}),
+              ...(cashbackOn ? { on: cashbackOn } : {}),
+              ...(cashbackRate ? { rate: cashbackRate } : {}),
+            },
+          }
+        : editing?.cashback
+          ? { cashback: null }
+          : {}),
+    };
     if (splitting) {
       return {
-        ...tagged,
+        ...withCashback,
         splits: lines.map((l) => ({ category_id: l.category_id as number, amount: toDecimalString(l.amount) })),
       };
     }
-    return { ...tagged, category_id: categoryId as number };
+    return { ...withCashback, category_id: categoryId as number };
   };
 
   const save = async () => {
@@ -503,17 +583,37 @@ export function TransactionSheet() {
         ) : (
           <>
             {!splitting && (
-              <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Category">
-                {chips.map((c) => (
-                  <Chip key={c.id} selected={categoryId === c.id} onClick={() => setCategoryId(c.id)} colour={c.colour}>
-                    {categoryId !== c.id && <GlyphTile icon={c.icon} colour={c.colour} size={24} />}
-                    {c.name}
-                  </Chip>
-                ))}
-                {chips.length === 0 && (
-                  <p className="text-footnote text-ink-3">Add a {kind} category first, under More → Categories.</p>
+              <>
+                <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Category">
+                  {mains.map((c) => (
+                    <Chip key={c.id} selected={mainId === c.id} onClick={() => setCategoryId(c.id)} colour={c.colour}>
+                      {mainId !== c.id && <GlyphTile icon={c.icon} colour={c.colour} size={24} />}
+                      {c.name}
+                    </Chip>
+                  ))}
+                  {mains.length === 0 && (
+                    <p className="text-footnote text-ink-3">Add a {kind} category first, under More → Categories.</p>
+                  )}
+                </div>
+                {subs.length > 0 && (
+                  <div className="no-scrollbar -mx-5 flex items-center gap-2 overflow-x-auto px-5"
+                    role="group" aria-label={`In ${main?.name}`}>
+                    <span className="shrink-0 text-footnote text-ink-3" aria-hidden="true">↳</span>
+                    {subs.map((c) => (
+                      <Chip
+                        key={c.id}
+                        selected={categoryId === c.id}
+                        colour={c.colour}
+                        // Tapping the chosen one again goes back to the main category alone.
+                        onClick={() => setCategoryId(categoryId === c.id ? (mainId as number) : c.id)}
+                      >
+                        {categoryId !== c.id && <GlyphTile icon={c.icon} colour={c.colour} size={24} />}
+                        {c.name}
+                      </Chip>
+                    ))}
+                  </div>
                 )}
-              </div>
+              </>
             )}
             <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Account">
               {accountChips(accountId, setAccountId)}
@@ -552,6 +652,14 @@ export function TransactionSheet() {
               Split
             </button>
           )}
+          {kind === 'expense' && !showCashback && incomeCategories.length > 0 && (
+            <button type="button" onClick={openCashback}
+              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent active:bg-accent/10">
+              {suggestion && suggestion !== '0.00'
+                ? `Cashback ${formatPHP(suggestion)}`
+                : 'Cashback'}
+            </button>
+          )}
         </div>
 
         {kind !== 'transfer' && showTags && tags.length > 0 && (
@@ -566,6 +674,66 @@ export function TransactionSheet() {
                 </Chip>
               );
             })}
+          </div>
+        )}
+
+        {kind === 'expense' && showCashback && (
+          <div className="space-y-2 rounded-2xl bg-surface-2 p-3" role="group" aria-label="Cashback">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-footnote font-semibold text-ink-2">Cashback</span>
+              <input
+                value={cashback}
+                onChange={(e) => { setCashback(sanitizeAmount(e.target.value)); setCashbackRate(null); }}
+                inputMode="decimal"
+                placeholder="0.00"
+                aria-label="Cashback amount"
+                className="num min-h-11 w-28 rounded-xl bg-surface px-3 text-right text-body outline-none"
+              />
+              {suggestion && suggestion !== '0.00' && cents(cashback) !== cents(suggestion) && (
+                <button type="button"
+                  onClick={() => { setCashback(typedFrom(suggestion)); setCashbackRate(cashbackRule?.rate ?? null); }}
+                  className="min-h-11 rounded-xl px-2 text-footnote font-medium text-accent active:bg-accent/10">
+                  {formatPHP(suggestion)} ({Number(cashbackRule?.rate)}%)
+                </button>
+              )}
+              <button type="button" onClick={() => { setShowCashback(false); setCashback(''); }}
+                className="min-h-11 shrink-0 rounded-xl px-2 text-footnote text-ink-3 active:bg-accent/10">
+                Remove
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={cashbackCategory ?? ''}
+                onChange={(e) => setCashbackCategory(Number(e.target.value) || null)}
+                aria-label="Cashback category"
+                className="min-h-11 min-w-0 flex-1 rounded-xl bg-surface px-2 text-footnote"
+              >
+                <option value="">Category…</option>
+                {incomeCategories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.parent_id ? `  ${c.name}` : c.name}</option>
+                ))}
+              </select>
+              <select
+                value={cashbackTo ?? accountId ?? ''}
+                onChange={(e) => setCashbackTo(Number(e.target.value) || null)}
+                aria-label="Cashback lands in"
+                className="min-h-11 min-w-0 flex-1 rounded-xl bg-surface px-2 text-footnote"
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={cashbackOn ?? txnDate}
+                onChange={(e) => e.target.value && setCashbackOn(e.target.value)}
+                aria-label="Cashback lands on"
+                className="min-h-11 rounded-xl bg-surface px-2 text-footnote"
+              />
+            </div>
+            <p className="text-caption text-ink-3">
+              The purchase keeps its full amount — this is its own income entry, dated the day the money arrives.
+            </p>
           </div>
         )}
 

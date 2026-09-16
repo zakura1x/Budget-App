@@ -12,9 +12,10 @@ pointing at the OLD id - the wrong row, silently.
     tests/test_backup.py fails if ORDER stops covering every encrypted table.
 
 Paths:
-    "account_id"             a single id
-    "tag_ids[]"              a list of ids
-    "splits[].category_id"   a field on every item of a list
+    "account_id"              a single id
+    "tag_ids[]"               a list of ids
+    "splits[].category_id"    a field on every item of a list
+    "interest.category_id"    a field inside a nested object
 
 ORDER is the insert order the dependencies force. A reference to a table at or
 after its own position (a category's parent, a transfer's other leg, a
@@ -45,7 +46,9 @@ ORDER: Tuple[str, ...] = (
 )
 
 REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
-    "accounts": (),
+    # ACC-37. Where a savings account's daily interest lands. Deferred:
+    # categories are inserted after accounts, so it is cleared and filled in.
+    "accounts": (("interest.category_id", "categories"),),
     "categories": (("parent_id", "categories"),),
     "tags": (),
     "budgets": (),
@@ -66,6 +69,11 @@ REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
         ("splits[].category_id", "categories"),
         ("tag_ids[]", "tags"),
         ("recurring_id", "recurring_rules"),
+        # TXN-22. Where a purchase's cashback lands, and the two rows' link.
+        ("cashback.account_id", "accounts"),
+        ("cashback.category_id", "categories"),
+        ("cashback_id", "transactions"),
+        ("cashback_of", "transactions"),
         ("pair_id", "transactions"),
         ("attachment_id", "attachments"),
     ),
@@ -73,8 +81,10 @@ REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
 }
 
 # Links that say WHICH row, not what a row IS - left out of a merge's
-# duplicate check, or a transfer's legs could never recognise each other.
-LINKS = {("transactions", "pair_id"), ("transactions", "attachment_id")}
+# duplicate check, or a transfer's legs (and a purchase and its cashback)
+# could never recognise each other.
+LINKS = {("transactions", "pair_id"), ("transactions", "attachment_id"),
+         ("transactions", "cashback_id"), ("transactions", "cashback_of")}
 
 
 def refs(table: str) -> Tuple[Ref, ...]:
@@ -125,6 +135,11 @@ def apply(
             for item in result.get(name) or []:
                 if isinstance(item, dict) and field in item:
                     item[field] = convert(item[field])
+        elif "." in path:
+            name, field = path.split(".", 1)
+            nested = result.get(name)
+            if isinstance(nested, dict) and field in nested:
+                nested[field] = convert(nested[field])
         elif path in result:
             result[path] = convert(result[path])
     return result, missing

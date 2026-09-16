@@ -30,9 +30,9 @@ over the working set and the endpoints hand them in.
 """
 
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -46,8 +46,18 @@ from app.core.exceptions import (
 )
 from app.core.utils.date_utils import (
     StatementPeriod,
+    clamp_day,
     previous_statement_period,
     statement_period,
+)
+from app.core.utils.interest import (
+    BASES,
+    YEAR_DAYS,
+    daily_net,
+    dump_bands,
+    parse_bands,
+    rate_of,
+    yearly_at,
 )
 from app.core.utils.money import ZERO, money, total
 from app.db.repositories.account_repository import AccountRepository
@@ -103,6 +113,18 @@ MAX_AMOUNT = Decimal("999999999.99")  # what one transaction may carry - an adju
 # derived one. Cancelling never reaches the server.
 BALANCE_ACTIONS: Tuple[str, ...] = ("adjust", "fix_opening")
 
+# ACC-37. Which accounts may earn daily interest: the ones that hold spendable
+# money a bank pays on. A card's interest is a charge, not earnings (REC-29),
+# an investment's growth is a valuation (ACC-12/13), and a loan's interest is
+# an expense (ACC-31) - none of them belong here.
+EARNS_INTEREST: Tuple[str, ...] = ("cash", "debit", "savings", "member")
+MAX_BACKFILL_DAYS = 366  # how far back interest may be turned on and filled in
+
+# ACC-38. Accounts that can pay cashback on what you spend: the ones you spend
+# FROM. It is a default for the add sheet to fill in (TXN-22) and nothing else
+# - no total is derived from it, and the amount on an entry always wins.
+GIVES_CASHBACK: Tuple[str, ...] = ("cash", "debit", "credit", "savings", "member")
+
 
 # ------------------------------------------------------------------- shapes
 
@@ -138,6 +160,50 @@ class Valuation:
     on: date
     value: Decimal
     note: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CashbackRule:
+    """
+    ACC-38. What this account usually pays back, and where that lands - the
+    figures the add sheet fills in for a purchase (TXN-22). A suggestion only:
+    it is never applied to anything by itself, and an entry's own amount is
+    what is recorded.
+    """
+
+    rate: Decimal  # per cent of what you spend
+    category_id: Optional[int]
+
+
+@dataclass(frozen=True)
+class InterestBand:
+    """One tier of a savings rate: the balance it applies up to, and the rate."""
+
+    up_to: Optional[Decimal]
+    rate: Decimal
+
+
+@dataclass(frozen=True)
+class InterestView:
+    """
+    ACC-37. What a savings account earns, as the account page shows it.
+
+    The terms are stored; `per_day` and `per_year` are estimates at TODAY's
+    balance, derived on every read from the same pure helper the daily credits
+    use, so the figure on the page and the entries in the trail can never come
+    from two different formulas. `credited_through` is how far the catch-up
+    has got - never today, because today's closing balance is not closed.
+    """
+
+    bands: Tuple[InterestBand, ...]
+    basis: int
+    tax_rate: Decimal
+    category_id: Optional[int]
+    started: date
+    credited_through: date
+    per_day: Decimal  # net of tax, at today's balance
+    per_year: Decimal  # net of tax, at today's balance, without compounding
+    carry: Decimal  # the fraction of a centavo still owed
 
 
 @dataclass(frozen=True)
@@ -183,7 +249,22 @@ class Bill:
 
 
 # One recurring charge on a card: the day it posts (or will), its amount, and whether its schedule ends.
-Charge = Tuple[date, Decimal, bool]
+class Charge(NamedTuple):
+    """
+    ACC-35. One recurring charge on a card, as the bills see it.
+
+    `ends` says the schedule has a last payment, so it can safely run past the
+    last typed bill (a subscription cannot, or the list would grow a year of
+    Netflix). `installment` says this charge IS a bill line: an installment's
+    schedule dates are the days the bank BILLS each payment - "first payment
+    5 Oct" means it appears on the October bill - while an ordinary charge is a
+    purchase, which lands on the statement it was made in and falls due later.
+    """
+
+    on: date
+    amount: Decimal
+    ends: bool
+    installment: bool = False
 
 
 @dataclass(frozen=True)
@@ -214,6 +295,10 @@ class CreditView:
     bills: Tuple[Bill, ...] = ()  # ACC-35, typed from the card's app
     bills_left: Decimal = Decimal("0.00")
     due_now: Optional[Decimal] = None  # overdue bills + the next one; None without bills
+    # REC-14. owed + unpaid_installments: everything the card will bill you for,
+    # which is what the card's own app calls your balance. The reminder and the
+    # statement check keep using `owed` - a plan not yet billed is not due yet.
+    owed_with_plans: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -239,6 +324,14 @@ class AccountView:
     # (ACC-35), minus only what is due now.
     cash_amount: Optional[Decimal] = None
     counts_in_net_worth: bool = True  # ACC-36 - its own switch; on unless turned off
+    interest: Optional[InterestView] = None  # ACC-37 - only where the bank pays
+    cashback: Optional[CashbackRule] = None  # ACC-38 - a default for the add sheet
+    # REC-14. What this account's installment plans have still to bill. Money
+    # you already owe on it, on any type - a card, a loan, a store card - even
+    # though no charge has posted yet. `balance` never includes it: that stays
+    # the ledger's own sum. Cash on hand leaves it out by design (ACC-17); what
+    # you OWE and net worth (ACC-36) count it.
+    plans_unbilled: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -337,8 +430,8 @@ def net_worth(views: Iterable[AccountView]) -> NetWorth:
             assets += view.balance
         else:
             liabilities += -view.balance
-        if view.credit is not None:
-            liabilities += view.credit.unpaid_installments
+        # REC-14. A plan still to bill is a debt on any account, not only a card.
+        liabilities += view.plans_unbilled
     return NetWorth(total=(assets - liabilities).quantize(ZERO), assets=assets.quantize(ZERO),
                     liabilities=liabilities.quantize(ZERO))
 
@@ -641,11 +734,19 @@ def _view(
     valuations = _valuations(data.get("valuations"))
     current_value: Optional[Decimal] = None
     if kind == "investment":
-        # ACC-08: the account IS the number you typed. The postings against it
-        # are contributions you have already reflected in that number, so the
-        # latest valuation replaces the running sum rather than adding to it.
-        current_value = valuations[-1].value if valuations else opening
-        balance = current_value
+        # ACC-08/12. What it is WORTH is the number you typed - market movement
+        # is never derived, or it would turn into income. But money you MOVE in
+        # or out is not market movement: a transfer into a fund really is money
+        # in the fund (fixed 2026-09-16, user - the transfer was logged and the
+        # balance stood still).
+        #
+        # So the latest valuation is the base, and only what has moved SINCE
+        # that day is added to it: anything before it is already inside the
+        # figure you typed. Typing a new value therefore resets the base and
+        # can never double-count a contribution.
+        base = valuations[-1] if valuations else None
+        current_value = base.value if base else opening
+        balance = current_value + total(p.amount for p in postings if base is None or p.on > base.on)
 
     view = AccountView(
         id=account_id,
@@ -670,6 +771,11 @@ def _view(
         view = replace(view, credit=_credit_view(account_id, data, opening, view.balance, postings, today,
                                                  (unpaid or {}).get(account_id, ZERO),
                                                  (charges or {}).get(account_id, ())))
+    view = replace(view, plans_unbilled=(unpaid or {}).get(account_id, ZERO))
+    if kind in EARNS_INTEREST:
+        view = replace(view, interest=_interest_view(data, view.balance))
+    if kind in GIVES_CASHBACK:
+        view = replace(view, cashback=_cashback_rule(data.get("cashback")))
     due_now = view.credit.due_now if view.credit is not None else None
     return replace(view, cash_amount=-due_now if due_now is not None else view.balance)
 
@@ -744,6 +850,7 @@ def _credit_view(
         period_spend=purchases.quantize(ZERO),
         owed=owed.quantize(ZERO),
         unpaid_installments=unpaid,
+        owed_with_plans=(owed + unpaid).quantize(ZERO),
         available=available,
         due_in_days=due_in_days,
         due_soon=0 <= due_in_days <= settings.CREDIT_DUE_ALERT_DAYS,
@@ -789,11 +896,19 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
     closing_day, due_day = _card_days(data)
     last_typed = max(typed)
     planned: Dict[date, Decimal] = {}
-    for day, amount, ends in charges:
-        due = statement_period(day, closing_day, due_day).due
-        if (since is not None and due < since) or (not ends and due > last_typed):
+    for charge in charges:
+        # An installment payment is already a bill line, dated the day it is
+        # billed, so it joins the first bill falling due on or after that day
+        # (fixed 2026-09-16, user: a payment dated 15 Oct was showing on the
+        # 15 Nov bill). Beyond the last typed bill it keeps that bill's day of
+        # the month, so the list stays on one rhythm. A purchase takes the
+        # statement route instead: it is billed with the cycle it falls in,
+        # which falls due the month after.
+        due = (_bill_on_or_after(charge.on, typed, last_typed) if charge.installment
+               else statement_period(charge.on, closing_day, due_day).due)
+        if (since is not None and due < since) or (not charge.ends and due > last_typed):
             continue
-        planned[due] = planned.get(due, ZERO) + amount
+        planned[due] = planned.get(due, ZERO) + charge.amount
 
     pot = total(
         p.amount for p in postings
@@ -815,6 +930,25 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
     return tuple(result)
 
 
+def _bill_on_or_after(day: date, typed: Mapping[date, Decimal], last_typed: date) -> date:
+    """
+    The bill an installment payment dated `day` belongs to: the first bill the
+    user typed that falls due on or after it, or - past the last of them - the
+    same day of the month, so the bills carry on at one rhythm.
+    """
+    nearest = min((due for due in typed if due >= day), default=None)
+    return nearest if nearest is not None else _due_on_or_after(day, last_typed.day)
+
+
+def _due_on_or_after(day: date, due_day: int) -> date:
+    """The payment-due date on or after `day`."""
+    this_month = clamp_day(day.year, day.month, due_day)
+    if this_month >= day:
+        return this_month
+    year, month = (day.year + 1, 1) if day.month == 12 else (day.year, day.month + 1)
+    return clamp_day(year, month, due_day)
+
+
 def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dict[int, List[Charge]]:
     """
     ACC-35. Every recurring expense per account: those already posted (they
@@ -826,14 +960,20 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
     from app.services import recurring_service, transaction_service
 
     when = today or date.today()
+    plans = {rule.id: rule.kind for rule in recurring_service.list_rules(db, cipher, today=when)}
     charges: Dict[int, List[Charge]] = {}
     for view in transaction_service.views(db, cipher):
         if view.recurring_id is not None and view.type == "expense":
-            charges.setdefault(view.account_id, []).append((view.card_posted_on or view.txn_date, view.amount, True))
+            # A payment already posted keeps the day it was BILLED for, which for
+            # an installment is its occurrence date, not the statement it fell in.
+            plan = plans.get(view.recurring_id) == "installment"
+            charges.setdefault(view.account_id, []).append(
+                Charge(view.recurring_on or view.card_posted_on or view.txn_date, view.amount, True, plan))
     start = date.fromordinal(when.toordinal() + 1)
     for item in recurring_service.upcoming(db, cipher, start, date.fromordinal(when.toordinal() + 366 * 3)):
         if item.type == "expense" and not item.occurrence.paused:
-            charges.setdefault(item.account_id, []).append((item.on, item.amount, item.kind == "installment"))
+            charges.setdefault(item.account_id, []).append(
+                Charge(item.on, item.amount, item.kind == "installment", item.kind == "installment"))
     return charges
 
 
@@ -1063,6 +1203,29 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
             if (existing or {}).get(kept):
                 data[kept] = (existing or {})[kept]
 
+    # --- daily interest (ACC-37), only where a bank actually pays it. An edit
+    #     that does not mention it keeps what the account had; an explicit null
+    #     turns it off and leaves every entry already credited alone.
+    if kind in EARNS_INTEREST and "interest" in payload:
+        earned = _interest(payload.get("interest"), (existing or {}).get("interest"))
+        if earned is None:
+            data.pop("interest", None)
+        else:
+            data["interest"] = earned
+    elif kind not in EARNS_INTEREST:
+        data.pop("interest", None)
+
+    # --- the cashback this account usually pays (ACC-38), the same way: an
+    #     edit that says nothing keeps it, an explicit null takes it away.
+    if kind in GIVES_CASHBACK and "cashback" in payload:
+        rule = _cashback(payload.get("cashback"))
+        if rule is None:
+            data.pop("cashback", None)
+        else:
+            data["cashback"] = rule
+    elif kind not in GIVES_CASHBACK:
+        data.pop("cashback", None)
+
     # --- valuation history (ACC-13), only on an investment account, and only
     #     ever appended by add_valuation() - never set from a submitted body.
     if kind == "investment":
@@ -1070,6 +1233,145 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
     else:
         data.pop("valuations", None)
     return data
+
+
+def _interest(raw: Any, existing: Any) -> Optional[Dict[str, Any]]:
+    """
+    ACC-37. Validate submitted interest terms into the block that gets sealed,
+    or None to turn interest off.
+
+    The marker and the carry are NOT taken from the body - they belong to
+    interest_service, which alone moves them. Changing a rate therefore never
+    rewrites what has already been credited: those days were earned at the rate
+    in force then, exactly as a bank's history reads.
+
+    `category_id` is a reference inside a payload, so no foreign key can check
+    it here (§5); the catch-up reports an account whose category has gone
+    instead of failing, and backup_service/references.py knows about it.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValidationException("Interest is a set of rate bands")
+    kept = existing if isinstance(existing, Mapping) else {}
+
+    try:
+        bands = parse_bands(raw.get("bands"))
+        tax = rate_of(raw.get("tax_rate") if raw.get("tax_rate") is not None else ZERO, "Withholding tax")
+    except ValueError as error:
+        raise ValidationException(str(error)) from None
+
+    basis = int(raw.get("basis") or YEAR_DAYS)
+    if basis not in BASES:
+        raise ValidationException("A year is either 365 or 360 days")
+
+    category_id = raw.get("category_id")
+    if not category_id:
+        raise ValidationException("Choose the income category interest lands in")
+
+    started = _interest_start(raw.get("started"), kept)
+    through = str(kept.get("credited_through") or (started - timedelta(days=1)).isoformat())
+    if date.fromisoformat(through) < started - timedelta(days=1):
+        through = (started - timedelta(days=1)).isoformat()
+    return {
+        "bands": dump_bands(bands),
+        "basis": basis,
+        "tax_rate": str(tax),
+        "category_id": int(category_id),
+        "started": started.isoformat(),
+        "credited_through": through,
+        "carry": str(kept.get("carry") or "0"),
+    }
+
+
+def _interest_start(value: Any, kept: Mapping[str, Any]) -> date:
+    """
+    The day interest starts earning. It never moves once set: the days between
+    then and now have already been credited, and a later start would leave them
+    stranded. A new one may reach back MAX_BACKFILL_DAYS so a bank's history
+    can be filled in, and one day forward to allow for a client a timezone away.
+    """
+    if kept.get("started"):
+        return date.fromisoformat(str(kept["started"]))
+    if value in (None, ""):
+        return date.today()
+    try:
+        started = date.fromisoformat(str(value))
+    except ValueError:
+        raise ValidationException("That is not a date interest could start on") from None
+    today = date.today()
+    if started > today + timedelta(days=1):
+        raise ValidationException("Interest cannot start in the future")
+    if started < today - timedelta(days=MAX_BACKFILL_DAYS):
+        raise ValidationException(f"Interest can be filled in for the last {MAX_BACKFILL_DAYS} days")
+    return started
+
+
+def _cashback(raw: Any) -> Optional[Dict[str, Any]]:
+    """
+    ACC-38. Validate the account's usual cashback into the block that gets
+    sealed, or None to have none. A rate of zero is none - there is nothing to
+    suggest - and the category is where the add sheet will file it (TXN-22).
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValidationException("Cashback is a rate and where it lands")
+    try:
+        rate = rate_of(raw.get("rate") if raw.get("rate") is not None else ZERO, "A cashback rate")
+    except ValueError as error:
+        raise ValidationException(str(error)) from None
+    if rate <= ZERO:
+        return None
+    category_id = raw.get("category_id")
+    if not category_id:
+        raise ValidationException("Choose the income category cashback lands in")
+    return {"rate": str(rate), "category_id": int(category_id)}
+
+
+def _cashback_rule(raw: Any) -> Optional[CashbackRule]:
+    """ACC-38 as the API returns it; unreadable is treated as none, never as an error."""
+    if not isinstance(raw, Mapping) or not raw.get("rate"):
+        return None
+    try:
+        rate = Decimal(str(raw["rate"]))
+    except (TypeError, ValueError):
+        return None
+    category_id = raw.get("category_id")
+    return CashbackRule(rate=rate, category_id=int(category_id) if category_id else None)
+
+
+def _interest_view(data: Mapping[str, Any], balance: Decimal) -> Optional[InterestView]:
+    """
+    ACC-37. The account's interest terms with two estimates at today's balance:
+    what a day earns and what a year would, both net of withholding tax. Read
+    through the same helper the daily credits use, so the page and the entries
+    can never disagree. A block that cannot be read is treated as no interest
+    rather than as an error - a balance must always be readable.
+    """
+    raw = data.get("interest")
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        bands = parse_bands(raw.get("bands"))
+        started = date.fromisoformat(str(raw["started"]))
+        through = date.fromisoformat(str(raw["credited_through"]))
+    except (ValueError, KeyError, TypeError):
+        return None
+    basis = int(raw.get("basis") or YEAR_DAYS)
+    tax = rate_of(raw.get("tax_rate") or ZERO, "Withholding tax")
+    category_id = raw.get("category_id")
+    return InterestView(
+        bands=tuple(InterestBand(band.up_to, band.rate) for band in bands),
+        basis=basis,
+        tax_rate=tax,
+        category_id=int(category_id) if category_id else None,
+        started=started,
+        credited_through=through,
+        per_day=money(daily_net(balance, bands, basis=basis, tax_rate=tax)),
+        per_year=yearly_at(balance, bands, basis=basis, tax_rate=tax),
+        carry=Decimal(str(raw.get("carry") or "0")),
+    )
 
 
 def _amount(value: Any, field: str) -> Decimal:

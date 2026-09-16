@@ -24,7 +24,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { isOwed, listAccounts, type Account, type AccountList, type AccountType } from '../lib/accounts';
+import { isOwed, listAccounts, owedWithPlans, type Account, type AccountList, type AccountType } from '../lib/accounts';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
@@ -57,14 +57,23 @@ function AccountTile({ account, onOpen }: { account: Account; onOpen: (a: Accoun
   const owed = isOwed(account.type);
   // ACC-35. A card with bills leads with what is due now; what it owes in all is the line under it.
   const billed = credit && credit.due_now !== null ? credit : null;
-  const figure = billed ? (billed.due_now as string) : credit ? credit.owed : owed ? negate(account.balance) : account.balance;
+  // REC-14. What you owe counts the installments not billed yet; a card with
+  // typed bills still shows what is due NOW, which is what ACC-35 is for.
+  const figure = billed ? (billed.due_now as string)
+    : credit ? credit.owed_with_plans
+      : owed ? owedWithPlans(account) : account.balance;
   const negative = !owed && account.balance.startsWith('-');
+  // Whole pesos to fit the tile - cut from the string, never rounded through a float.
+  const whole = (amount: string) => formatPHP(amount.split('.')[0] ?? '0', { places: 0 });
+  // What is left to spend, unless something needs attention more (overdue, a statement that differs).
+  const left = credit?.available != null && !account.archived
+    ? { text: `${whole(credit.available)} left`, className: 'text-ink-3' }
+    : null;
   const status = billed
     ? billed.bills.some((b) => b.overdue)
       ? { text: 'Overdue', className: 'text-danger' }
-      : // Whole pesos to fit the tile - cut from the string, never rounded through a float.
-        { text: `Owed ${formatPHP(billed.owed.split('.')[0] ?? '0', { places: 0 })}`, className: 'text-ink-3' }
-    : credit && !account.archived ? cardStatus(credit) : null;
+      : left ?? { text: `Owed ${whole(billed.owed)}`, className: 'text-ink-3' }
+    : credit && !account.archived ? cardStatus(credit) ?? left : null;
   const label = billed
     ? isZero(billed.due_now as string) ? 'Bills paid' : `Due ${format(parseISO(billed.payment_due), 'd MMM')}`
     : FIGURE_LABEL[account.type];

@@ -155,10 +155,11 @@ This project adds one rule of its own, and it is absolute:
 |---|---|
 | *(no service)* | Key handling lives in `app/core/crypto/`. Its façade is `UserCipher`: repositories are handed one, services pass it along, and neither ever holds a key |
 | `auth_service/` | Login, JWT issue/refresh, lockout, PIN, password rules |
-| `account_service` | Cash, debit, credit, savings, investment, lent, borrowed and member accounts (with a `subtype` label); balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit; bills typed from a card's own app and what is due now (ACC-35); cash on hand and net worth (ACC-36) |
+| `account_service` | Cash, debit, credit, savings, investment, lent, borrowed and member accounts (with a `subtype` label); balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit; bills typed from a card's own app and what is due now (ACC-35); cash on hand and net worth (ACC-36); the interest terms an account earns on (ACC-37) and the cashback it usually pays (ACC-38) |
+| `interest_service` | ACC-37: the daily savings interest a bank pays, credited day by day as ordinary income. A catch-up, like the recurring engine (§4.6); the arithmetic itself is pure, in `app/core/utils/interest.py`, and shared with the projection. Imports `transaction_service`; nothing imports it |
 | `statement_service` | Checks a card statement against the bank's total and applies what you say the difference was (§4.4). Writes only through `transaction_service` and `recurring_service`; nothing imports it |
 | `category_service` | Categories and sub-categories, icons, colours, ordering |
-| `transaction_service` | Expense/income/transfer/adjustment CRUD; the write path |
+| `transaction_service` | Expense/income/transfer/adjustment CRUD; the write path. Also the cashback pair (TXN-22): a purchase and the income row that credits it, written, edited and deleted together |
 | `budget_service/` | Periods, per-category allocations, **daily allowance** |
 | `recurring_service` | Rule expansion — daily/weekly/monthly/custom. The one engine behind standard rules, subscriptions and installments |
 | `subscription_service` | Your recurring merchant charges (Netflix, gym). A **view over** `recurring_rules`, never a second expansion engine |
@@ -304,6 +305,43 @@ deleted, and the database could not catch it.
 Payments behave like any recurring expense: they reduce the account and the
 daily allowance on the due date. The full price is never posted up front.
 
+**But what you OWE counts the whole plan from the day you take it** (fixed
+2026-09-16). A plan is a debt whether or not a charge has posted, so
+`AccountView.plans_unbilled` carries the unbilled remainder on EVERY account
+type and `CreditView.owed_with_plans` is `owed + unpaid_installments` - what
+the card's own app calls your balance. Three figures stay out of it on
+purpose: `balance` (the ledger's own sum), `owed` (what a payment would clear,
+which the reminder and the statement check read) and cash on hand (ACC-17,
+which never counts what you will owe later). Net worth counts it, on a card
+and on a loan alike.
+
+**A plan can be paid on the plan itself** (REC-32, 2026-09-16). A payment is
+a transfer from the account you pay out of into the plan's account, carrying
+the plan's id with no occurrence date - so `InstallmentStatus` can report the
+plan in MONEY terms (`money_paid`, `left_to_pay`) beside its CHARGES (`paid`,
+`remaining`), and the catch-up can never mistake it for a payment it posted.
+What is due is covered first; an extra part is the user's to direct, and is
+asked for before anything is written (409 `PREPAYMENT_CHOICE`):
+
+```
+lower    same number of payments, what is left spread over them
+shorten  same payment, the last ones taken away (the new last one reduced)
+```
+
+Each extra payment is stored on the plan (`prepayments`: on, after, amount,
+mode) and charged at once, so the budget sees it that day. It is applied
+INSIDE the one schedule - `installment_plan()` builds the plan's payments from
+its terms, then its interest changes, then each extra payment in order, and
+`occurrences()` reads those rows - so bills, Months ahead and the catch-up all
+follow without knowing extra payments exist. Price and interest each stay
+exact to the centavo: an extra comes off the price first.
+
+**Moving a start earlier reopens the catch-up** (fixed 2026-09-16). A plan
+created with a later start and corrected to an earlier one kept its
+`posted_through` marker, so the payments in between could never post.
+`update_rule` now pulls the marker back to the new start (at most a year), and
+expansion's check of dates already posted stops anything doubling up.
+
 **The headline number is cash on hand** (ACC-17): the sum of what each account
 whose payload has `counts_in_cash_on_hand = true` adds — its balance
 (`AccountView.cash_amount`). Defaults by type are cash, debit, savings, credit
@@ -316,7 +354,12 @@ of its balance: the overdue bills plus the next one, as its own app lists them
 (`bills` + `bills_from` in the account payload, written only by
 `account_service.set_bills`). What is paid of each bill is derived — payments
 into the card since the list was saved, oldest bill first — and the plan
-charges on the card are added to the bill of the statement they post in.
+charges on the card are added to a bill. WHICH bill depends on what the charge
+is: an installment payment's date is the day the bank bills it, so it joins the
+first bill due on or after that day; anything else is a purchase and takes the
+statement route, falling due the month after (fixed 2026-09-16).
+`projection_service._lands_on_bill` asks the question exactly the same way, or
+a payment would be counted both inside a bill and on its own day.
 
 **Net worth sits beside it, never instead of it** (ACC-36, added 2026-09-15 at
 the user's request): every active account with its own
@@ -490,6 +533,61 @@ Like the budget endpoints, `GET /api/v1/projection` and
 response is cached in the browser (SEC-29). `projection_service` imports
 `recurring_service`, `account_service` and `budget_service`, and none of them
 imports it back.
+
+### 4.6 Daily savings interest (ACC-37)
+
+The banks this app is used with (SeaBank, MariBank) work interest out on
+**yesterday's closing balance** and credit it at midnight, so an account's real
+history holds one small income entry per day. `interest_service` reproduces
+that history rather than approximating it, which is what keeps the app's
+balance equal to the bank's on any given day.
+
+```
+for each day from credited_through + 1 to YESTERDAY:
+    base   = the account's closing balance the day before
+    gross  = the slice of base in each band x rate / 100 / 365
+    net    = gross x (1 - withholding tax)
+    carry += net                       <- kept to eight places
+    credit = carry truncated to the centavo; carry -= credit
+```
+
+Four rules hold this together:
+
+- **Today is never accrued.** Its closing balance is not closed; an entry
+  posted now would change every time another transaction is typed.
+- **The credit compounds.** Interest posted on a day is part of that day's
+  closing balance, so the next day earns on it.
+- **Sub-centavo interest is carried, never rounded.** `carry` holds what is
+  still owed and pays out on the first day it reaches ₱0.01 — nothing is
+  invented and nothing is lost.
+- **Net only.** What is credited is what the bank deposits; the gross and the
+  20% tax are shown on the account page and never posted (ACC-37).
+
+There is no scheduler on this server — IIS idle-stops the process (§7) — so
+`POST /accounts/interest/accrue` is a **catch-up**, safe on every open, exactly
+like `POST /recurring/expand`. Every posting and every account's
+`credited_through` marker move in ONE commit, so the marker and the rows can
+never disagree and a deleted entry is never written back. Each entry carries
+`interest_on`, which is what makes a second run a no-op.
+
+The arithmetic is pure and lives in `app/core/utils/interest.py`, shared with
+`projection_service` so the months ahead and the days behind can never use two
+different formulas — the same discipline as `recurring_service.occurrences()`.
+
+### 4.7 Cashback (TXN-22)
+
+A purchase that pays something back keeps its **full amount**: spending stays
+gross, and the money that comes back is an income row of its own, in the
+category the user picks, on the account and day the user picks. The two are a
+linked pair, like a transfer's legs — the purchase carries `cashback` (what,
+where, when) and `cashback_id`; the credit carries `cashback_of` — and they are
+written, edited and deleted in one commit by `transaction_service`.
+
+The reason it is a pair and not a discount is the balance: cards pay cashback
+days later, and a purchase quietly reduced by ₱20 would leave the app's balance
+disagreeing with the card's until the money arrives. An account's usual rate
+(ACC-38) only fills the field in; nothing is derived from it afterwards, so a
+rate that changes later cannot rewrite what was recorded.
 
 ---
 

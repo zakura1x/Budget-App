@@ -40,6 +40,11 @@ day. Paying the card stays a transfer between two counted accounts: nothing.
 
     closing    = opening + income - spending + transfers - bills
 
+SAVINGS INTEREST (ACC-37) is one income item per month, on its last day, for
+each counted account that earns it - the same pure arithmetic the daily
+credits use, applied to what the account holds TODAY. An estimate, and a
+cautious one: money arriving later in the month is not assumed to earn.
+
 THE CARD LOOK-AHEAD (REC-25) groups each card's recurring charges by statement.
 The bill is shown, never subtracted from cash on hand a second time - the
 charges already were, on the days they post.
@@ -55,7 +60,8 @@ from sqlalchemy.orm import Session
 from app.core.crypto.user_cipher import UserCipher
 from app.core.exceptions import ValidationException
 from app.core.utils.date_utils import add_months, days_in_month, statement_period
-from app.core.utils.money import ZERO, total
+from app.core.utils.interest import Band, daily_net
+from app.core.utils.money import ZERO, money, total
 from app.services import account_service, recurring_service, transaction_service
 from app.services.budget_service import budget_service
 from app.services.recurring_service import Upcoming
@@ -149,7 +155,8 @@ def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, mo
     for index, (start, end) in enumerate(windows):
         current = index == 0
         items = sorted([_item(u, counted) for u in ahead if start <= u.on <= end]
-                       + [b for b in bill_items if start <= b.on <= end], key=lambda i: (i.on, i.rule_id))
+                       + [b for b in bill_items if start <= b.on <= end]
+                       + _interest_items(views, counted, start, end, today), key=lambda i: (i.on, i.rule_id))
         live = [i for i in items if not i.paused]
 
         income = total(i.effect for i in live if i.type == "income")
@@ -259,11 +266,56 @@ def _bill_items(views, counted: Set[int]) -> Tuple[List[ProjectedItem], Dict[int
     return items, billed
 
 
+def _interest_items(views, counted: Set[int], start: date, end: date, today: date) -> List[ProjectedItem]:
+    """
+    ACC-37. What each counted savings account earns in this month, as one
+    income item on the last day of it.
+
+    An ESTIMATE, and honest about being one: the projection carries cash on
+    hand, not a balance per account, so the rate is applied to what the account
+    holds TODAY, compounding day by day exactly as interest_service credits it.
+    Money that arrives later in the month earns nothing here, which keeps the
+    figure on the cautious side. Same pure helper as the daily credits, so the
+    two can never use different arithmetic.
+    """
+    items: List[ProjectedItem] = []
+    for view in views:
+        if view.interest is None or view.archived or view.id not in counted:
+            continue
+        bands = [Band(band.up_to, band.rate) for band in view.interest.bands]
+        balance = view.balance
+        earned = ZERO
+        day = max(start, today + ONE_DAY)
+        while day <= end:
+            net = daily_net(balance, bands, basis=view.interest.basis, tax_rate=view.interest.tax_rate)
+            earned += net
+            balance += net
+            day += ONE_DAY
+        amount = money(earned)
+        if amount <= ZERO:
+            continue
+        items.append(ProjectedItem(
+            on=end, rule_id=0, name=f"{view.name} interest", kind="interest", type="income",
+            account_id=view.id, counter_account_id=None, amount=amount, effect=amount, paused=False, final=False,
+        ))
+    return items
+
+
 def _lands_on_bill(upcoming: Upcoming, billed: Dict[int, Tuple[date, int, int]]) -> bool:
-    """An expense on a billed card whose statement falls due by the last bill is inside the bills already."""
+    """
+    An expense on a billed card that is already inside one of those bills, so
+    the projection does not take it twice.
+
+    It has to ask the question exactly the way account_service._bills answers
+    it (fixed 2026-09-16): an INSTALLMENT payment joins the bill falling due on
+    or after its own day - its date is the day it is billed - while any other
+    charge is a purchase, billed with the statement it falls in.
+    """
     if upcoming.type != "expense" or upcoming.account_id not in billed:
         return False
     last_due, closing_day, due_day = billed[upcoming.account_id]
+    if upcoming.kind == "installment":
+        return upcoming.on <= last_due
     return statement_period(upcoming.on, closing_day, due_day).due <= last_due
 
 

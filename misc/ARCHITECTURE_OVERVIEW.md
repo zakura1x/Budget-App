@@ -32,6 +32,24 @@ graph LR
     style D fill:#f3e8ff,stroke:#6b21a8
 ```
 
+Two kinds of entry the app writes for you, rather than asking you to type
+them, both as ordinary rows you can see and delete:
+
+```mermaid
+graph LR
+    I["Savings interest<br/>ACC-37"] -->|"one income entry a day,<br/>net of tax"| L["Your ledger"]
+    C["A purchase with cashback<br/>TXN-22"] -->|"the purchase, full amount<br/>+ the credit beside it"| L
+
+    style I fill:#dcfce7,stroke:#166534
+    style C fill:#f3e8ff,stroke:#6b21a8
+    style L fill:#dbeafe,stroke:#1e40af
+```
+
+Neither is a special kind of transaction: interest is income filed in the
+category you chose, and cashback is income joined to its purchase the way a
+transfer's two legs are joined. Anything that reads the ledger — stats, the
+budget, the calendar — sees them without knowing they exist.
+
 ---
 
 ## 2. How a request reaches the code

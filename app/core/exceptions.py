@@ -96,6 +96,19 @@ class BalanceDiffersException(ConflictException):
     title = "Balance Differs"
 
 
+class PrepaymentChoiceException(ConflictException):
+    """
+    REC-32. A payment on a plan is more than what is due, and the user has not
+    said what the extra should do - lower the monthly payment, or keep it and
+    finish sooner. A question, not a failure, like BALANCE_DIFFERS: the body
+    carries both outcomes so the client can show real numbers, and nothing is
+    written until the same payment comes back with a `mode`.
+    """
+
+    code = "PREPAYMENT_CHOICE"
+    title = "Choose What The Extra Does"
+
+
 class AuthenticationException(AppException):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "AUTH_REQUIRED"

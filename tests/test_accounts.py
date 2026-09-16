@@ -296,6 +296,55 @@ def test_before_any_valuation_the_opening_balance_stands(session, owner):
     assert fund.current_value == Decimal("100000.00")
 
 
+def test_money_moved_in_counts_on_top_of_the_typed_value(session, owner):
+    """
+    ACC-08/12, fixed 2026-09-16 (user: a transfer into an investment account
+    was logged and the balance stood still). What it is WORTH is typed; what
+    you MOVE in is a transfer, and it is real money in the fund.
+    """
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    account_service.add_valuation(session, owner, fund.id, "105000.00", on=date(2026, 9, 1))
+    moved = [Posting(fund.id, date(2026, 9, 10), Decimal("20000.00"), "transfer")]
+
+    view = account_service.get_account(session, owner, fund.id, postings=moved)
+    assert view.current_value == Decimal("105000.00")  # still what you typed
+    assert view.balance == Decimal("125000.00")  # plus what you put in since
+
+
+def test_a_contribution_before_the_valuation_is_already_inside_it(session, owner):
+    """Typing a value states what the fund is worth THAT day - contributions up to it included."""
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    account_service.add_valuation(session, owner, fund.id, "130000.00", on=date(2026, 9, 20))
+    earlier = [Posting(fund.id, date(2026, 9, 10), Decimal("20000.00"), "transfer"),
+               Posting(fund.id, date(2026, 9, 20), Decimal("5000.00"), "transfer")]
+
+    assert account_service.get_account(session, owner, fund.id, postings=earlier).balance == Decimal("130000.00")
+
+
+def test_money_taken_out_of_a_fund_comes_off_it(session, owner):
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    out = [Posting(fund.id, date(2026, 9, 10), Decimal("-15000.00"), "transfer")]
+    assert account_service.get_account(session, owner, fund.id, postings=out).balance == Decimal("85000.00")
+
+
+def test_typing_a_new_value_takes_the_contribution_in(session, owner):
+    """The new figure is the whole truth again, so nothing is counted twice."""
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    moved = [Posting(fund.id, date(2026, 9, 10), Decimal("20000.00"), "transfer")]
+    assert account_service.get_account(session, owner, fund.id, postings=moved).balance == Decimal("120000.00")
+
+    account_service.add_valuation(session, owner, fund.id, "121450.00", on=date(2026, 9, 16))
+    view = account_service.get_account(session, owner, fund.id, postings=moved)
+    assert view.balance == Decimal("121450.00")
+
+
+def test_net_worth_counts_what_was_moved_into_a_fund(session, owner):
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    moved = [Posting(fund.id, date(2026, 9, 10), Decimal("20000.00"), "transfer")]
+    views = account_service.list_accounts(session, owner, postings=moved)
+    assert account_service.net_worth(views).total == Decimal("120000.00")
+
+
 @pytest.mark.security
 def test_a_revaluation_writes_no_transaction(session, owner):
     """ACC-12 - it is a valuation change, and stays out of income and spending."""

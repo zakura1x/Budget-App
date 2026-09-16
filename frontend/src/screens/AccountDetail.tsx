@@ -13,9 +13,12 @@
  * form. A credit card's bill, own limit and statement check live here too.
  */
 import { format, parseISO } from 'date-fns';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
+import { AccountPayments } from '../components/AccountPayments';
+import { AccountPlans } from '../components/AccountPlans';
+import { PlanPaymentSheet } from '../components/PlanPaymentSheet';
 import { CardPayments } from '../components/CardPayments';
 import { CreditDetails } from '../components/CreditDetails';
 import { CloseIcon, PlusIcon, TransferIcon } from '../components/Icons';
@@ -25,9 +28,10 @@ import { TransactionRow, moneyIn } from '../components/TransactionRow';
 import { Button } from '../components/ui/Button';
 import { Segmented } from '../components/ui/Segmented';
 import { useLookups } from '../hooks/useLookups';
-import { isOwed, kindLabelOf, listAccounts, type Account } from '../lib/accounts';
+import { isOwed, kindLabelOf, listAccounts, owedWithPlans, type Account } from '../lib/accounts';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
-import { listTransactions, type Transaction } from '../lib/transactions';
+import { type Rule } from '../lib/recurring';
+import { listTransactions, localToday, type Transaction } from '../lib/transactions';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
 
@@ -96,6 +100,9 @@ export function AccountDetail() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [checking, setChecking] = useState(false);
+  /** REC-32. The plans open on this account, and the one being paid. */
+  const [openPlans, setOpenPlans] = useState<Rule[]>([]);
+  const [paying, setPaying] = useState<Rule | null>(null);
 
   const loadAccount = useCallback(
     (signal?: AbortSignal) =>
@@ -131,6 +138,50 @@ export function AccountDetail() {
     [accountId],
   );
 
+  /**
+   * ACC-37. What this account has earned in interest so far this month, summed
+   * from the trail that is already on screen - null while the loaded rows do
+   * not reach back to the first of the month, so a part-month is never shown
+   * as the whole one.
+   */
+  const earnedThisMonth = useMemo(() => {
+    if (!account?.interest || rows === null) return null;
+    const month = localToday().slice(0, 7);
+    if (cursor !== null && !rows.some((row) => row.txn_date < `${month}-01`)) return null;
+    const earned = rows
+      .filter((row) => row.interest_on && row.txn_date.startsWith(month))
+      .reduce((sum, row) => sum + centavos(row.amount), 0);
+    return earned > 0 ? fromCentavos(earned) : null;
+  }, [account, rows, cursor]);
+
+  /**
+   * ACC-08/12. What has moved in or out of an investment account since the day
+   * its value was last typed - the difference between the figure on the banner
+   * and the figure the user typed, said out loud so neither looks wrong.
+   */
+  const movedSince = useMemo(() => {
+    if (account?.type !== 'investment' || account.current_value === null) return null;
+    const difference = centavos(account.balance) - centavos(account.current_value);
+    return difference === 0 ? null : { amount: fromCentavos(Math.abs(difference)), inward: difference > 0 };
+  }, [account]);
+
+  /**
+   * REC-14. The two halves of what an account owes, when a plan has still to
+   * bill: what is on it now, and what the plans will add. Shown so neither
+   * figure looks like a mistake.
+   */
+  const plansUnbilled = useMemo(() => {
+    if (!account || account.plans_unbilled === '0.00') return null;
+    if (account.credit) return { billed: account.credit.owed, plans: account.plans_unbilled, label: 'billed' };
+    // REC-32. On a loan the plans are paid on the plans themselves, so their part
+    // is what is LEFT TO PAY on them, and the rest is the loan's own balance.
+    // With nothing else borrowed the line says nothing the plan rows below do not.
+    const onPlans = openPlans.reduce((sum, rule) => sum + centavos(rule.installment?.left_to_pay ?? '0.00'), 0);
+    const own = centavos(owedWithPlans(account)) - onPlans;
+    if (own === 0 || onPlans === 0) return null;
+    return { billed: fromCentavos(own), plans: fromCentavos(onPlans), label: 'borrowed' };
+  }, [account, openPlans]);
+
   useEffect(() => {
     const controller = new AbortController();
     void loadAccount(controller.signal);
@@ -161,12 +212,14 @@ export function AccountDetail() {
   }
 
   const owed = account ? isOwed(account.type) : false;
+  // REC-14. What you owe includes the installments not billed yet: a plan is
+  // money owed from the day you take it, on a card and on a loan alike.
   const figure = !account
     ? '0.00'
     : account.credit
-      ? account.credit.owed
+      ? account.credit.owed_with_plans
       : owed
-        ? negateAmount(account.balance)
+        ? owedWithPlans(account)
         : account.balance;
   const figureLabel = account?.type === 'borrowed' ? 'You owe' : account?.type === 'lent' ? 'Owed to you' : owed ? 'Owed' : 'Balance';
   // ACC-31. Money lent or borrowed moves by transfer, so its page names the two
@@ -232,6 +285,43 @@ export function AccountDetail() {
           <p className={`num text-display ${!owed && account.balance.startsWith('-') ? 'text-danger' : ''}`}>
             {formatPHP(figure)}
           </p>
+          {account.credit?.available != null && (
+            <p className="mt-1 text-footnote text-ink-2">
+              Left to spend <span className="num font-semibold text-ink">{formatPHP(account.credit.available)}</span>
+              {' of '}
+              <span className="num">{formatPHP(account.credit.limit as string)}</span>
+            </p>
+          )}
+          {plansUnbilled !== null && (
+            <p className="mt-1 text-footnote text-ink-2">
+              <span className="num">{formatPHP(plansUnbilled.billed)}</span> {plansUnbilled.label}
+              {' · '}
+              <span className="num font-semibold text-ink">{formatPHP(plansUnbilled.plans)}</span>
+              {account.credit ? ' of plans still to bill' : ' left on plans'}
+            </p>
+          )}
+          {account.type === 'investment' && movedSince !== null && (
+            <p className="mt-1 text-footnote text-ink-2">
+              <span className="num">{formatPHP(account.current_value as string)}</span> last valued
+              {account.valuations.length > 0 && ` ${format(parseISO(account.valuations[account.valuations.length - 1]!.on), 'd MMM')}`}
+              {' · '}
+              <span className="num font-semibold text-ink">{formatPHP(movedSince.amount)}</span>{' '}
+              {movedSince.inward ? 'moved in since' : 'taken out since'}
+            </p>
+          )}
+          {account.interest && !account.archived && (
+            <p className="mt-1 text-footnote text-ink-2">
+              Earning <span className="num font-semibold text-ink">{formatPHP(account.interest.per_day)}</span> a day
+              {' · '}
+              <span className="num">{formatPHP(account.interest.per_year)}</span> a year
+              {earnedThisMonth !== null && (
+                <>
+                  {' · '}
+                  <span className="num font-semibold text-ok">{formatPHP(earnedThisMonth)}</span> this month
+                </>
+              )}
+            </p>
+          )}
           {account.credit?.due_now != null && (
             <p className="mt-1 text-footnote text-ink-2">
               Due now <span className="num font-semibold text-ink">{formatPHP(account.credit.due_now)}</span>
@@ -244,7 +334,14 @@ export function AccountDetail() {
           {actions && !account.archived && (
             <div className="mt-4 grid grid-cols-2 gap-2.5">
               {actions.map((action, i) => (
-                <button key={action.label} type="button" onClick={() => openSheet(undefined, undefined, action.preset)}
+                <button key={action.label} type="button"
+                  onClick={() =>
+                    // REC-32. Paying back a loan that carries a plan pays the PLAN, so the
+                    // money counts against it and an extra payment asks what it should do.
+                    action.label === 'Pay back' && openPlans[0]
+                      ? setPaying(openPlans[0])
+                      : openSheet(undefined, undefined, action.preset)
+                  }
                   className={`min-h-tap rounded-full px-4 text-body font-semibold transition active:scale-[0.98] ${
                     i === 0 ? 'bg-surface text-accent shadow-card' : 'bg-accent text-on-accent shadow-raised'
                   }`}>
@@ -265,6 +362,21 @@ export function AccountDetail() {
           </div>
           <CardPayments account={account} />
         </>
+      )}
+
+      {account && (
+        <PlanPaymentSheet rule={paying} accounts={lookups.accounts} onClose={() => setPaying(null)} />
+      )}
+
+      {account && !account.credit && !account.archived && (
+        <div className="mt-3 space-y-3">
+          <AccountPlans account={account} onPay={setPaying} onPlans={setOpenPlans} />
+          {/* REC-14. A loan or a borrowed account gets the same monthly payment
+              as a card: without it, a plan on one could not be paid at all. */}
+          {(account.type === 'borrowed' || account.type === 'lent' || account.plans_unbilled !== '0.00') && (
+            <AccountPayments account={account} />
+          )}
+        </div>
       )}
 
       <div className="flex items-center justify-between gap-3 px-1 pb-2 pt-5">

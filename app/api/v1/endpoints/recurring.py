@@ -17,6 +17,7 @@ from app.api.v1.schemas.recurring import (
     ExpansionOut,
     OccurrenceOut,
     PauseIn,
+    PlanPaymentIn,
     RuleIn,
     RuleOut,
     SkipIn,
@@ -121,6 +122,26 @@ def skip(
     db: Session = Depends(get_db),
 ) -> RuleOut:
     return RuleOut.model_validate(recurring_service.skip(db, ctx.cipher, rule_id, body.on, today=_today(today)))
+
+
+@router.post("/{rule_id}/payments", response_model=RuleOut)
+def pay_plan(
+    rule_id: int,
+    body: PlanPaymentIn,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> RuleOut:
+    """
+    REC-32. Pay money on an installment plan from another account. What is due
+    is covered first; an EXTRA answers 409 PREPAYMENT_CHOICE - with what the
+    monthly payment would become, and how many payments would be left, either
+    way - and writes nothing until the same body returns with a `mode`.
+    """
+    return RuleOut.model_validate(recurring_service.pay_plan(
+        db, ctx.cipher, rule_id, amount=body.amount, from_account_id=body.from_account_id,
+        on=body.on, mode=body.mode, today=_today(today),
+    ))
 
 
 @router.post("/{rule_id}/payoff", response_model=RuleOut)

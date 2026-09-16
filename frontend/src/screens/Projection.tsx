@@ -106,6 +106,7 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
                     <span className="min-w-0 truncate">
                       <span className="text-ink-2">{short(item.on)}</span> · {item.name}
                       {item.kind === 'bill' && ' · card bill'}
+                      {item.kind === 'interest' && ' · estimated at today’s balance'}
                       {item.final && ' · last payment'}
                       {item.paused && ' · paused, not counted'}
                     </span>

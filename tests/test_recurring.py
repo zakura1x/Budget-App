@@ -315,6 +315,39 @@ def test_skipping_a_payment_moves_the_payoff_and_owes_the_same(session, owner, b
         date(2026, 12, 10), D("2000.00"), date(2026, 11, 10))
 
 
+def test_moving_a_start_earlier_reopens_the_payments_it_skipped(session, owner, books):
+    """
+    REC-05, from a real plan (2026-09-16): created with a start later in the
+    month, then corrected to an earlier one - the catch-up marker stayed where
+    it was, so the first payment could never post.
+    """
+    plan = recurring_service.create_rule(session, owner, {
+        "kind": "installment", "name": "Motorcycle", "account_id": books.card, "category_id": books.gadgets,
+        "frequency": "monthly", "start": "2026-09-30", "price": "18500.00", "payments": 37,
+    }, today=date(2026, 9, 16))
+    assert posted(session, owner, plan.id) == []  # nothing due yet
+
+    recurring_service.update_rule(session, owner, plan.id, {"start": "2026-09-15"}, today=date(2026, 9, 16))
+    recurring_service.expand(session, owner, today=date(2026, 9, 16))
+
+    payments = posted(session, owner, plan.id)
+    assert [v.txn_date for v in payments] == [date(2026, 9, 15)]
+    # And running the catch-up again changes nothing.
+    assert recurring_service.expand(session, owner, today=date(2026, 9, 16)).posted == 0
+
+
+def test_moving_a_start_later_leaves_the_marker_alone(session, owner, books):
+    """The guard only ever pulls the marker BACK - a later start must not re-post what has gone."""
+    plan = recurring_service.create_rule(session, owner, {
+        "kind": "standard", "name": "Rent", "account_id": books.bdo, "category_id": books.rent,
+        "frequency": "monthly", "start": "2026-09-10", "amount": "12000.00",
+    }, today=date(2026, 9, 10))
+    before = len(posted(session, owner, plan.id))
+    recurring_service.update_rule(session, owner, plan.id, {"start": "2026-09-20"}, today=date(2026, 9, 20))
+    recurring_service.expand(session, owner, today=date(2026, 9, 20))
+    assert len(posted(session, owner, plan.id)) == before + 1  # the 20th, and nothing repeated
+
+
 def test_an_installment_cannot_be_paused(session, owner, books):
     plan = phone(session, owner, books)
     with pytest.raises(BusinessRuleException):
@@ -337,6 +370,79 @@ def test_available_credit_subtracts_the_whole_unpaid_remainder(session, owner, b
                                        today=date(2026, 9, 21))
     # Owed 6,666.67 for payment 1; the bank still blocks the 33,333.33 to come.
     assert (card.credit.unpaid_installments, card.credit.available) == (D("33333.33"), D("60000.00"))
+
+
+def test_a_plan_is_owed_from_the_day_you_take_it(session, owner, books):
+    """
+    REC-14, fixed 2026-09-16 (user: "it does not show the charges"). A plan
+    still to bill is money you owe, whatever the ledger has posted so far -
+    what a card's own app calls your balance.
+    """
+    phone(session, owner, books)  # 40,000 over 6, first payment 20 Sep
+    card = account_service.get_account(session, owner, books.card,
+                                       postings=transaction_service.postings(session, owner),
+                                       today=date(2026, 9, 21))
+    assert card.credit.owed == D("6666.67")  # payment 1, posted
+    assert card.plans_unbilled == D("33333.33")
+    assert card.credit.owed_with_plans == D("40000.00")  # the whole phone, from day one
+    # ACC-14 is unchanged: available already held the remainder back.
+    assert card.credit.available == D("60000.00")
+
+
+def test_a_plan_before_its_first_payment_is_already_owed(session, owner, books):
+    """Nothing has posted yet - the plan alone is what the card owes."""
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "name": "iPhone", "account_id": books.card, "category_id": books.gadgets,
+        "frequency": "monthly", "start": "2026-10-05", "price": "12000.00", "payments": 6,
+    }, today=date(2026, 9, 16))
+    card = account_service.get_account(session, owner, books.card,
+                                       postings=transaction_service.postings(session, owner),
+                                       today=date(2026, 9, 16))
+    assert (card.credit.owed, card.credit.owed_with_plans) == (D("0.00"), D("12000.00"))
+
+
+def test_a_plan_on_a_loan_shows_on_the_loan(session, owner, books):
+    """The same on a borrowed account, which has no credit block at all (ACC-31)."""
+    loan = account_service.create_account(session, owner, {"name": "Home Credit", "type": "borrowed",
+                                                           "opening_balance": "-30000.00"})
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "name": "Sofa", "account_id": loan.id, "category_id": books.gadgets,
+        "frequency": "monthly", "start": "2026-10-01", "price": "18000.00", "payments": 6,
+    }, today=date(2026, 9, 16))
+    view = account_service.get_account(session, owner, loan.id,
+                                       postings=transaction_service.postings(session, owner),
+                                       today=date(2026, 9, 16))
+    assert view.credit is None
+    assert view.balance == D("-30000.00")  # the ledger's own sum, untouched
+    assert view.plans_unbilled == D("18000.00")
+
+
+def test_net_worth_counts_a_plan_on_any_account(session, owner, books):
+    loan = account_service.create_account(session, owner, {"name": "Home Credit", "type": "borrowed",
+                                                           "opening_balance": "-30000.00"})
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "name": "Sofa", "account_id": loan.id, "category_id": books.gadgets,
+        "frequency": "monthly", "start": "2026-10-01", "price": "18000.00", "payments": 6,
+    }, today=date(2026, 9, 16))
+    views = account_service.list_accounts(session, owner, postings=transaction_service.postings(session, owner),
+                                          today=date(2026, 9, 16))
+    worth = account_service.net_worth(views)
+    # 5,000 + 50,000 in hand, less the 30,000 loan and the 18,000 sofa still to bill.
+    assert worth.total == D("7000.00")
+    # ACC-17 is deliberately not net worth: cash on hand never counts what you will owe later.
+    assert account_service.cash_on_hand(views).total == D("55000.00")
+
+
+def test_paying_a_plan_down_moves_it_from_unbilled_to_billed(session, owner, books):
+    """What you owe in total stays put as payments post; only paying the card lowers it."""
+    plan = phone(session, owner, books)
+    recurring_service.expand(session, owner, today=date(2026, 11, 20))
+    card = account_service.get_account(session, owner, books.card,
+                                       postings=transaction_service.postings(session, owner),
+                                       today=date(2026, 11, 20))
+    assert card.credit.owed_with_plans == D("40000.00")
+    assert card.credit.owed > D("6666.67") and card.plans_unbilled < D("33333.33")
+    assert recurring_service.get_rule(session, owner, plan.id, today=date(2026, 11, 20)).installment.payments_posted == 3
 
 
 def test_terms_are_fixed_once_payments_have_posted(session, owner, books):

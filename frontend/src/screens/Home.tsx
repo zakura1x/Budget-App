@@ -28,6 +28,7 @@ import { Ring, toneFor, type Tone } from '../components/ui/Ring';
 import { useLookups, type Lookups } from '../hooks/useLookups';
 import { ratio, type Alert, type BudgetStatus } from '../lib/budgets';
 import { formatPHP } from '../lib/money';
+import { accrueInterest } from '../lib/accounts';
 import { expandRecurring } from '../lib/recurring';
 import { localToday } from '../lib/transactions';
 import { useAuthStore } from '../stores/authStore';
@@ -213,12 +214,13 @@ export function Home() {
     const filtered = Object.values(filters).some((v) => v !== undefined);
     if (filtered || items.length === 0) void load({});
     void loadBudget(null);
-    // REC-05. Post whatever recurring charges fell due since the last open -
-    // idempotent on the server - and refresh the figures only if any did.
+    // REC-05 and ACC-37. Post whatever recurring charges fell due since the
+    // last open, and credit the days of savings interest earned since - both
+    // idempotent on the server - then refresh the figures only if any landed.
     const catchUp = () =>
-      expandRecurring()
-        .then((result) => {
-          if (result.posted === 0) return;
+      Promise.all([expandRecurring(), accrueInterest()])
+        .then((results) => {
+          if (results.every((result) => result.posted === 0)) return;
           useLedgerStore.setState((s) => ({ version: s.version + 1 }));
           void load({});
           void loadBudget(null);

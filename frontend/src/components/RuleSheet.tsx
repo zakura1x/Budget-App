@@ -144,6 +144,19 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
     () => flatten(lookups.tree).filter((c) => c.kind === type && !c.archived),
     [lookups.tree, type],
   );
+  /**
+   * TXN-05, the same two-step picker as the add sheet (2026-09-16, user: the
+   * whole category list at once is unusable after an import). MAIN categories
+   * only; the sub-categories of the one chosen appear under it, optional.
+   */
+  const mains = useMemo(
+    () => lookups.tree.filter((c) => c.kind === type && !c.archived),
+    [lookups.tree, type],
+  );
+  const chosenCategory = categoryId !== null ? categories.find((c) => c.id === categoryId) : undefined;
+  const mainId = chosenCategory ? chosenCategory.parent_id ?? chosenCategory.id : null;
+  const main = mains.find((c) => c.id === mainId);
+  const subs = (main?.children ?? []).filter((c) => !c.archived);
   const accounts = lookups.accounts.filter((a) => !a.archived || a.id === rule?.account_id);
 
   const problem = (() => {
@@ -324,13 +337,23 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
           <div>
             <p className="mb-2 text-footnote font-semibold text-ink-2">Category</p>
             <div className="flex flex-wrap gap-2">
-              {categories.map((c) => (
-                <Chip key={c.id} selected={categoryId === c.id} onClick={() => setCategoryId(c.id)}>
-                  {c.parent_id ? `↳ ${c.name}` : c.name}
-                </Chip>
+              {mains.map((c) => (
+                <Chip key={c.id} selected={mainId === c.id} onClick={() => setCategoryId(c.id)}>{c.name}</Chip>
               ))}
-              {categories.length === 0 && <p className="text-footnote text-ink-3">Add a {type} category first.</p>}
+              {mains.length === 0 && <p className="text-footnote text-ink-3">Add a {type} category first.</p>}
             </div>
+            {subs.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-footnote text-ink-3" aria-hidden="true">↳</span>
+                {subs.map((c) => (
+                  <Chip key={c.id} selected={categoryId === c.id}
+                    // Tapping the chosen one again goes back to the main category alone.
+                    onClick={() => setCategoryId(categoryId === c.id ? (mainId as number) : c.id)}>
+                    {c.name}
+                  </Chip>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

@@ -43,12 +43,14 @@ REORDER = "REORDER"
 # user accepts; fixing the opening balance instead writes no such entry.
 BALANCE_ADJUST = "BALANCE_ADJUST"
 STATEMENT_CHECK = "STATEMENT_CHECK"  # ACC-24 - the bank's total for one statement
+INTEREST = "INTEREST"  # ACC-37 - days of savings interest credited, with the count
 # Phase 7 - the recurring engine.
 EXPAND = "EXPAND"  # REC-04/05 - occurrences posted, with the count
 PAUSE = "PAUSE"
 RESUME = "RESUME"
 SKIP = "SKIP"  # REC-15
 PAYOFF = "PAYOFF"  # REC-13
+PLAN_PAYMENT = "PLAN_PAYMENT"  # REC-32 - money paid on a plan, and what any extra did
 CONFIRM_TERMS = "CONFIRM_TERMS"  # REC-29 - interest from the first statement
 # Phase 8a - data in and out.
 BACKUP = "BACKUP"  # DAT-06 - "Back up now"; automatic ones are logged, not audited

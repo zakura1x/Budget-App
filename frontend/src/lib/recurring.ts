@@ -6,7 +6,7 @@
  * `kind`. Only the server posts from a rule, and `expandRecurring` is safe to
  * call on every open - it posts what is due and nothing twice.
  */
-import { api } from './api';
+import { api, ApiError } from './api';
 import { localToday } from './transactions';
 
 export type RuleKind = 'standard' | 'subscription' | 'installment';
@@ -25,6 +25,39 @@ export interface InstallmentStatus {
   payments_posted: number;
   payoff_on: string | null;
   closed: boolean;
+  /** REC-32 - what you have actually paid on the plan, and what is left to pay. */
+  money_paid: string;
+  left_to_pay: string;
+  /** The next payment still to post - smaller after an extra payment that lowered it. */
+  current_payment: string;
+  /** Scheduled payments not posted yet - fewer after an extra payment that shortened it. */
+  payments_left: number;
+  prepaid: string;
+}
+
+/** REC-32 - what the extra part of a payment does to the plan. */
+export type PrepaymentMode = 'lower' | 'shorten';
+
+export interface PlanPayment {
+  amount: string;
+  from_account_id: number;
+  on?: string;
+  mode?: PrepaymentMode;
+}
+
+/** One way an extra payment could change the plan - the numbers the question shows. */
+export interface PrepaymentOutcome {
+  payment: string;
+  payments: number;
+  payoff_on: string | null;
+}
+
+/** The server's question when a payment is more than what is due (409 PREPAYMENT_CHOICE). */
+export interface PrepaymentQuestion {
+  due: string;
+  extra: string;
+  lower: PrepaymentOutcome;
+  shorten: PrepaymentOutcome;
 }
 
 export interface Rule {
@@ -122,8 +155,11 @@ export interface ProjectedItem {
   on: string;
   rule_id: number;
   name: string;
-  /** 'bill' / 'bill_plans': a typed card bill entering cash on hand (ACC-35), rule_id 0. */
-  kind: RuleKind | 'bill' | 'bill_plans';
+  /**
+   * 'bill' / 'bill_plans': a typed card bill entering cash on hand (ACC-35),
+   * rule_id 0. 'interest': a month of savings interest (ACC-37), also rule_id 0.
+   */
+  kind: RuleKind | 'bill' | 'bill_plans' | 'interest';
   type: RuleType;
   account_id: number;
   counter_account_id: number | null;
@@ -198,6 +234,25 @@ export const skipOccurrence = (id: number, on: string) =>
   api<Rule>(`/recurring/${id}/skip?${today()}`, { method: 'POST', body: { on } });
 
 export const payOff = (id: number) => api<Rule>(`/recurring/${id}/payoff?${today()}`, { method: 'POST' });
+
+/**
+ * REC-32. Pay money on a plan from another account. An extra payment first
+ * answers PREPAYMENT_CHOICE - read it with prepaymentQuestion() - and is sent
+ * again with a `mode` once the user has chosen.
+ */
+export const payPlan = (id: number, body: PlanPayment) =>
+  api<Rule>(`/recurring/${id}/payments?${today()}`, { method: 'POST', body });
+
+/** The choice the server is asking for, or null if this was a different error. */
+export function prepaymentQuestion(error: unknown): PrepaymentQuestion | null {
+  if (!(error instanceof ApiError) || error.code !== 'PREPAYMENT_CHOICE') return null;
+  const { due, extra, lower, shorten } = error.body as Record<string, unknown>;
+  const outcome = (value: unknown): value is PrepaymentOutcome =>
+    typeof value === 'object' && value !== null && typeof (value as PrepaymentOutcome).payment === 'string';
+  return typeof due === 'string' && typeof extra === 'string' && outcome(lower) && outcome(shorten)
+    ? { due, extra, lower, shorten }
+    : null;
+}
 
 export const expandRecurring = () =>
   api<{ posted: number; rules: number; needs_attention: number[] }>(`/recurring/expand?${today()}`, { method: 'POST' });

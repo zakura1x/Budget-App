@@ -29,11 +29,12 @@ from app.api.v1.schemas.accounts import (
     AccountOut,
     ArchiveIn,
     BillsIn,
+    InterestAccrualOut,
     ValuationIn,
 )
 from app.core.deps import UnlockedContext, get_unlocked_context
 from app.db.session import get_db
-from app.services import account_service, transaction_service
+from app.services import account_service, interest_service, transaction_service
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -69,6 +70,25 @@ def list_accounts(
         cash_on_hand=account_service.cash_on_hand(views),
         net_worth=account_service.net_worth(views),
     )
+
+
+@router.post("/interest/accrue", response_model=InterestAccrualOut)
+def accrue_interest(
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> InterestAccrualOut:
+    """
+    ACC-37. Credit every day of savings interest earned up to yesterday that
+    has not been credited yet.
+
+    Safe to call on every open, like POST /recurring/expand: the days already
+    credited are skipped, and calling it twice in a row changes nothing. It
+    never accrues today, whose closing balance is not closed yet.
+
+    Declared before /{account_id} so "interest" is never read as an account id.
+    """
+    return InterestAccrualOut.model_validate(interest_service.accrue(db, ctx.cipher, today=today or date.today()))
 
 
 @router.get("/{account_id}", response_model=AccountOut)

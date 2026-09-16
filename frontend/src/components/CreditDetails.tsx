@@ -114,15 +114,28 @@ export function CreditDetails({ account, onCheck }: { account: Account; onCheck:
       {credit.bills.length === 0 && <BillLine credit={credit} />}
       <OwnLimit credit={credit} />
       <div className="space-y-1 pt-1">
-        <p className="text-footnote text-ink-3">
-          {credit.available !== null ? (
-            <>
-              <span className="num">{formatPHP(credit.available)}</span> of the bank’s limit left
-            </>
-          ) : (
-            'No bank limit set'
-          )}
-        </p>
+        {credit.available !== null ? (
+          <>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-footnote text-ink-2">Left to spend</span>
+              <span className={`num text-body font-semibold ${credit.available.startsWith('-') ? 'text-danger' : ''}`}>
+                {formatPHP(credit.available)}
+              </span>
+            </div>
+            <p className="text-caption text-ink-3">
+              of <span className="num">{formatPHP(credit.limit as string)}</span> limit
+              {/* ACC-14: the bank blocks the whole unpaid remainder from the limit on day one. */}
+              {credit.unpaid_installments !== '0.00' && (
+                <>
+                  {' · '}
+                  <span className="num">{formatPHP(credit.unpaid_installments)}</span> of plans still to bill is held back
+                </>
+              )}
+            </p>
+          </>
+        ) : (
+          <p className="text-footnote text-ink-3">Set the card’s credit limit to see what is left to spend.</p>
+        )}
         {ceiling > 0 && <Bar percent={(centavos(credit.owed) / ceiling) * 100} colour={account.colour} />}
       </div>
       <button

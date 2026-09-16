@@ -316,6 +316,16 @@ def _key(table: str, deleted: bool, first: dict, maps, original: dict, deferred)
     for path, target in deferred:
         if (table, path) in references.LINKS or "[]" in path:
             continue
+        if "." in path:
+            # A reference inside a nested object (accounts.interest.category_id,
+            # ACC-37): it has to go back where it came from, or this row's key
+            # could never match the same row already restored.
+            name, field = path.split(".", 1)
+            nested = original.get(name)
+            if isinstance(nested, dict) and nested.get(field) is not None:
+                mapped = maps.get(target, {}).get(nested[field], f"?{nested[field]}")
+                content[name] = {**(content.get(name) or {}), field: mapped}
+            continue
         value = original.get(path)
         content[path] = maps.get(target, {}).get(value, f"?{value}") if value is not None else None
     return _record_key(table, deleted, content, deferred)

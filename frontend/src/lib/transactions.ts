@@ -26,6 +26,27 @@ export interface Split {
   note: string | null;
 }
 
+/**
+ * TXN-22 - cashback on a purchase. The purchase keeps its full amount; this is
+ * a real income row beside it, on the account and day chosen.
+ */
+export interface Cashback {
+  amount: string;
+  account_id: number;
+  category_id: number;
+  on: string;
+  /** Where the amount came from ("2% back"); nothing recomputes from it. */
+  rate: string | null;
+}
+
+export interface CashbackDraft {
+  amount: string;
+  category_id: number;
+  account_id?: number;
+  on?: string;
+  rate?: string | null;
+}
+
 export interface Transaction {
   id: number;
   type: TransactionType;
@@ -43,6 +64,13 @@ export interface Transaction {
   /** REC-04 - the rule that posted it, or the installment it pays. */
   recurring_id?: number | null;
   recurring_on?: string | null;
+  /** ACC-37 - the day of savings interest this credited; set only by the server. */
+  interest_on?: string | null;
+  /** TXN-22 - what this purchase earns back. */
+  cashback?: Cashback | null;
+  /** The income row that credits it; and, on that row, the purchase it came from. */
+  cashback_id?: number | null;
+  cashback_of?: number | null;
   /** TXN-15 - the receipt, if one is attached. */
   attachment_id?: number | null;
   created_at: string | null;
@@ -82,6 +110,11 @@ export interface TransactionDraft {
   merchant?: string | null;
   notes?: string | null;
   tag_ids?: number[];
+  /**
+   * TXN-22. Left out, an edit keeps the cashback that is there; sent as null it
+   * removes it and the credit row with it.
+   */
+  cashback?: CashbackDraft | null;
 }
 
 export interface Filters {

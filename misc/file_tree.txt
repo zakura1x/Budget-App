@@ -94,6 +94,8 @@ Budget App/
 │   │   └── utils/
 │   │       ├── date_utils.py            # period resolution - custom start days
 │   │       ├── money.py                 # Decimal only. Never float.
+│   │       ├── interest.py              # ACC-37 pure bands, tax, sub-centavo carry -
+│   │       │                             # shared by the daily credits and the projection
 │   │       └── csv_utils.py
 │   │
 │   ├── db/
@@ -161,9 +163,12 @@ Budget App/
 │   │   │   └── alerts.py                # over / approaching / pace (in-app only),
 │   │   │                                #   card due + card limit on the statement cycle
 │   │   ├── account_service.py           # balances, cards, cash on hand; typed card
-│   │   │                                #   bills + due now (ACC-35); net worth (ACC-36)
+│   │   │                                #   bills + due now (ACC-35); net worth (ACC-36);
+│   │   │                                #   interest terms (ACC-37), usual cashback (ACC-38)
 │   │   ├── category_service.py
-│   │   ├── transaction_service.py
+│   │   ├── transaction_service.py       # the write path; the cashback pair (TXN-22)
+│   │   ├── interest_service.py          # ACC-37 catch-up: one income entry per day
+│   │   │                                 # of savings interest, marker in the same commit
 │   │   ├── recurring_service.py         # the ONE engine: standard |
 │   │   │                                 # subscription | installment
 │   │   ├── subscription_service.py      # view over recurring_rules,

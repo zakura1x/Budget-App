@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.schemas.accounts import AccountOut, CashOnHandOut
 from app.api.v1.schemas.budgets import StatusOut
-from app.api.v1.schemas.common import Money
+from app.api.v1.schemas.common import Money, Rate
 
 TransactionType = Literal["expense", "income", "transfer"]  # what can be entered
 # A balance adjustment (ACC-29) is shown, never entered: it comes from setting an account's balance.
@@ -25,6 +25,31 @@ class SplitIn(BaseModel):
     category_id: int
     amount: Money
     note: Optional[str] = Field(default=None, max_length=120)
+
+
+class CashbackIn(BaseModel):
+    """
+    TXN-22 - what a purchase earns back. Sent with the purchase; null takes it
+    away. It lands in the same account on the same day unless told otherwise,
+    which is what a wallet does - a card that pays at the end of the cycle gets
+    its own date.
+    """
+
+    amount: Money
+    category_id: int
+    account_id: Optional[int] = None  # defaults to the account spent from
+    on: Optional[date] = None  # defaults to the day of the purchase
+    rate: Optional[Rate] = None  # remembered for the wording only; nothing recomputes from it
+
+
+class CashbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    amount: Money
+    account_id: int
+    category_id: int
+    on: date
+    rate: Optional[Rate] = None
 
 
 class TransactionIn(BaseModel):
@@ -38,6 +63,9 @@ class TransactionIn(BaseModel):
     merchant: Optional[str] = Field(default=None, max_length=80)
     notes: Optional[str] = Field(default=None, max_length=500)
     tag_ids: Optional[List[int]] = Field(default=None, max_length=10)  # TXN-10; omitted keeps the stored ones
+    # TXN-22. Left out, an edit keeps the cashback; sent as null it removes it
+    # and the credit row with it.
+    cashback: Optional[CashbackIn] = None
 
 
 class RepeatIn(BaseModel):
@@ -69,6 +97,10 @@ class TransactionOut(BaseModel):
     tag_ids: List[int] = []
     recurring_id: Optional[int] = None  # the rule that posted it, or the plan it pays
     recurring_on: Optional[date] = None
+    interest_on: Optional[date] = None  # ACC-37 - the day of savings interest this credited
+    cashback: Optional[CashbackOut] = None  # TXN-22 - on the purchase
+    cashback_id: Optional[int] = None  # the income row crediting it
+    cashback_of: Optional[int] = None  # on that row: the purchase it came from
     attachment_id: Optional[int] = None  # TXN-15 - GET /attachments/{id}
     created_at: Optional[datetime] = None
     card_posted_on: Optional[date] = None  # ACC-26
