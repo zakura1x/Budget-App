@@ -12,7 +12,8 @@ from app.api.v1.schemas.common import Money
 Kind = Literal["standard", "subscription", "installment"]
 # A projected item can also be a typed card bill entering cash on hand (ACC-35):
 # its typed part, or its plan part - or a month of savings interest (ACC-37).
-ProjectedKind = Literal["standard", "subscription", "installment", "bill", "bill_plans", "interest"]
+# "bill_now" is a bill cash on hand already holds: listed with no effect, never taken twice.
+ProjectedKind = Literal["standard", "subscription", "installment", "bill", "bill_plans", "bill_now", "interest"]
 RuleType = Literal["expense", "income", "transfer"]
 Frequency = Literal["daily", "weekly", "monthly", "yearly", "semi_monthly"]
 
@@ -68,6 +69,12 @@ class PlanPaymentIn(BaseModel):
     from_account_id: int
     on: Optional[date] = None  # the client's today when left out
     mode: Optional[Literal["lower", "shorten"]] = None
+
+
+class PayNowIn(BaseModel):
+    """REC-33 - record the next occurrence now; `on` is the day it was paid (today when left out)."""
+
+    on: Optional[date] = None
 
 
 class OccurrenceOut(BaseModel):
@@ -225,6 +232,7 @@ class ProjectedMonthOut(BaseModel):
     overcommitted: bool
     items: List[ProjectedItemOut]
     bills: Money = Decimal("0.00")  # ACC-35 - typed card bills taken this month, on top of spending
+    bills_set_aside: Money = Decimal("0.00")  # ACC-35 - due this month, already out of cash on hand
 
 
 class ProjectionOut(BaseModel):

@@ -21,6 +21,7 @@ import { usePreferencesStore } from './stores/preferencesStore';
 import { Splash } from './components/Splash';
 import { TransactionSheet } from './components/TransactionSheet';
 import { useAutoLock } from './hooks/useAutoLock';
+import { useCatchUp } from './hooks/useCatchUp';
 import { LOCKED_EVENT, SIGNED_OUT_EVENT } from './lib/api';
 import { BASE_URL } from './lib/config';
 import { AccountDetail } from './screens/AccountDetail';
@@ -150,13 +151,16 @@ export function App() {
       closeAddSheet();
       resetLedger();
       resetBudget();
-      resetPreferences();
+      // Locked (or still loading) is the same person, so the theme stays; signed
+      // out is not - the next person on this device gets the device's setting (UX-05).
+      resetPreferences({ keepTheme: status !== 'anonymous' });
     } else {
       void loadPreferences(); // the theme, the week start, the auto-lock choice
     }
   }, [status, closeAddSheet, resetLedger, resetBudget, resetPreferences, loadPreferences]);
 
   useAutoLock(status === 'unlocked', autoLockMinutes, () => void lock());
+  useCatchUp(status === 'unlocked');
 
   if (!online) return <Offline />;
 

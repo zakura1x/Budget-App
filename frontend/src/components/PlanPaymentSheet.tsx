@@ -30,13 +30,8 @@ import { localToday } from '../lib/transactions';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
+import { MoneyField } from './ui/MoneyField';
 import { TextField } from './ui/TextField';
-
-/** Digits and one point, two places - typed as text, sent as text. */
-function clean(input: string): string {
-  const [whole = '', ...rest] = input.replace(/[^\d.]/g, '').split('.');
-  return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole;
-}
 
 const month = (iso: string | null) => (iso ? format(parseISO(iso), 'MMM yyyy') : '—');
 
@@ -122,11 +117,10 @@ export function PlanPaymentSheet({ rule, accounts, onClose }: PlanPaymentSheetPr
             </div>
           ) : (
             <>
-              <TextField
+              <MoneyField
                 label="Amount"
                 value={amount}
-                onChange={(e) => setAmount(clean(e.target.value))}
-                inputMode="decimal"
+                onChange={setAmount}
                 placeholder={plan.current_payment}
                 hint={`The next payment is ${formatPHP(plan.current_payment)}. Pay more and you choose what the extra does.`}
               />

@@ -11,7 +11,13 @@ interface PreferencesState {
   prefs: Preferences | null;
   load: () => Promise<void>;
   change: (changes: Partial<Preferences>) => Promise<void>;
-  reset: () => void;
+  /**
+   * Drop the preferences. `keepTheme` leaves the theme on the page: locking
+   * is the same person stepping away, so the PIN screen should still look the
+   * way they chose (2026-09-16, user). Signing out clears it - the next person
+   * to sign in on this device gets the device's own setting.
+   */
+  reset: (options?: { keepTheme?: boolean }) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>((set, get) => ({
@@ -42,8 +48,8 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
     }
   },
 
-  reset: () => {
+  reset: ({ keepTheme = false } = {}) => {
     set({ prefs: null });
-    applyTheme(null);
+    if (!keepTheme) applyTheme(null);
   },
 }));

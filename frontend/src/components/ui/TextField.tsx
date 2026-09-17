@@ -5,11 +5,13 @@ export interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   hint?: ReactNode;
   error?: string | null;
   trailing?: ReactNode;
+  /** Shown inside the field before the text - the ₱ of a MoneyField. */
+  leading?: ReactNode;
 }
 
 /** A labelled input, 48px tall, 16px text (so iOS never zooms on focus). */
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField(
-  { label, hint, error, trailing, className = '', id, ...rest },
+  { label, hint, error, trailing, leading, className = '', id, ...rest },
   ref,
 ) {
   const autoId = useId();
@@ -25,6 +27,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
           error ? 'border-danger' : 'border-line'
         }`}
       >
+        {leading}
         <input
           ref={ref}
           id={inputId}

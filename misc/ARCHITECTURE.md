@@ -537,13 +537,14 @@ imports it back.
 ### 4.6 Daily savings interest (ACC-37)
 
 The banks this app is used with (SeaBank, MariBank) work interest out on
-**yesterday's closing balance** and credit it at midnight, so an account's real
+**yesterday's closing balance** and credit it early the next morning (MariBank:
+1:00 am), dated that morning, so an account's real
 history holds one small income entry per day. `interest_service` reproduces
 that history rather than approximating it, which is what keeps the app's
 balance equal to the bank's on any given day.
 
 ```
-for each day from credited_through + 1 to YESTERDAY:
+for each day from max(started + 1, credited_through + 1) to TODAY:
     base   = the account's closing balance the day before
     gross  = the slice of base in each band x rate / 100 / 365
     net    = gross x (1 - withholding tax)
@@ -553,8 +554,11 @@ for each day from credited_through + 1 to YESTERDAY:
 
 Four rules hold this together:
 
-- **Today is never accrued.** Its closing balance is not closed; an entry
-  posted now would change every time another transaction is typed.
+- **An entry dated d pays for d - 1.** Yesterday's balance is closed, so
+  today's entry posts on today's first open, as the bank's does; today's own
+  balance is paid tomorrow, so typing a transaction never changes a posted
+  entry. (Until 2026-09-17 the app waited a day - the user's MariBank credits
+  at 1:00 am.)
 - **The credit compounds.** Interest posted on a day is part of that day's
   closing balance, so the next day earns on it.
 - **Sub-centavo interest is carried, never rounded.** `carry` holds what is

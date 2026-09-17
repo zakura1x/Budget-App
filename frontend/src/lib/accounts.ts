@@ -144,6 +144,10 @@ export interface Account {
    * The balance never includes it; what you OWE and net worth do.
    */
   plans_unbilled: string;
+  /** GOA-08 - earmarked for savings goals; the balance is unchanged. */
+  set_aside: string;
+  /** Balance less set_aside - what cash on hand counts - or null when nothing is set aside. */
+  available: string | null;
 }
 
 /** ACC-38 - a suggestion for the add sheet, never a total in its own right. */
@@ -359,10 +363,10 @@ export const setArchived = (id: number, archived: boolean) =>
 
 /** ACC-35 - replace a card's bills with the unpaid ones its app shows today; [] removes them. */
 export const setBills = (id: number, bills: { due: string; amount: string }[]) =>
-  api<Account>(`/accounts/${id}/bills?${today()}`, { method: 'PUT', body: { bills } });
+  api<Account>(`/accounts/${id}/bills?${today()}`, { method: 'POST', body: { bills } });
 
 /**
- * ACC-37. Credit every day of savings interest up to yesterday that has not
+ * ACC-37. Post every morning's savings interest credit, today's included, that has not
  * been credited yet. Safe on every open, like expandRecurring: the days
  * already credited are skipped and a second call changes nothing.
  */

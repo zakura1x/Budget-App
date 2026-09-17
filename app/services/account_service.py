@@ -192,7 +192,7 @@ class InterestView:
     balance, derived on every read from the same pure helper the daily credits
     use, so the figure on the page and the entries in the trail can never come
     from two different formulas. `credited_through` is how far the catch-up
-    has got - never today, because today's closing balance is not closed.
+    has got: the last morning credited, today at most (paid on yesterday's balance).
     """
 
     bands: Tuple[InterestBand, ...]
@@ -332,6 +332,10 @@ class AccountView:
     # the ledger's own sum. Cash on hand leaves it out by design (ACC-17); what
     # you OWE and net worth (ACC-36) count it.
     plans_unbilled: Decimal = ZERO
+    # GOA-08. Earmarked for savings goals inside this account. The balance never
+    # changes for it; `available` and cash on hand (through cash_amount) do.
+    set_aside: Decimal = ZERO
+    available: Optional[Decimal] = None  # balance less set_aside; None where nothing can be set aside
 
 
 @dataclass(frozen=True)
@@ -374,7 +378,9 @@ def list_accounts(
     unpaid = _unpaid_installments(db, cipher)
     # ACC-35. The recurring charges are read only when some card has bills to add them to.
     charges = _plan_charges(db, cipher, today) if any(r.data.get("bills") for r in records) else {}
-    views = [_view(record.id, record.data, by_account.get(record.id, ()), today, unpaid, charges) for record in records]
+    held = _set_aside(db, cipher)
+    views = [_view(record.id, record.data, by_account.get(record.id, ()), today, unpaid, charges, held)
+             for record in records]
     if not include_archived:
         views = [v for v in views if not v.archived]
     return sorted(views, key=lambda v: (v.archived, v.sort_order, v.name.lower(), v.id))
@@ -392,7 +398,8 @@ def get_account(
     if record is None:
         raise NotFoundException("Account not found")
     return _view(record.id, record.data, _group_postings(postings).get(account_id, ()), today,
-                 _unpaid_installments(db, cipher), _plan_charges(db, cipher, today) if record.data.get("bills") else {})
+                 _unpaid_installments(db, cipher), _plan_charges(db, cipher, today) if record.data.get("bills") else {},
+                 _set_aside(db, cipher))
 
 
 def cash_on_hand(views: Iterable[AccountView]) -> CashOnHand:
@@ -700,6 +707,16 @@ def record_statement_check(
 # ---------------------------------------------------------------- internals
 
 
+def _set_aside(db: Session, cipher: UserCipher) -> Mapping[int, Decimal]:
+    """
+    GOA-08. What each account has earmarked for savings goals. Imported here,
+    not at the top: goal_service imports this module.
+    """
+    from app.services import goal_service
+
+    return goal_service.set_aside_by_account(db, cipher)
+
+
 def _unpaid_installments(db: Session, cipher: UserCipher) -> Mapping[int, Decimal]:
     """
     REC-14. The unpaid remainder of every open installment, per account -
@@ -726,6 +743,7 @@ def _view(
     today: Optional[date],
     unpaid: Optional[Mapping[int, Decimal]] = None,
     charges: Optional[Mapping[int, Sequence[Charge]]] = None,
+    held: Optional[Mapping[int, Decimal]] = None,
 ) -> AccountView:
     kind = str(data.get("type", "cash"))
     opening = money(data.get("opening_balance", ZERO))
@@ -777,7 +795,15 @@ def _view(
     if kind in GIVES_CASHBACK:
         view = replace(view, cashback=_cashback_rule(data.get("cashback")))
     due_now = view.credit.due_now if view.credit is not None else None
-    return replace(view, cash_amount=-due_now if due_now is not None else view.balance)
+    if due_now is not None:
+        return replace(view, cash_amount=-due_now)
+    # GOA-08. Money set aside for a goal stays in the balance - it still matches the
+    # bank - but it is not there to spend, so cash on hand counts what is available.
+    set_aside = (held or {}).get(account_id, ZERO)
+    if set_aside > ZERO:
+        available = view.balance - set_aside
+        return replace(view, set_aside=set_aside, available=available, cash_amount=available)
+    return replace(view, cash_amount=view.balance)
 
 
 def _credit_view(

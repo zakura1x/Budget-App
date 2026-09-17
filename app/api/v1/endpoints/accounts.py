@@ -79,12 +79,12 @@ def accrue_interest(
     db: Session = Depends(get_db),
 ) -> InterestAccrualOut:
     """
-    ACC-37. Credit every day of savings interest earned up to yesterday that
-    has not been credited yet.
+    ACC-37. Post every morning's savings interest credit that is not posted
+    yet, today's included - it is paid on yesterday's closed balance.
 
     Safe to call on every open, like POST /recurring/expand: the days already
     credited are skipped, and calling it twice in a row changes nothing. It
-    never accrues today, whose closing balance is not closed yet.
+    pays today's own balance tomorrow, once it has closed.
 
     Declared before /{account_id} so "interest" is never read as an account id.
     """
@@ -149,7 +149,8 @@ def set_archived(
     return _current(db, ctx, account_id, today)
 
 
-@router.put("/{account_id}/bills", response_model=AccountOut)
+# POST, not PUT: IIS WebDAV answers PUT with 405 before it reaches uvicorn.
+@router.post("/{account_id}/bills", response_model=AccountOut)
 def set_bills(
     account_id: int,
     body: BillsIn,

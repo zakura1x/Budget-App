@@ -18,6 +18,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
 import { AccountPayments } from '../components/AccountPayments';
 import { AccountPlans } from '../components/AccountPlans';
+import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
 import { PlanPaymentSheet } from '../components/PlanPaymentSheet';
 import { CardPayments } from '../components/CardPayments';
 import { CreditDetails } from '../components/CreditDetails';
@@ -31,6 +32,7 @@ import { useLookups } from '../hooks/useLookups';
 import { isOwed, kindLabelOf, listAccounts, owedWithPlans, type Account } from '../lib/accounts';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { type Rule } from '../lib/recurring';
+import { listGoals, type Goal } from '../lib/security';
 import { listTransactions, localToday, type Transaction } from '../lib/transactions';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
@@ -103,6 +105,10 @@ export function AccountDetail() {
   /** REC-32. The plans open on this account, and the one being paid. */
   const [openPlans, setOpenPlans] = useState<Rule[]>([]);
   const [paying, setPaying] = useState<Rule | null>(null);
+  /** GOA-08 - the goals setting money aside in this account (several may share it). */
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [goalMoney, setGoalMoney] = useState<{ goal: Goal; mode: 'add' | 'use' } | null>(null);
 
   const loadAccount = useCallback(
     (signal?: AbortSignal) =>
@@ -181,6 +187,20 @@ export function AccountDetail() {
     if (own === 0 || onPlans === 0) return null;
     return { billed: fromCentavos(own), plans: fromCentavos(onPlans), label: 'borrowed' };
   }, [account, openPlans]);
+
+  const loadGoal = useCallback(
+    (signal?: AbortSignal) =>
+      listGoals(signal)
+        .then((found) => setGoals(found.filter((g) => g.account_id === accountId)))
+        .catch(() => undefined),
+    [accountId],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadGoal(controller.signal);
+    return () => controller.abort();
+  }, [loadGoal, version]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -281,15 +301,40 @@ export function AccountDetail() {
               </div>
             )}
           </div>
-          <p className="mt-5 text-footnote text-ink-2">{figureLabel}</p>
-          <p className={`num text-display ${!owed && account.balance.startsWith('-') ? 'text-danger' : ''}`}>
-            {formatPHP(figure)}
-          </p>
+          {account.available !== null && account.available !== undefined ? (
+            // GOA-08: the bank's balance and what is left to spend, side by side and equally large.
+            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2">
+              <div className="min-w-0">
+                <p className="text-footnote text-ink-2">{figureLabel}</p>
+                <p className={`num text-title sm:text-display ${!owed && account.balance.startsWith('-') ? 'text-danger' : ''}`}>
+                  {formatPHP(figure)}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-footnote text-ink-2">Available</p>
+                <p className={`num text-title sm:text-display ${account.available.startsWith('-') ? 'text-danger' : ''}`}>
+                  {formatPHP(account.available)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="mt-5 text-footnote text-ink-2">{figureLabel}</p>
+              <p className={`num text-display ${!owed && account.balance.startsWith('-') ? 'text-danger' : ''}`}>
+                {formatPHP(figure)}
+              </p>
+            </>
+          )}
           {account.credit?.available != null && (
             <p className="mt-1 text-footnote text-ink-2">
               Left to spend <span className="num font-semibold text-ink">{formatPHP(account.credit.available)}</span>
               {' of '}
               <span className="num">{formatPHP(account.credit.limit as string)}</span>
+            </p>
+          )}
+          {account.available !== null && account.available !== undefined && (
+            <p className="mt-1 text-footnote text-ink-2">
+              <span className="num font-semibold text-ink">{formatPHP(account.set_aside)}</span> set aside for goals
             </p>
           )}
           {plansUnbilled !== null && (
@@ -367,6 +412,19 @@ export function AccountDetail() {
       {account && (
         <PlanPaymentSheet rule={paying} accounts={lookups.accounts} onClose={() => setPaying(null)} />
       )}
+
+      {goals.length > 0 && account && !account.archived && (
+        <div className="mt-3 space-y-3">
+          {goals.map((g) => (
+            <GoalCard key={g.id} goal={g} accountName={account.name} onEdit={() => setEditingGoal(g)}
+              onAdd={() => setGoalMoney({ goal: g, mode: 'add' })} onUse={() => setGoalMoney({ goal: g, mode: 'use' })} />
+          ))}
+        </div>
+      )}
+      <GoalSheet open={editingGoal !== null} goal={editingGoal} onClose={() => setEditingGoal(null)}
+        onSaved={() => void loadGoal()} />
+      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)}
+        onSaved={() => void loadGoal()} />
 
       {account && !account.credit && !account.archived && (
         <div className="mt-3 space-y-3">

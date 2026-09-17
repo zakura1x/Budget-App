@@ -1,4 +1,10 @@
-"""/goals - savings goals; putting money toward one is a real transfer (GOA-01..07)."""
+"""
+/goals - savings goals (GOA-01..08).
+
+Since 2026-09-16 a goal holds money SET ASIDE inside its account: add and use
+change what the goal holds and what the account has available, and never the
+balance - there is no transfer (GOA-08).
+"""
 
 from datetime import date
 from typing import List, Optional
@@ -6,8 +12,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas.settings import ContributeIn, GoalIn, GoalOut
-from app.api.v1.schemas.transactions import OutcomeOut
+from app.api.v1.schemas.settings import GoalIn, GoalMoneyIn, GoalOut
 from app.core.deps import UnlockedContext, get_unlocked_context
 from app.db.session import get_db
 from app.services import goal_service
@@ -43,9 +48,17 @@ def delete_goal(goal_id: int, ctx: UnlockedContext = Depends(get_unlocked_contex
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{goal_id}/contribute", response_model=OutcomeOut, status_code=status.HTTP_201_CREATED)
-def contribute(goal_id: int, body: ContributeIn, today: Optional[date] = TODAY,
-               ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = Depends(get_db)) -> OutcomeOut:
-    _, outcome = goal_service.contribute(db, ctx.cipher, goal_id, body.model_dump(mode="python", exclude_none=True),
-                                         today=today)
-    return OutcomeOut.model_validate(outcome)
+@router.post("/{goal_id}/add", response_model=GoalOut)
+def add_money(goal_id: int, body: GoalMoneyIn, today: Optional[date] = TODAY,
+              ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = Depends(get_db)) -> GoalOut:
+    """GOA-08 - set part of the account aside for the goal: available goes down, the balance does not."""
+    return GoalOut.model_validate(
+        goal_service.add_money(db, ctx.cipher, goal_id, body.model_dump(mode="python", exclude_none=True), today=today))
+
+
+@router.post("/{goal_id}/use", response_model=GoalOut)
+def use_money(goal_id: int, body: GoalMoneyIn, today: Optional[date] = TODAY,
+              ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = Depends(get_db)) -> GoalOut:
+    """GOA-08 - release what the goal held. The purchase itself is an ordinary expense."""
+    return GoalOut.model_validate(
+        goal_service.use_money(db, ctx.cipher, goal_id, body.model_dump(mode="python", exclude_none=True), today=today))

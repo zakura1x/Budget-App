@@ -26,8 +26,17 @@ export function groupThousands(int: string): string {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-/** "18500" -> "₱18,500.00"; "-5.5" -> "−₱5.50". */
-export function formatPHP(value: string, { symbol = '₱', places = 2 } = {}): string {
+/**
+ * "18500" -> "₱18,500.00"; "-5.5" -> "−₱5.50".
+ *
+ * A figure that is missing altogether reads "—" instead of throwing. That only
+ * happens when the browser runs a newer build than the server it talks to (a
+ * server not yet restarted after an update): one absent field used to take the
+ * whole app down (2026-09-16, twice). A malformed figure still throws - that is
+ * a real bug, not a version gap.
+ */
+export function formatPHP(value: string | null | undefined, { symbol = '₱', places = 2 } = {}): string {
+  if (value === null || value === undefined) return '—';
   const { negative, int, frac } = splitDecimal(value, places);
   const body = `${symbol}${groupThousands(int)}${places ? `.${frac}` : ''}`;
   return negative ? `−${body}` : body;
@@ -52,6 +61,20 @@ export function fromCentavos(value: number): string {
   const int = Math.floor(whole / 100);
   const frac = String(whole % 100).padStart(2, '0');
   return `${negative ? '-' : ''}${int}.${frac}`;
+}
+
+/**
+ * A typed or stored RATE as the API takes it - "3.25", "20", "3.2500" - up to
+ * four places. Rates are not money: toDecimalString() refuses a third decimal
+ * place, and a stored "3.2500" run through it made every save of an account
+ * that earns interest fail before it was sent (fixed 2026-09-16). Never throws;
+ * anything that is not a number becomes "0" for the server to refuse.
+ */
+export function toRateString(typed: string): string {
+  const match = /^(\d*)(?:\.(\d*))?/.exec(typed.trim().replace(/[^\d.]/g, ''));
+  const whole = (match?.[1] ?? '').replace(/^0+(?=\d)/, '') || '0';
+  const places = (match?.[2] ?? '').slice(0, 4);
+  return places ? `${whole}.${places}` : whole;
 }
 
 /**

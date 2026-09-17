@@ -159,7 +159,7 @@ export interface ProjectedItem {
    * 'bill' / 'bill_plans': a typed card bill entering cash on hand (ACC-35),
    * rule_id 0. 'interest': a month of savings interest (ACC-37), also rule_id 0.
    */
-  kind: RuleKind | 'bill' | 'bill_plans' | 'interest';
+  kind: RuleKind | 'bill' | 'bill_plans' | 'bill_now' | 'interest';
   type: RuleType;
   account_id: number;
   counter_account_id: number | null;
@@ -187,6 +187,8 @@ export interface ProjectedMonth {
   items: ProjectedItem[];
   /** ACC-35 - typed card bills taken this month, on top of spending. */
   bills: string;
+  /** ACC-35 - bills due this month that today's cash on hand already holds: shown, not taken again. */
+  bills_set_aside: string;
 }
 
 export interface Projection {
@@ -234,6 +236,13 @@ export const skipOccurrence = (id: number, on: string) =>
   api<Rule>(`/recurring/${id}/skip?${today()}`, { method: 'POST', body: { on } });
 
 export const payOff = (id: number) => api<Rule>(`/recurring/${id}/payoff?${today()}`, { method: 'POST' });
+
+/**
+ * REC-33. Record a repeating charge's next occurrence now - paid early, so it
+ * does not post again on its own day. Installments use payPlan instead.
+ */
+export const payNow = (id: number) =>
+  api<Rule>(`/recurring/${id}/pay-now?${today()}`, { method: 'POST', body: {} });
 
 /**
  * REC-32. Pay money on a plan from another account. An extra payment first

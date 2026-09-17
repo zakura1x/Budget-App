@@ -17,6 +17,7 @@ from app.api.v1.schemas.recurring import (
     ExpansionOut,
     OccurrenceOut,
     PauseIn,
+    PayNowIn,
     PlanPaymentIn,
     RuleIn,
     RuleOut,
@@ -142,6 +143,22 @@ def pay_plan(
         db, ctx.cipher, rule_id, amount=body.amount, from_account_id=body.from_account_id,
         on=body.on, mode=body.mode, today=_today(today),
     ))
+
+
+@router.post("/{rule_id}/pay-now", response_model=RuleOut)
+def pay_now(
+    rule_id: int,
+    body: PayNowIn,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> RuleOut:
+    """
+    REC-33. Record a repeating charge's next occurrence now, so it does not
+    post again on its own day. Installments use /payments instead.
+    """
+    return RuleOut.model_validate(recurring_service.pay_now(db, ctx.cipher, rule_id, on=body.on,
+                                                           today=_today(today)))
 
 
 @router.post("/{rule_id}/payoff", response_model=RuleOut)

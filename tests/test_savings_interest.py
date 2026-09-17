@@ -2,7 +2,7 @@
 ACC-37 - daily savings interest, the way SeaBank and MariBank pay it.
 
 What must hold: a day's interest is earned on YESTERDAY's closing balance and
-compounds; today is never credited; tax comes off before the money lands;
+compounds; today's entry is credited on yesterday's closed balance; tax comes off before the money lands;
 anything under a centavo is carried, never rounded away or lost; a catch-up run
 twice changes nothing; an entry the user deletes is not written back; and the
 months ahead use the same arithmetic as the days behind.
@@ -108,15 +108,16 @@ def test_a_band_list_has_to_make_sense():
 # ------------------------------------------------------------------ the catch-up
 
 
-def test_one_entry_a_day_up_to_yesterday(session, owner):
+def test_one_entry_a_morning_up_to_today(session, owner):
     account, earnings = setup(session, owner)
     result = interest_service.accrue(session, owner, today=TODAY)
 
     posted = entries(session, owner, account.id)
-    assert [v.interest_on for v in posted] == [STARTED + timedelta(days=n) for n in range(5)]
-    assert result.posted == 5 and result.accounts == 1 and result.through == TODAY - timedelta(days=1)
-    # Today is never credited: its closing balance is not closed yet.
-    assert TODAY not in {v.interest_on for v in posted}
+    # The first credit is the morning after interest starts, and today's is in:
+    # it pays for yesterday, whose balance is closed - the bank posts it at 1:00 am.
+    assert [v.interest_on for v in posted] == [STARTED + timedelta(days=n) for n in range(1, 6)]
+    assert result.posted == 5 and result.accounts == 1 and result.through == TODAY
+    assert [v.txn_date for v in posted] == [v.interest_on for v in posted]
     # Net of tax, on the opening balance, and filed where the user asked.
     assert posted[0].amount == Decimal("2.83")
     assert [s.category_id for s in posted[0].splits] == [earnings.id]
@@ -177,10 +178,11 @@ def test_money_paid_in_earns_from_the_next_day(session, owner):
     })
     interest_service.accrue(session, owner, today=TODAY)
     posted = entries(session, owner, account.id)
-    # The day the money arrived still earns on the old balance - it is yesterday's
-    # CLOSING balance that counts - and the day after earns on the new one.
-    assert [v.amount for v in posted[:2]] == [Decimal("7.12"), Decimal("7.12")]
-    assert posted[2].amount == Decimal("71.24")
+    # The morning the money arrives is still paid on the old balance - it is
+    # yesterday's CLOSING balance that counts - and the next morning on the new one.
+    assert [v.interest_on for v in posted] == [TODAY - timedelta(days=n) for n in (2, 1, 0)]
+    assert posted[0].amount == Decimal("7.12")
+    assert posted[1].amount == Decimal("71.23")  # one morning less compounding in than before
 
 
 def test_an_archived_category_stops_the_account_and_says_so(session, owner):

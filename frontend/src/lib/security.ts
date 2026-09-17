@@ -4,7 +4,6 @@
  * Every security call carries the password again in its body.
  */
 import { api } from './api';
-import type { Outcome } from './transactions';
 import { localToday } from './transactions';
 
 export interface RotatedKey {
@@ -32,6 +31,10 @@ export interface Goal {
   remaining: string;
   ratio: string;
   reached: boolean;
+  /** GOA-08. The account it is set aside in: its balance, what is still available there, any shortfall. */
+  account_balance: string;
+  account_available: string;
+  short_by: string;
 }
 
 export interface GoalDraft {
@@ -48,8 +51,17 @@ export const createGoal = (body: GoalDraft) => api<Goal>(`/goals?${today()}`, { 
 export const updateGoal = (id: number, body: Partial<GoalDraft>) =>
   api<Goal>(`/goals/${id}?${today()}`, { method: 'PATCH', body });
 export const deleteGoal = (id: number) => api<null>(`/goals/${id}`, { method: 'DELETE' });
-export const contributeToGoal = (id: number, body: { amount: string; from_account_id: number; txn_date?: string }) =>
-  api<Outcome>(`/goals/${id}/contribute?${today()}`, { method: 'POST', body });
+/** GOA-08. Money set aside for a goal, or released from it. Nothing moves; the balance is unchanged. */
+export interface GoalMoney {
+  amount: string;
+  on?: string;
+  note?: string | null;
+}
+
+export const addToGoal = (id: number, body: GoalMoney) =>
+  api<Goal>(`/goals/${id}/add?${today()}`, { method: 'POST', body });
+export const releaseFromGoal = (id: number, body: GoalMoney) =>
+  api<Goal>(`/goals/${id}/use?${today()}`, { method: 'POST', body });
 
 export interface AdminUser {
   id: number;

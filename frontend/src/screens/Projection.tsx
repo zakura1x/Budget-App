@@ -46,6 +46,7 @@ function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Dat
       <p className={`num mt-1 text-title ${negative(month.closing) ? 'text-danger' : ''}`}>{formatPHP(month.closing)}</p>
       <p className="num text-caption text-ink-3">
         cash on hand at the end{month.bills !== '0.00' && ` · after ${formatPHP(month.bills)} of card bills`}
+        {(month.bills_set_aside ?? '0.00') !== '0.00' && ` · ${formatPHP(month.bills_set_aside)} of bills due already set aside`}
       </p>
       <div className="mt-3 grid grid-cols-3 divide-x divide-line text-center">
         <div>
@@ -86,6 +87,12 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
             {month.bills !== '0.00' && (
               <p className="flex justify-between"><span className="text-ink-2">Card bills</span>−{formatPHP(month.bills)}</p>
             )}
+            {(month.bills_set_aside ?? '0.00') !== '0.00' && (
+              <p className="text-caption text-ink-3">
+                {formatPHP(month.bills_set_aside)} of card bills due this month is already out of today's cash on hand,
+                so it is not taken again here.
+              </p>
+            )}
             {month.transfers !== '0.00' && (
               <p className="flex justify-between"><span className="text-ink-2">Transfers out of cash on hand</span>{formatPHP(month.transfers)}</p>
             )}
@@ -106,11 +113,14 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
                     <span className="min-w-0 truncate">
                       <span className="text-ink-2">{short(item.on)}</span> · {item.name}
                       {item.kind === 'bill' && ' · card bill'}
+                      {item.kind === 'bill_now' && ' · already set aside'}
                       {item.kind === 'interest' && ' · estimated at today’s balance'}
                       {item.final && ' · last payment'}
                       {item.paused && ' · paused, not counted'}
                     </span>
-                    <span className={`shrink-0 font-semibold ${item.type === 'income' ? 'text-ok' : ''}`}>
+                    <span className={`shrink-0 font-semibold ${item.type === 'income' ? 'text-ok' : ''} ${
+                      item.kind === 'bill_now' ? 'text-ink-3' : ''
+                    }`}>
                       {item.type === 'income' ? '+' : item.type === 'expense' ? '−' : ''}
                       {formatPHP(item.amount)}
                     </span>

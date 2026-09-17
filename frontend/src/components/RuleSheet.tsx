@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Lookups } from '../hooks/useLookups';
 import { ApiError } from '../lib/api';
 import { flatten } from '../lib/categories';
-import { centavos, formatPHP, sanitizeAmount, toDecimalString } from '../lib/money';
+import { centavos, formatPHP, toDecimalString } from '../lib/money';
 import {
   createRule,
   deleteRule,
@@ -40,6 +40,7 @@ import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 import { Segmented } from './ui/Segmented';
 import { Sheet } from './ui/Sheet';
+import { MoneyField } from './ui/MoneyField';
 import { TextField } from './ui/TextField';
 
 const typedFrom = (amount: string) => (amount.endsWith('.00') ? amount.slice(0, -3) : amount);
@@ -293,19 +294,16 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
 
         {kind === 'installment' ? (
           <div className="grid grid-cols-2 gap-3">
-            <TextField label="Price" value={price} disabled={locked} inputMode="decimal" placeholder="40000"
-              onChange={(e) => setPrice(sanitizeAmount(e.target.value))} />
+            <MoneyField label="Price" value={price} disabled={locked} placeholder="40000" onChange={setPrice} />
             <TextField label="Payments" value={payments} disabled={locked} inputMode="numeric"
               onChange={(e) => setPayments(e.target.value.replace(/\D/g, '').slice(0, 3))} />
-            <TextField className="col-span-2" label="Total interest (optional)" value={interest} disabled={locked}
-              inputMode="decimal" placeholder="Leave empty if you don't know it yet"
-              onChange={(e) => setInterest(sanitizeAmount(e.target.value))}
+            <MoneyField className="col-span-2" label="Total interest (optional)" value={interest} disabled={locked}
+              onChange={setInterest}
               hint={interest.trim() ? 'Each payment posts the price and the interest as two splits.'
                 : 'The first statement will tell — the app asks when you check it.'} />
           </div>
         ) : (
-          <TextField label="Amount" value={amount} inputMode="decimal" placeholder="0.00"
-            onChange={(e) => setAmount(sanitizeAmount(e.target.value))} />
+          <MoneyField label="Amount" value={amount} placeholder="0.00" onChange={setAmount} />
         )}
         {rule && kind !== 'installment' && positive(amount) && toDecimalString(amount) !== rule.amount && (
           <label className="block text-footnote font-semibold text-ink-2">

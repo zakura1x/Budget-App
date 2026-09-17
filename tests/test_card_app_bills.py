@@ -241,9 +241,29 @@ def test_bills_and_net_worth_through_the_api(api):
     api.post("/accounts" + q, {"name": "Seabank", "type": "debit", "opening_balance": "20000.00"})
     card = api.post("/accounts" + q, {"name": "Spaylater", "type": "credit", "opening_balance": "-16149.23",
                                       "statement_closing_day": 15, "payment_due_day": 5}).json()["id"]
-    saved = api.put(f"/accounts/{card}/bills{q}", {"bills": BILLS})
+    saved = api.post(f"/accounts/{card}/bills{q}", {"bills": BILLS})
     assert saved.status_code == 200, saved.text
     assert saved.json()["credit"]["due_now"] == "7754.49"
     listed = api.get("/accounts" + q).json()
     assert listed["cash_on_hand"]["total"] == "12245.51"
     assert listed["net_worth"] == {"total": "3850.77", "assets": "20000.00", "liabilities": "16149.23"}
+
+
+def test_months_ahead_lists_the_bill_cash_on_hand_already_holds(session, owner):
+    """
+    Reported 2026-09-16: the bill due next appeared nowhere on Months ahead -
+    it is inside today's cash on hand, so it was never listed. It is now shown
+    in the month it falls due, with no effect, and the figures do not move.
+    """
+    setup(session, owner)
+    months = projection_service.project(session, owner, today=TODAY, months=6).months
+
+    october = months[1]
+    shown = [i for i in october.items if i.kind == "bill_now"]
+    assert [(i.on, i.amount, i.effect) for i in shown] == [(date(2026, 10, 15), Decimal("7754.49"), Decimal("0.00"))]
+    assert october.bills_set_aside == Decimal("7754.49")
+    # Not taken again: October still takes only November's bill (entering 16 Oct),
+    # and every figure is what it was before the bill was listed.
+    assert october.bills == Decimal("4120.80")
+    assert months[0].opening == Decimal("12245.51")  # 20,000 less the bill due now
+    assert months[-1].closing == Decimal("4098.03")  # 20,000 less every bill, once

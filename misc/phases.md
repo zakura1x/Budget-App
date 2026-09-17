@@ -2028,6 +2028,98 @@ Found while building Phase 10 (2026-09-15):
     now the one place a plan's payment amounts come from; occurrences() reads
     it. PlanPaymentSheet; Pay on every plan row; Pay back on a loan with a plan
     pays the plan. Verified in the browser on the user's own numbers.
+  - CRASH AGAIN 2026-09-16 (user, Accounts tab, "reading 'trim'"): the same
+    version gap - a new bundle against a server not restarted, so /goals had
+    no short_by and the goal card formatted undefined. Fixed at the root this
+    time: money.formatPHP returns "—" for a missing figure instead of taking
+    the whole app down (a malformed one still throws), and the card no longer
+    reads a missing shortfall as one. Verified by stripping those fields from
+    the live /goals response in the browser.
+  - INTEREST CREDITED IN THE MORNING 2026-09-17 (user: "my MariBank added 2.58
+    at 1:00am, not at the end of the day"). An entry dated d already paid for
+    the closing balance of d - 1, so holding back today's was a day's lag for
+    nothing: the catch-up now runs through TODAY, and the first entry is the day
+    after interest starts. Docs (FEATURES ACC-37, ARCHITECTURE 4.6, CLAUDE.md),
+    the sheet's hint and tests updated; 712 passed. Read-only preview on the
+    user's Seabank: today would post PHP 2.58 dated 17 Sep - the bank's figure.
+    No stored row changed.
+  - CATCH-UP ON ANY SCREEN 2026-09-17 (user: interest not added on the 17th).
+    Read-only look at their Seabank: nothing was wrong - 16 Sep's interest
+    (PHP 2.57) was credited, dated the day it was earned, and today is never
+    accrued. But the recurring/interest catch-up ran only when Home opened, so
+    it moved into hooks/useCatchUp.ts, called from App.tsx on unlock and on
+    every return to the app, whatever the screen (one run at a time).
+    Verified in the browser: opening /accounts directly posts /recurring/expand
+    and /accounts/interest/accrue once each.
+  - AVAILABLE BESIDE BALANCE 2026-09-16 (user: available on the same line as the
+    balance, as large): with money set aside, the account page shows Balance and
+    Available side by side at the same size (title on a phone, display from sm:,
+    wrapping if the figures are very long); "₱X set aside for goals" stays under
+    them. Without goals the single large balance is unchanged.
+  - GOALS SET MONEY ASIDE 2026-09-16 (user: add money should reduce what is
+    available to spend while the balance keeps matching the bank): GOA-08,
+    replacing GOA-06's real transfers. Explained first and decided with the
+    user: cash on hand shows what is available, existing goals start at ₱0,
+    and Add money / Use it live on the Accounts tab, the account page and the
+    Goals screen. goal_service rewritten around `set_aside` entries (add/use,
+    derived sum, several goals per account, short_by); account_service gains
+    set_aside/available and subtracts it in cash_amount; /goals/{id}/add and
+    /use replace /contribute; GoalMoneySheet replaces AddMoneySheet;
+    tests/test_goals.py rewritten (11). Verified in the browser: ₱5,000 set
+    aside took cash on hand from ₱38,794.01 to ₱33,794.01 while Seabank's
+    balance stayed ₱36,794.01 and no transaction was written.
+  - GOALS ON ACCOUNTS 2026-09-16 (user: "better if I can view it from there"):
+    a Savings goals section on the Accounts tab (after the account groups,
+    foldable, total saved) and the goal's card with Add money on its linked
+    account's page. GoalSheet, AddMoneySheet and a new GoalCard moved out of
+    screens/Goals.tsx into components/GoalSheets.tsx so all three share them;
+    goal target and contribution amounts now use MoneyField. No server change.
+  - MONEY FIELDS 2026-09-16 (user): ui/MoneyField - ₱ in front and thousands
+    grouped while typing, the form still holding the plain string (commas are
+    display only; the caret keeps its place across a new comma). Used for the
+    recurring sheet's price, interest and amount, every amount in the account
+    sheet, a plan payment's amount and the interest band ceiling. TextField
+    gained a `leading` slot. Rates (%) stay plain text fields.
+  - CRASH 2026-09-16 (user, Months ahead: "Cannot read properties of undefined
+    (reading 'trim')"): the browser had the new bundle while the running
+    Python server was older and sent no bills_set_aside - the shell picks a
+    new dist up without a restart, Python changes do not. The page now reads
+    a missing figure as zero; restart uvicorn after pulling backend changes.
+  - FIXED 2026-09-16 (user: "the manually inputted bills are not reflected" on
+    Months ahead): checked on the user's own data, read-only. The figures
+    were right, but a card's bill due now (Spaylater 15 Oct, Maribank 5 Oct -
+    ₱10,240.34) is inside today's cash on hand, so it was never listed and the
+    next two bills looked missing. They are now items of kind "bill_now"
+    with no effect in the month they fall due, summed in bills_set_aside, and
+    the month card and sheet say they are already set aside. Closings
+    unchanged (verified against the user's projection before and after).
+  - FIXED 2026-09-16 (user: "when it is in lock mode the theme is not the same
+    the user uses"): locking dropped the preferences AND the theme, so the
+    PIN screen followed the device. The theme now stays through a lock and
+    goes only on sign-out. For an app reopened while locked - preferences
+    are encrypted and unreadable before unlock - the user chose a theme-only
+    cookie (zbdgt_theme) over a plaintext server copy: pwa.applyTheme writes
+    it, the Jinja shell and pwa.restoreTheme put it on <html>, and only
+    light/dark is ever echoed (security test). Recorded as the single
+    exception to SEC-29 / invariant 10.
+  - PAY NOW 2026-09-16 (user: Spotify is paid from GCash and a normal account
+    had no Pay like a card's plan): REC-33. recurring_service.pay_now posts a
+    rule's next occurrence today with that occurrence's recurring_on, so the
+    catch-up skips it on its day; POST /recurring/{id}/pay-now; PayNowSheet
+    and a Pay button on repeating charges of non-card accounts.
+  - FIXED 2026-09-16 (user: "I can't edit the amount in Seabank ... That did
+    not save"): any save of an account that earns interest failed in the
+    browser before it was sent - cleanInterest ran the stored rates
+    ("3.2500", "20.0000") through toDecimalString, which refuses a third
+    decimal place. Rates now go through money.toRateString (up to four
+    places, never throws); the usual-cashback rate too. The sheet also logs
+    a client-side failure to the console instead of hiding it.
+  - REMOVED 2026-09-16 (user): "Does it balance?" on the card page. Check
+    statement compares the app with the bank (ACC-24), the account sheet
+    corrects what a card owes with the adjust / fix-opening question
+    (ACC-27/28), and the banner shows owed with plans (REC-14); on a card
+    with typed bills the check started from their own total and could only
+    ever agree. CardPayments is now bills + plans + monthly payment.
   - CATEGORY PICKER 2026-09-16 (user, "category bloat"): the recurring /
     installment sheet showed every category at once; it now uses the add
     sheet's two-step picker (mains, then that main's sub-categories).

@@ -229,6 +229,7 @@ Budget App/
 │       │
 │       ├── hooks/
 │       │   ├── useAutoLock.ts           # idle 5 min, or hidden > 1 min
+│       │   ├── useCatchUp.ts            # REC-05/ACC-37 recurring + interest catch-up on unlock and return, any screen
 │       │   ├── useLookups.ts            # accounts, categories, tags by id
 │       │   └── useThemeColours.ts       # theme.css tokens for recharts' SVG attributes
 │       │
@@ -251,7 +252,8 @@ Budget App/
 │       │   ├── CategoryGrid.tsx         # Home's category tiles with rings
 │       │   ├── CreditDetails.tsx        # a card's bill line, own limit, statement check
 │       │   ├── CardBills.tsx            # ACC-35 bills typed from the card's app (+ plans)
-│       │   ├── CardPayments.tsx         # ACC-34 plans, "Does it balance?", monthly payment
+│       │   ├── GoalSheets.tsx           # GOA goal card, edit and add-money sheets (Goals, Accounts, account page)
+│       │   ├── CardPayments.tsx         # ACC-34 bills, plans, monthly payment
 │       │   ├── RuleSheetHost.tsx        # REC-31 the one rule sheet for + and card pages
 │       │   ├── BudgetAppImportSheet.tsx # DAT-21 preview, typed balances, import
 │       │   ├── ReorderList.tsx          # drag to reorder; captures the pointer only once lifted

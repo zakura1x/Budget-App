@@ -111,7 +111,11 @@ style issue.
    `backups/`, `logs/`) never to touch.
 10. **Nothing from the API is persisted in browser storage** (localStorage,
     IndexedDB, Cache API) — the browser origin is shared with other company
-    apps (SEC-29).
+    apps (SEC-29). The ONE exception, the user's decision on 2026-09-16: the
+    `zbdgt_theme` cookie holds the word light or dark so a lock screen opened
+    after the app was closed keeps the chosen theme (UX-05). It is written by
+    `pwa.applyTheme`, cleared on sign-out, and the shell echoes only those two
+    words into `<html>`. Do not grow it into a second preference.
 
 ## Architecture
 
@@ -335,7 +339,9 @@ until the user picks `lower` or `shorten`, is charged at once, and is stored in
 `occurrences()` reads - never adjust a plan's amounts anywhere else.
 `InstallmentStatus.paid`/`remaining` are CHARGES; `money_paid`/`left_to_pay`
 are MONEY - do not mix them up. `update_rule` pulls `posted_through` back when
-a start moves earlier.
+a start moves earlier. A repeating charge's next occurrence can be paid early
+(REC-33, `pay_now`): it posts with that occurrence's `recurring_on`, which is
+what stops the catch-up charging it again - never post it without one.
 
 An installment is OWED in full from the day it is taken (REC-14):
 `AccountView.plans_unbilled` holds the unbilled remainder on every account
@@ -344,6 +350,14 @@ card's page and tile show. `balance`, `owed` and cash on hand deliberately do
 NOT include it - the reminder, the statement check and ACC-17 each read the
 figure they mean. Net worth does, on any account. A plan is listed on the
 account it runs on (`AccountPlans`), not only on the Recurring screen.
+
+A savings goal SETS MONEY ASIDE inside its account (GOA-08, 2026-09-16):
+`goal_service.add_money` / `use_money` append dated entries to the goal's own
+payload and write NO transaction, so the balance never moves. `AccountView.set_aside`
+and `available` come from `goal_service.set_aside_by_account` (a lazy import in
+account_service, which goal_service imports), and `cash_amount` - so cash on
+hand and Months ahead - counts what is available. Net worth still counts the
+full balance. Several goals may share an account.
 
 An INVESTMENT account's balance (ACC-08/12) is the value last typed plus every
 posting dated AFTER that valuation - money moved in or out is not market
@@ -356,8 +370,10 @@ the contributions.
 
 - Daily savings interest (ACC-37) is credited by `interest_service.accrue()`,
   a CATCH-UP like the recurring engine - `POST /accounts/interest/accrue` is
-  called on every open beside `expandRecurring`. It never accrues today (that
-  balance is not closed), credits the NET of withholding tax, compounds, and
+  called on every open beside `expandRecurring`. An entry dated d pays for the
+  CLOSING balance of d - 1, so today's is posted on the first open of the day,
+  as the bank credits it in the early morning (the first one the day after
+  interest starts). It credits the NET of withholding tax, compounds, and
   carries sub-centavo interest in `carry` until it reaches ₱0.01. Postings and
   each account's `credited_through` marker move in ONE commit, and every entry
   carries `interest_on`, so a second run posts nothing and a deleted entry is
@@ -369,8 +385,9 @@ the contributions.
   both rows move, change and go together. An account's usual rate (ACC-38) is a
   suggestion for the sheet and is never applied to anything by itself.
 - **A rate is not money.** `money.ts` and `money.py` quantise to two places and
-  REFUSE more; rates carry four ("3.2500"). Use `percentOf` / the interest
-  helper, never `formatPHP` or `splitDecimal`, on a rate.
+  REFUSE more; rates carry four ("3.2500"). Use `toRateString` to send one,
+  `percentOf` to apply one, and the interest helper on the server - never
+  `toDecimalString`, `formatPHP` or `splitDecimal` on a rate.
 
 **Calendar, stats and tags** (Phase 6): `stats_service.overview` and
 `calendar_service.month` read `transaction_service.views()` - both legs of

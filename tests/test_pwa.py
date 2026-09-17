@@ -2,6 +2,8 @@
 Installable, and never a place figures are kept (UX-09, UX-10, SEC-29).
 """
 
+import pytest
+
 from app.core.config import settings
 from app.web.router import STATIC_DIR
 
@@ -37,3 +39,22 @@ def test_the_shell_links_the_manifest_and_icons(api):
     assert f'rel="manifest" href="{BASE}/manifest.webmanifest"' in html
     assert "apple-touch-icon" in html
     assert api.client.get(f"{BASE}/static/icons/icon-192.png").status_code == 200
+
+
+def test_the_shell_opens_in_the_remembered_theme(api):
+    """UX-05, 2026-09-16: a lock screen reopened after the app closed keeps the theme the user chose."""
+    api.client.cookies.set("zbdgt_theme", "dark", domain="testserver.local", path=BASE)
+    assert '<html lang="en" data-theme="dark">' in api.client.get(f"{BASE}/stats").text
+
+
+@pytest.mark.security
+def test_only_light_or_dark_ever_reaches_the_page(api):
+    """The cookie is the browser's to change; nothing but the two words may be echoed into the shell."""
+    api.client.cookies.set("zbdgt_theme", '"><script>alert(1)</script>', domain="testserver.local", path=BASE)
+    html = api.client.get(f"{BASE}/").text
+    assert "data-theme" not in html.split("<head>")[0]
+    assert "alert(1)" not in html
+
+
+def test_no_cookie_leaves_the_theme_to_the_device(api):
+    assert '<html lang="en">' in api.client.get(f"{BASE}/").text

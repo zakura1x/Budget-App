@@ -2,8 +2,9 @@
 interest_service - crediting what a savings account earns, day by day (ACC-37).
 
 The banks this app is used with (SeaBank, MariBank) pay interest on YESTERDAY's
-closing balance and credit it at midnight, so the account's own history is a
-small income entry every single day. This service reproduces that history
+closing balance and credit it early the next morning (MariBank: 1:00 am), dated
+that morning, so the account's own history is a small income entry every
+single day. This service reproduces that history
 locally, and the balance in the app matches the bank's every day rather than
 drifting until a monthly sweep.
 
@@ -16,9 +17,11 @@ written back.
 
 Three rules worth keeping:
 
-  * TODAY IS NEVER ACCRUED. Interest is earned on a day's closing balance, and
-    today's is not closed yet - an entry posted now would change every time
-    another transaction is typed. The catch-up stops at yesterday.
+  * AN ENTRY DATED d PAYS FOR THE CLOSING BALANCE OF d - 1. Yesterday is
+    closed, so TODAY's entry is posted on today's first open, as the bank posts
+    it in the early morning (user, 2026-09-17 - it used to wait a day). Today's
+    own balance is paid for tomorrow. The first entry is the day AFTER interest
+    starts: the start day has no closed balance behind it yet.
   * THE CREDIT COMPOUNDS. Interest posted on day d is part of day d's closing
     balance, so day d+1 earns on it, exactly as the bank does.
   * SUB-CENTAVO INTEREST IS CARRIED, NOT ROUNDED. `carry` holds the fraction
@@ -112,14 +115,15 @@ def read(data: Mapping[str, Any]) -> Optional[Settings]:
 
 def accrue(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> Accrual:
     """
-    ACC-37. Credit every day of interest earned up to yesterday that has not
-    been credited yet - safe to call as often as you like.
+    ACC-37. Post every morning's credit up to and including today's (each on
+    the day before's closing balance) that is not posted yet - safe to call as
+    often as you like.
 
     One commit for the whole batch: every posting, and every account's marker,
     or nothing at all.
     """
     today = today or date.today()
-    last = today - ONE_DAY
+    last = today
     repo = AccountRepository(db, cipher)
     records = [r for r in repo.list() if isinstance(r.data.get("interest"), Mapping)]
     if not records:
@@ -137,7 +141,8 @@ def accrue(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> 
         settings = read(record.data)
         if settings is None or record.data.get("archived"):
             continue
-        start = max(settings.started, settings.credited_through + ONE_DAY, last - timedelta(days=MAX_CATCH_UP_DAYS))
+        start = max(settings.started + ONE_DAY, settings.credited_through + ONE_DAY,
+                    last - timedelta(days=MAX_CATCH_UP_DAYS))
         if start > last:
             continue
         if _problem(settings, categories):

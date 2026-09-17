@@ -113,7 +113,7 @@ class InterestOut(BaseModel):
     tax_rate: Rate
     category_id: Optional[int] = None
     started: date
-    credited_through: date  # never today: today's closing balance is not closed
+    credited_through: date  # the last morning credited - today at most, on yesterday's balance
     per_day: Money
     per_year: Money
     carry: Exact  # the fraction of a centavo still owed
@@ -243,6 +243,8 @@ class AccountOut(BaseModel):
     interest: Optional[InterestOut] = None  # ACC-37
     cashback: Optional[CashbackRuleOut] = None  # ACC-38
     plans_unbilled: Money = Decimal("0.00")  # REC-14 - installments still to be charged here
+    set_aside: Money = Decimal("0.00")  # GOA-08 - earmarked for goals; the balance is unchanged
+    available: Optional[Money] = None  # GOA-08 - balance less set_aside, when something is set aside
 
 
 class NetWorthOut(BaseModel):

@@ -28,8 +28,6 @@ import { Ring, toneFor, type Tone } from '../components/ui/Ring';
 import { useLookups, type Lookups } from '../hooks/useLookups';
 import { ratio, type Alert, type BudgetStatus } from '../lib/budgets';
 import { formatPHP } from '../lib/money';
-import { accrueInterest } from '../lib/accounts';
-import { expandRecurring } from '../lib/recurring';
 import { localToday } from '../lib/transactions';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
@@ -214,24 +212,10 @@ export function Home() {
     const filtered = Object.values(filters).some((v) => v !== undefined);
     if (filtered || items.length === 0) void load({});
     void loadBudget(null);
-    // REC-05 and ACC-37. Post whatever recurring charges fell due since the
-    // last open, and credit the days of savings interest earned since - both
-    // idempotent on the server - then refresh the figures only if any landed.
-    const catchUp = () =>
-      Promise.all([expandRecurring(), accrueInterest()])
-        .then((results) => {
-          if (results.every((result) => result.posted === 0)) return;
-          useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-          void load({});
-          void loadBudget(null);
-        })
-        .catch(() => {
-          /* a failed catch-up retries on the next open; nothing is half-posted */
-        });
-    void catchUp();
+    // The recurring and interest catch-up runs app-wide, in useCatchUp (App.tsx).
     // Coming back to the app on a new day must not show yesterday's allowance.
     const onVisible = () =>
-      document.visibilityState === 'visible' && (setTick((n) => n + 1), void loadBudget(null), void catchUp());
+      document.visibilityState === 'visible' && (setTick((n) => n + 1), void loadBudget(null));
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -623,3 +623,57 @@ def test_recurring_through_the_api(api):
     assert api.get("/projection/cards?today=2026-10-02").json() == []
     assert api.get("/subscriptions?today=2026-10-02").json()["monthly_total"] == "0.00"
     assert api.delete(f"/recurring/{created.json()['id']}").status_code == 204
+
+
+# ------------------------------------------------------------- paying a repeating charge now (REC-33)
+
+
+def spotify(session, owner, books, today=date(2026, 9, 16)):
+    """The user's own case: a monthly subscription on an e-wallet, next due 5 October."""
+    return rule(session, owner, books, today, kind="subscription", name="Spotify", category_id=books.streaming,
+                start="2026-10-05", amount="149.00", reminder_days=3)
+
+
+def test_paying_now_records_the_next_charge_today(session, owner, books):
+    plan = spotify(session, owner, books)
+    paid = recurring_service.pay_now(session, owner, plan.id, today=date(2026, 9, 16))
+
+    charges = posted(session, owner, plan.id)
+    assert [(v.txn_date, v.recurring_on, v.amount) for v in charges] == [
+        (date(2026, 9, 16), date(2026, 10, 5), D("149.00"))]
+    assert paid.next_on == date(2026, 11, 5)  # the rule moves on by itself
+
+
+def test_the_day_it_was_due_does_not_charge_it_again(session, owner, books):
+    plan = spotify(session, owner, books)
+    recurring_service.pay_now(session, owner, plan.id, today=date(2026, 9, 16))
+    recurring_service.expand(session, owner, today=date(2026, 10, 5))
+    assert len(posted(session, owner, plan.id)) == 1
+
+
+def test_paying_now_twice_pays_the_month_after(session, owner, books):
+    plan = spotify(session, owner, books)
+    recurring_service.pay_now(session, owner, plan.id, today=date(2026, 9, 16))
+    recurring_service.pay_now(session, owner, plan.id, today=date(2026, 9, 16))
+    assert [v.recurring_on for v in posted(session, owner, plan.id)] == [date(2026, 10, 5), date(2026, 11, 5)]
+
+
+def test_an_occurrence_already_due_keeps_its_own_date(session, owner, books):
+    """One the catch-up has not reached yet is dated its own day, not the day the button was pressed."""
+    plan = rule(session, owner, books, date(2026, 9, 1), name="Spotify", start="2026-09-05", amount="149.00")
+    recurring_service.pay_now(session, owner, plan.id, today=date(2026, 9, 16))
+    assert [v.txn_date for v in posted(session, owner, plan.id)] == [date(2026, 9, 5)]
+
+
+def test_what_cannot_be_paid_now(session, owner, books):
+    installment = phone(session, owner, books)
+    with pytest.raises(BusinessRuleException):
+        recurring_service.pay_now(session, owner, installment.id, today=date(2026, 9, 21))
+    pay = rule(session, owner, books, date(2026, 9, 16), type="income", name="Salary", category_id=books.salary,
+               start="2026-09-30", amount="25000.00")
+    with pytest.raises(BusinessRuleException):
+        recurring_service.pay_now(session, owner, pay.id, today=date(2026, 9, 16))
+    paused = spotify(session, owner, books)
+    recurring_service.set_paused(session, owner, paused.id, True, today=date(2026, 9, 16))
+    with pytest.raises(BusinessRuleException):
+        recurring_service.pay_now(session, owner, paused.id, today=date(2026, 9, 16))

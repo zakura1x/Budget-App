@@ -64,9 +64,42 @@ export const isStandalone = () =>
 
 export const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
 
-/** UX-05. The stored theme on <html>; "system" leaves it to the device. */
+/**
+ * UX-05. The user's theme on <html>; "system" leaves it to the device.
+ *
+ * It is also remembered in ONE cookie, `zbdgt_theme` - the light/dark word and
+ * nothing else - so the lock screen of an app reopened while locked opens in
+ * the chosen theme (user's decision, 2026-09-16). The rest of the preferences
+ * are encrypted and stay out of the browser (SEC-29). Prefixed and scoped to
+ * /ZBDGT like the session cookies (SEC-28), and the server only ever echoes
+ * "light" or "dark" back into the page.
+ */
 export function applyTheme(theme: string | undefined | null): void {
   const root = document.documentElement;
-  if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
-  else delete root.dataset.theme;
+  if (theme === 'light' || theme === 'dark') {
+    root.dataset.theme = theme;
+    rememberTheme(theme);
+  } else {
+    delete root.dataset.theme;
+    rememberTheme(null);
+  }
+}
+
+const THEME_COOKIE = 'zbdgt_theme';
+
+/**
+ * Put the remembered theme on <html> before the first paint. The server does
+ * this in the shell already; this covers a shell served from the service
+ * worker's cache and the Vite dev server, neither of which saw the cookie.
+ */
+export function restoreTheme(): void {
+  const match = document.cookie.match(/(?:^|;\s*)zbdgt_theme=(light|dark)(?:;|$)/);
+  if (match?.[1]) document.documentElement.dataset.theme = match[1];
+}
+
+function rememberTheme(theme: 'light' | 'dark' | null): void {
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = theme
+    ? `${THEME_COOKIE}=${theme}; Path=${BASE_URL}; Max-Age=31536000; SameSite=Strict${secure}`
+    : `${THEME_COOKIE}=; Path=${BASE_URL}; Max-Age=0; SameSite=Strict${secure}`;
 }

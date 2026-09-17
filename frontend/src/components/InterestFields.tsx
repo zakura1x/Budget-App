@@ -17,6 +17,7 @@ import { INTEREST_PRESETS, type Interest, type InterestDraft } from '../lib/acco
 import { type Category } from '../lib/categories';
 import { formatPHP } from '../lib/money';
 import { Button } from './ui/Button';
+import { MoneyField } from './ui/MoneyField';
 import { TextField } from './ui/TextField';
 import { Toggle } from './ui/Toggle';
 
@@ -25,12 +26,6 @@ const cleanRate = (input: string) => {
   const kept = input.replace(/[^\d.]/g, '');
   const dot = kept.indexOf('.');
   return dot === -1 ? kept.slice(0, 6) : `${kept.slice(0, dot)}.${kept.slice(dot + 1).replace(/\./g, '')}`.slice(0, 7);
-};
-
-const cleanAmount = (input: string) => {
-  const kept = input.replace(/[^\d.]/g, '');
-  const dot = kept.indexOf('.');
-  return dot === -1 ? kept : `${kept.slice(0, dot)}.${kept.slice(dot + 1).replace(/\./g, '')}`;
 };
 
 /** Trailing zeros off a stored rate, so 3.2500 comes back as 3.25 to type against. */
@@ -72,7 +67,7 @@ export function InterestFields({ value, onChange, saved, categories }: InterestF
         checked={on}
         onChange={(next) => (next ? turnOn() : onChange(null))}
         label="Earns daily interest"
-        hint="Your bank works it out on yesterday’s balance and credits it at midnight. The app posts the same entry each day, so the two never drift apart."
+        hint="Your bank works it out on yesterday’s balance and credits it early each morning. The app posts the same entry, dated the same day, so the two never drift apart."
       />
 
       {on && (
@@ -109,12 +104,11 @@ export function InterestFields({ value, onChange, saved, categories }: InterestF
                     {bands.length === 1 ? 'on the whole balance' : 'on everything above'}
                   </p>
                 ) : (
-                  <TextField
+                  <MoneyField
                     className="flex-1"
                     label="Up to"
                     value={band.up_to ?? ''}
-                    onChange={(e) => editBand(index, { up_to: cleanAmount(e.target.value) || null })}
-                    inputMode="decimal"
+                    onChange={(plain) => editBand(index, { up_to: plain || null })}
                     placeholder="1,000,000.00"
                   />
                 )}

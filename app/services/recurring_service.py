@@ -672,6 +672,72 @@ def pay_off(db: Session, cipher: UserCipher, rule_id: int, *, today: Optional[da
     return get_rule(db, cipher, rule_id, today=today)
 
 
+def pay_now(
+    db: Session,
+    cipher: UserCipher,
+    rule_id: int,
+    *,
+    on: Optional[date] = None,
+    today: Optional[date] = None,
+) -> RuleView:
+    """
+    REC-33. Record a repeating charge's NEXT occurrence now - Spotify paid
+    from GCash before its date (2026-09-16, user: a normal account had no way
+    to pay a monthly charge the way a card's plan has Pay).
+
+    It posts exactly the occurrence the rule says is next, carrying that
+    occurrence's date as `recurring_on`, so when its day arrives the catch-up
+    finds it already posted and leaves it alone - no second charge, and the
+    rule's next date moves on by itself. The entry is dated the day it was
+    paid, or its own day when that has already come (an occurrence the
+    catch-up simply has not reached yet). One occurrence per call.
+
+    Installments have their own payment (REC-32) and income is not paid, so
+    both are refused; a paused rule has nothing due until it is resumed.
+    """
+    today = today or date.today()
+    on = on or today
+    if on > today:
+        raise BusinessRuleException("A payment is made today or on a day already past")
+    repo = RecurringRuleRepository(db, cipher)
+    record = _record(repo, rule_id)
+    data = dict(record.data)
+    if data.get("kind") == "installment":
+        raise BusinessRuleException("An installment is paid with Pay on the plan")
+    if data.get("type") == "income":
+        raise BusinessRuleException("Income arrives by itself - there is nothing to pay")
+    if data.get("closed_on"):
+        raise BusinessRuleException("This rule has ended")
+
+    context = _Context.load(db, cipher)
+    view = _view(rule_id, data, context, today)
+    if view.paused:
+        raise BusinessRuleException("This rule is paused - resume it first")
+    through = _as_date(data["posted_through"])
+    posted_days = context.posted_days.get(rule_id, set())
+    upcoming = next(
+        (o for o in occurrences(rule_id, data, through + ONE_DAY, max(through, today) + timedelta(days=NEXT_WINDOW_DAYS))
+         if not o.paused and o.on not in posted_days),
+        None,
+    )
+    if upcoming is None:
+        raise BusinessRuleException("Nothing is left to pay on this rule")
+    if _problem(data, {r.id: r.data for r in AccountRepository(db, cipher).list()},
+                {r.id: r.data for r in CategoryRepository(db, cipher).list()}, tag_service.known_ids(db, cipher)):
+        raise BusinessRuleException("This rule needs attention first - its account or category has changed")
+
+    payload = _payload(data, upcoming)
+    payload["txn_date"] = min(upcoming.on, on).isoformat()
+    transaction_service.post_recurring(db, cipher, payload, recurring_id=rule_id, recurring_on=upcoming.on)
+    audit_service.record(
+        db, audit_service.PAY_NOW, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
+        cipher=cipher, detail={"name": data.get("name"), "occurrence": upcoming.on.isoformat(),
+                               "amount": str(upcoming.amount)},
+    )
+    db.commit()
+    return get_rule(db, cipher, rule_id, today=today)
+
+
 def _close_plan(
     db: Session,
     cipher: UserCipher,

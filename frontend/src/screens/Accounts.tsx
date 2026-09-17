@@ -25,6 +25,8 @@ import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { isOwed, listAccounts, owedWithPlans, type Account, type AccountList, type AccountType } from '../lib/accounts';
+import { listGoals, type Goal } from '../lib/security';
+import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
@@ -128,6 +130,10 @@ export function Accounts() {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(() => new Set(['archived']));
+  /** GOA - savings goals, shown with the accounts they live in (2026-09-16, user). */
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [editingGoal, setEditingGoal] = useState<{ open: boolean; goal: Goal | null }>({ open: false, goal: null });
+  const [goalMoney, setGoalMoney] = useState<{ goal: Goal; mode: 'add' | 'use' } | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     return listAccounts(signal)
@@ -143,6 +149,18 @@ export function Accounts() {
     void load(controller.signal);
     return () => controller.abort();
   }, [load, version]);
+
+  const loadGoals = useCallback((signal?: AbortSignal) => {
+    return listGoals(signal)
+      .then(setGoals)
+      .catch(() => undefined); // the accounts are the page; a goal list that fails to load just stays away
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadGoals(controller.signal);
+    return () => controller.abort();
+  }, [loadGoals, version]);
 
   const open = (account: Account) => navigate(`/accounts/${account.id}`);
   const toggle = (key: string) =>
@@ -170,6 +188,9 @@ export function Accounts() {
   const net = headline === 'net';
   const outOfNetWorth = active.filter((a) => !a.counts_in_net_worth).length;
   const notCounted = active.length - counted.length;
+  const goalsSaved = fromCentavos(goals.reduce((total, goal) => total + centavos(goal.saved), 0));
+  // GOA-08. What counted accounts hold aside for goals - already out of cash on hand, so the headline says so.
+  const setAsideTotal = counted.reduce((total, a) => total + centavos(a.set_aside ?? '0.00'), 0);
 
   return (
     <>
@@ -233,6 +254,7 @@ export function Accounts() {
                   : `Across ${counted.length} of ${active.length} account${active.length === 1 ? '' : 's'}`}
                 {notCounted > 0 && ` · ${notCounted} not counted`}
                 {billed && ' · cards count this month’s bill'}
+                {setAsideTotal > 0 && ` · ${formatPHP(fromCentavos(setAsideTotal))} set aside for goals`}
               </p>
               <button type="button" onClick={() => navigate('/projection')}
                 className="mt-3 flex min-h-tap w-full items-center justify-between rounded-2xl bg-on-accent/15 px-4 text-footnote font-semibold transition active:scale-[0.99]">
@@ -291,6 +313,48 @@ export function Accounts() {
         );
       })}
 
+      {data && active.length > 0 && (
+        <section aria-label="Savings goals">
+          <div className="flex min-h-tap items-center gap-2 px-1 pb-1 pt-4">
+            <button type="button" onClick={() => toggle('goals')} aria-expanded={!folded.has('goals')}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left">
+              <span className="text-headline">Savings goals</span>
+              {goals.length > 0 && (
+                <span className="rounded-full bg-surface-2 px-2 text-caption font-semibold text-ink-2">{goals.length}</span>
+              )}
+              {goals.length > 0 && (
+                <span className="ml-auto text-footnote text-ink-2">
+                  Saved <span className="num font-semibold text-ink">{formatPHP(goalsSaved)}</span>
+                </span>
+              )}
+              <ChevronRightIcon size={16} className={`shrink-0 text-ink-3 transition ${folded.has('goals') ? '' : 'rotate-90'}`} />
+            </button>
+          </div>
+          {!folded.has('goals') && (goals.length === 0 ? (
+            <button type="button" onClick={() => setEditingGoal({ open: true, goal: null })}
+              className="block w-full rounded-card bg-surface p-4 text-left shadow-card transition active:scale-[0.99]">
+              <span className="block text-body font-semibold text-accent">+ Add a savings goal</span>
+              <span className="mt-0.5 block text-footnote text-ink-3">
+                An emergency fund, a trip, a laptop - its progress is the balance of the account it sits in.
+              </span>
+            </button>
+          ) : (
+            <div className="space-y-2.5">
+              {goals.map((goal) => (
+                <GoalCard key={goal.id} goal={goal} compact
+                  accountName={data.accounts.find((a) => a.id === goal.account_id)?.name}
+                  onEdit={() => navigate(`/accounts/${goal.account_id}`)}
+                  onAdd={() => setGoalMoney({ goal, mode: 'add' })} onUse={() => setGoalMoney({ goal, mode: 'use' })} />
+              ))}
+              <button type="button" onClick={() => setEditingGoal({ open: true, goal: null })}
+                className="min-h-tap w-full rounded-full text-footnote font-semibold text-accent active:bg-accent-soft">
+                + Add a goal
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
+
       {archived.length > 0 && (
         <section className="mt-2">
           <GroupHeader
@@ -312,6 +376,10 @@ export function Accounts() {
       )}
 
       <AccountSheet open={adding} account={null} onClose={() => setAdding(false)} onSaved={() => void load()} />
+      <GoalSheet open={editingGoal.open} goal={editingGoal.goal}
+        onClose={() => setEditingGoal({ open: false, goal: null })} onSaved={() => void loadGoals()} />
+      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)}
+        onSaved={() => void loadGoals()} />
     </>
   );
 }

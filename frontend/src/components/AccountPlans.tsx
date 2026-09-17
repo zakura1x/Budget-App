@@ -5,9 +5,8 @@
  *
  * A plan is money you owe from the day you take it out, so the account it sits
  * on has to say so, whether it is a credit card, a loan or a store card. The
- * card's page shows this list inside CardPayments, which adds the balance
- * check and the monthly payment on top; every other account shows it on its
- * own.
+ * card's page shows this list inside CardPayments, beside its bills and the
+ * monthly payment; every other account shows it on its own.
  *
  * Every figure comes from the server's one engine (`installment` on the rule):
  * what each payment is, how many are left and what the plan still owes are
@@ -21,6 +20,7 @@ import { listRules, scheduleLabel, type Rule } from '../lib/recurring';
 import { type Account } from '../lib/accounts';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
+import { PayNowSheet } from './PayNowSheet';
 import { PlanPaymentSheet } from './PlanPaymentSheet';
 import { Card } from './ui/Card';
 
@@ -48,6 +48,8 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
   const lookups = useLookups();
   const [fetched, setFetched] = useState<Rule[] | null>(null);
   const [paying, setPaying] = useState<Rule | null>(null);
+  /** REC-33. The repeating charge being paid early. */
+  const [payingNow, setPayingNow] = useState<Rule | null>(null);
   const rules = given ?? fetched;
 
   useEffect(() => {
@@ -92,8 +94,8 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
       </div>
       {openPlans.length === 0 && charges.length === 0 ? (
         <p className="px-4 pb-4 text-footnote text-ink-3">
-          No installments yet. Add each one still running — price, number of payments, first payment — and the check below
-          shows whether they explain what you owe.
+          No installments yet. Add each one still running — price, number of payments, first payment — and what the card
+          owes counts all of it from today.
         </p>
       ) : (
         <div className="divide-y divide-line">
@@ -128,16 +130,28 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
             );
           })}
           {charges.map((rule) => (
-            <button key={rule.id} type="button" onClick={() => openRuleSheet({ kind: rule.kind, rule, prefill: null })}
-              className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition active:bg-surface-2">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-body">{rule.name}</span>
-                <span className="block truncate text-footnote text-ink-3">
-                  {scheduleLabel(rule)}{rule.next_on ? ` · next ${short(rule.next_on)}` : ''}
+            <div key={rule.id} className="flex min-h-14 items-center gap-2 pr-3">
+              <button type="button" onClick={() => openRuleSheet({ kind: rule.kind, rule, prefill: null })}
+                className={`flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 text-left transition active:bg-surface-2 ${
+                  account.credit ? 'pr-1' : ''
+                }`}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body">{rule.name}</span>
+                  <span className="block truncate text-footnote text-ink-3">
+                    {rule.paused ? 'Paused' : scheduleLabel(rule)}{rule.next_on ? ` · next ${short(rule.next_on)}` : ''}
+                  </span>
                 </span>
-              </span>
-              <span className="num shrink-0 text-body">{formatPHP(rule.next_amount ?? rule.amount)}</span>
-            </button>
+                <span className="num shrink-0 text-body">{formatPHP(rule.next_amount ?? rule.amount)}</span>
+              </button>
+              {/* REC-33. On an account the money leaves itself, a repeating charge can be
+                  paid early. A card's charges are paid through the card's bill instead. */}
+              {!account.credit && !rule.paused && rule.next_on && (
+                <button type="button" onClick={() => setPayingNow(rule)} aria-label={`Pay ${rule.name} now`}
+                  className="min-h-tap shrink-0 rounded-full bg-accent-soft px-3 text-footnote font-semibold text-accent active:scale-95">
+                  Pay
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -147,6 +161,7 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
         </p>
       )}
       {!onPay && <PlanPaymentSheet rule={paying} accounts={lookups.accounts} onClose={() => setPaying(null)} />}
+      <PayNowSheet rule={payingNow} accountName={account.name} onClose={() => setPayingNow(null)} />
       {!account.credit && openPlans.length > 0 && (
         <p className="border-t border-line px-4 py-3 text-footnote text-ink-2">
           Pay a plan here and it counts against it — pay more than is due and you choose whether the extra lowers the

@@ -41,7 +41,8 @@ import {
 } from '../lib/accounts';
 import { flatten, listCategories, type Category } from '../lib/categories';
 import { InterestFields } from './InterestFields';
-import { centavos, formatPHP, fromCentavos, toDecimalString } from '../lib/money';
+import { MoneyField } from './ui/MoneyField';
+import { centavos, formatPHP, fromCentavos, toDecimalString, toRateString } from '../lib/money';
 import { ColourPicker, GlyphTile, IconPicker } from './StylePicker';
 import { ACCOUNT_GLYPHS } from './Glyph';
 import { Button } from './ui/Button';
@@ -67,9 +68,10 @@ const COUNTS_BY_DEFAULT: Record<AccountType, boolean> = {
 function cleanInterest(draft: InterestDraft): InterestDraft {
   return {
     ...draft,
-    tax_rate: toDecimalString((draft.tax_rate ?? '20').trim() || '0'),
+    // Rates are not money: four places, never the two-place money formatter.
+    tax_rate: toRateString(draft.tax_rate ?? '20'),
     bands: draft.bands.map((band, index) => ({
-      rate: toDecimalString((band.rate ?? '').trim() || '0'),
+      rate: toRateString(band.rate ?? ''),
       up_to: index === draft.bands.length - 1 || !band.up_to?.trim() ? null : toDecimalString(band.up_to.trim()),
     })),
   };
@@ -276,7 +278,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
         ...(GIVES_CASHBACK.includes(type)
           ? {
               cashback: cashbackRate.trim() && cashbackCategory
-                ? { rate: toDecimalString(cashbackRate.trim()), category_id: cashbackCategory }
+                ? { rate: toRateString(cashbackRate), category_id: cashbackCategory }
                 : null,
             }
           : {}),
@@ -305,6 +307,9 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       if (asked) {
         setQuestion(asked);
       } else {
+        // A failure before the request left the browser has no server message;
+        // log it so the next one is not invisible.
+        if (!(e instanceof ApiError)) console.error('AccountSheet save failed', e);
         setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
       }
       setBusy(false);
@@ -464,10 +469,8 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
           // ACC-27. A card is read either way round: what it owes, or what is left to spend on it.
           // Type one and the other follows the limit; both save as the same balance.
           <div className="grid grid-cols-2 gap-3">
-            <TextField label="Amount owed" value={current} inputMode="decimal" placeholder="0.00"
-              onChange={(e) => typeOwed(clean(e.target.value))} />
-            <TextField label="Left to spend" value={leftToSpend} inputMode="decimal" placeholder="0.00"
-              onChange={(e) => typeLeft(clean(e.target.value))} />
+            <MoneyField label="Amount owed" value={current} placeholder="0.00" allowNegative onChange={typeOwed} />
+            <MoneyField label="Left to spend" value={leftToSpend} placeholder="0.00" allowNegative onChange={typeLeft} />
             <p className="col-span-2 text-footnote text-ink-3">
               Either one — the other follows your {formatPHP(fromCentavos(limitCents))} limit
               {unpaidCents > 0 && `, less the ${formatPHP(fromCentavos(unpaidCents))} of plans still to bill`}. Changing it
@@ -475,20 +478,20 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
             </p>
           </div>
         ) : editing && type !== 'investment' ? (
-          <TextField
+          <MoneyField
             label={balanceWords(type).label}
             value={current}
-            onChange={(e) => setCurrent(clean(e.target.value))}
-            inputMode="decimal"
+            onChange={setCurrent}
+            allowNegative
             placeholder="0.00"
             hint={balanceWords(type).hint}
           />
         ) : (
-          <TextField
+          <MoneyField
             label={openingWords(type).label}
             value={opening}
-            onChange={(e) => setOpening(type === 'borrowed' ? clean(e.target.value).replace('-', '') : clean(e.target.value))}
-            inputMode="decimal"
+            onChange={setOpening}
+            allowNegative={type !== 'borrowed'}
             placeholder="0.00"
             hint={openingWords(type).hint}
           />
@@ -517,26 +520,23 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
                 hint="Day of the month"
               />
             </div>
-            <TextField
+            <MoneyField
               label="Credit limit"
               value={limit}
-              onChange={(e) => {
-                const next = clean(e.target.value);
+              onChange={(next) => {
                 setLimit(next);
                 // What is left follows the limit, so a corrected limit does not leave a stale figure.
                 const ceiling = cents(next);
                 if (ceiling > 0) setLeftToSpend(fromCentavos(ceiling - unpaidCents - cents(current)));
               }}
-              inputMode="decimal"
-              placeholder="50,000.00"
+              placeholder="50000.00"
               hint="What the bank allows. Leave empty if you would rather not track it."
             />
-            <TextField
+            <MoneyField
               label="Your spending limit"
               value={ownLimit}
-              onChange={(e) => setOwnLimit(clean(e.target.value).replace('-', ''))}
-              inputMode="decimal"
-              placeholder="10,000.00"
+              onChange={setOwnLimit}
+              placeholder="10000.00"
               hint="Per statement cycle — what you allow yourself. You are warned, never blocked."
             />
             <TextField
@@ -557,11 +557,10 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
               Type what it is worth today. Each value is kept with its date, and none of it counts as income.
               Money you transfer in or out after that day is added to it, so a contribution is never lost.
             </p>
-            <TextField
+            <MoneyField
               label="Value today"
               value={value}
-              onChange={(e) => setValue(clean(e.target.value))}
-              inputMode="decimal"
+              onChange={setValue}
               placeholder={account?.current_value ?? '0.00'}
             />
             <Button variant="secondary" block onClick={() => void recordValue()} disabled={busy || !value.trim()}>

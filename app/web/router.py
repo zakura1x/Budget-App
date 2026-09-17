@@ -61,8 +61,18 @@ def bundle_entry() -> Optional[dict]:
     return _manifest_cache["entry"]
 
 
+# UX-05. The one preference kept in the browser, by the user's choice
+# (2026-09-16): the light/dark word, so a lock screen opened after the app was
+# closed looks the way they chose - their real preferences are encrypted and
+# cannot be read until they unlock. Only these two values are ever echoed back
+# into the page; anything else is the device's own setting.
+THEME_COOKIE = "zbdgt_theme"
+_THEMES = ("light", "dark")
+
+
 def _render_shell(request: Request) -> HTMLResponse:
     base = settings.BASE_URL_CLEAN
+    theme = request.cookies.get(THEME_COOKIE)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -73,6 +83,7 @@ def _render_shell(request: Request) -> HTMLResponse:
             "base_url": base,
             "api_prefix": settings.API_PREFIX,
             "app_name": settings.APP_NAME,
+            "theme": theme if theme in _THEMES else None,
         },
         headers={"Cache-Control": "no-cache"},
     )

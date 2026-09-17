@@ -1,6 +1,7 @@
 """Request and response shapes for /security, /goals and /admin (SEC-21..24, GOA-01..07, UX-20)."""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,10 +44,12 @@ class GoalIn(BaseModel):
     icon: Optional[IconName] = None
 
 
-class ContributeIn(BaseModel):
+class GoalMoneyIn(BaseModel):
+    """GOA-08 - set part of the account aside for a goal, or use what it holds. Nothing moves."""
+
     amount: Money
-    from_account_id: int
-    txn_date: Optional[date] = None
+    on: Optional[date] = None
+    note: Optional[str] = Field(default=None, max_length=120)
 
 
 class GoalOut(BaseModel):
@@ -59,10 +62,13 @@ class GoalOut(BaseModel):
     account_id: int
     colour: str
     icon: str
-    saved: Money
+    saved: Money  # GOA-08 - set aside for this goal, not the account's balance
     remaining: Money
     ratio: Ratio
     reached: bool
+    account_balance: Money = Decimal("0.00")
+    account_available: Money = Decimal("0.00")  # balance less every goal's set-aside money there
+    short_by: Money = Decimal("0.00")  # the balance has fallen this far below what is set aside
 
 
 class AdminUserOut(BaseModel):
