@@ -8,3 +8,7 @@ app/web/static/dist/** -text
 *.png binary
 *.ico binary
 *.woff2 binary
+
+# Notes for Claude Code while developing - not part of a release (scripts/make_release.py
+# uses git archive, which leaves out export-ignore paths).
+CLAUDE.md export-ignore
