@@ -12,6 +12,7 @@ twice, and verify writes nothing.
 
 import zipfile
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -110,6 +111,10 @@ def fill(session, cipher):
         "payments": 6, "interest": "2400.00"}, today=today)
     account_service.record_statement_check(session, cipher, card.id, date(2026, 8, 16), "0.00", today=today)
     attachment_service.attach(session, cipher, split.id, "receipt.jpg", JPEG)
+    # ACC-35. A bill list names the purchase and the plans it already covers - references too.
+    transaction_service.create_transaction(session, cipher, {
+        "type": "expense", "amount": "320.00", "account_id": card.id, "category_id": food.id, "txn_date": "2026-09-14"})
+    account_service.set_bills(session, cipher, card.id, [{"due": "2026-10-06", "amount": "7320.00"}], today=today)
 
 
 def decrypted(found, cipher):
@@ -191,6 +196,14 @@ def test_round_trip_into_an_empty_account_is_identical(session, folders):
 
     second, _ = backup_of(session, bob.id, folders / "two")
     assert snapshot(decrypted(second, bob_cipher)) == snapshot(decrypted(first, alice_cipher))
+
+    # The card's bills come back the same: what the list covered is still covered, not added again.
+    def card_bills(cipher):
+        found = account_service.list_accounts(session, cipher, postings=transaction_service.postings(session, cipher),
+                                              today=date(2026, 9, 14))
+        return [(b.due, b.amount, b.from_purchases, b.from_plans) for b in next(a for a in found if a.name == "Card").credit.bills]
+    assert card_bills(bob_cipher) == card_bills(alice_cipher)
+    assert card_bills(bob_cipher)[0][1:] == (Decimal("7320.00"), Decimal("0.00"), Decimal("0.00"))
 
     # And the restored references really point at Bob's rows: each rule posts to his own accounts -
     # rent on 14 Oct, Netflix on 5 Oct, the phone's second payment on 14 Oct.

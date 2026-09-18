@@ -48,7 +48,13 @@ ORDER: Tuple[str, ...] = (
 REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
     # ACC-37. Where a savings account's daily interest lands. Deferred:
     # categories are inserted after accounts, so it is cleared and filled in.
-    "accounts": (("interest.category_id", "categories"),),
+    "accounts": (
+        ("interest.category_id", "categories"),
+        # ACC-35. What a card's saved bill list already covers. Deferred like
+        # the category: plans and transactions are inserted after accounts.
+        ("bills_cover_transactions[]", "transactions"),
+        ("bills_cover_rules[]", "recurring_rules"),
+    ),
     "categories": (("parent_id", "categories"),),
     "tags": (),
     "budgets": (),

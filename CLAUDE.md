@@ -325,6 +325,18 @@ counts purchases, not payments. Two rules to keep:
   `txn_date` and nothing else. `statement_service` writes through
   `transaction_service`, and nothing imports it.
 
+A typed bill list holds everything the card's app knew when it was saved, so
+`set_bills` names what it COVERS: `bills_cover_transactions` (purchases on the
+card dated on or after that day) and `bills_cover_rules` (every plan on it) -
+references in backup_service like any other, left out of a merge key. Anything
+else joins the bills: a one-off PURCHASE lands on the bill of the statement it
+posts in (`card_posted_on` first), as `Bill.from_purchases`, and a plan created
+later adds its payments as before. Lists saved on 2026-09-17 keep only
+`bills_saved_at` (a creation-time comparison), older ones only `bills_from`.
+Months ahead takes new purchases with the typed part - money already spent.
+The bill editor starts from each bill's full `left`, so saving it unchanged
+keeps every total.
+
 A plan charge joins a card's bills by WHAT IT IS: an installment payment's date
 is the day it is billed, so it lands on the first bill due on or after it; any
 other recurring charge is a purchase and takes the statement cycle, due the

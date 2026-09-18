@@ -101,8 +101,9 @@ def test_an_installment_on_the_card_is_added_to_the_bills_it_lands_on(session, o
     # Past the last typed bill the plan keeps that bill's day of the month.
     assert [b.due for b in credit.bills][-2:] == [date(2027, 2, 15), date(2027, 3, 15)]
 
-    # Editing the bills starts from the typed part only, so saving again does not count the plan twice.
-    retyped = [{"due": b.due.isoformat(), "amount": str(b.typed_left)} for b in credit.bills if b.typed_left > 0]
+    # Editing starts from everything unpaid (2026-09-17): the saved list then holds the plan's
+    # payments, which are not added a second time, so the totals stay the same.
+    retyped = [{"due": b.due.isoformat(), "amount": str(b.left)} for b in credit.bills if b.left > 0]
     account_service.set_bills(session, owner, card.id, retyped, today=TODAY)
     assert views(session, owner, TODAY)[1]["Spaylater"].credit.bills_left == Decimal("27901.97")
 
@@ -267,3 +268,116 @@ def test_months_ahead_lists_the_bill_cash_on_hand_already_holds(session, owner):
     assert october.bills == Decimal("4120.80")
     assert months[0].opening == Decimal("12245.51")  # 20,000 less the bill due now
     assert months[-1].closing == Decimal("4098.03")  # 20,000 less every bill, once
+
+
+# ------------------------------------------------------------------ purchases recorded after the list (2026-09-17)
+
+
+def billed_card(session, owner, *, bills=True):
+    """A card closing on the 15th and due on the 15th, with two typed bills saved on TODAY."""
+    card = account_service.create_account(session, owner, {
+        "name": "Maribank", "type": "credit", "statement_closing_day": 15, "payment_due_day": 15,
+    })
+    food = category_service.create_category(session, owner, {"name": "Food"})
+    if bills:
+        account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "3000.00"},
+                                                            {"due": "2026-11-15", "amount": "1000.00"}], today=TODAY)
+    return card, food
+
+
+def buy(session, owner, card, food, amount, on, **extra):
+    return transaction_service.create_transaction(session, owner, {
+        "type": "expense", "amount": amount, "account_id": card.id, "category_id": food.id,
+        "txn_date": on.isoformat(), **extra}, today=on)
+
+
+def bills_of(session, owner, today=TODAY):
+    return {b.due: b for b in views(session, owner, today)[1]["Maribank"].credit.bills}
+
+
+def test_a_purchase_recorded_after_the_list_joins_the_bill_of_its_statement(session, owner):
+    """Reported 2026-09-17: a purchase added after the bills were typed was on no bill."""
+    card, food = billed_card(session, owner)
+    buy(session, owner, card, food, "282.00", TODAY)  # closes 15 Sep -> due 15 Oct
+    buy(session, owner, card, food, "164.00", date(2026, 9, 17))  # closes 15 Oct -> due 15 Nov
+    bills = bills_of(session, owner, date(2026, 9, 17))
+    october, november = bills[date(2026, 10, 15)], bills[date(2026, 11, 15)]
+    assert (october.typed, october.from_purchases, october.amount) == (
+        Decimal("3000.00"), Decimal("282.00"), Decimal("3282.00"))
+    assert (november.from_purchases, november.amount, november.from_plans) == (
+        Decimal("164.00"), Decimal("1164.00"), Decimal("0.00"))
+
+
+def test_a_statement_past_the_typed_bills_gets_its_own_bill(session, owner):
+    card, food = billed_card(session, owner)
+    buy(session, owner, card, food, "500.00", date(2026, 11, 20))  # closes 15 Dec -> due 15 Jan
+    bill = bills_of(session, owner, date(2026, 11, 20))[date(2027, 1, 15)]
+    assert (bill.typed, bill.from_purchases, bill.left) == (Decimal("0.00"), Decimal("500.00"), Decimal("500.00"))
+
+
+def test_a_purchase_the_cards_app_already_had_is_not_added_again(session, owner):
+    card, food = billed_card(session, owner, bills=False)
+    buy(session, owner, card, food, "807.50", TODAY)  # recorded BEFORE the list is typed
+    account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "3000.00"}], today=TODAY)
+    buy(session, owner, card, food, "99.00", date(2026, 9, 10))  # recorded later, but dated before the list
+    bill = bills_of(session, owner)[date(2026, 10, 15)]
+    assert (bill.from_purchases, bill.amount) == (Decimal("0.00"), Decimal("3000.00"))
+
+
+def test_a_purchase_the_bank_posted_late_joins_the_next_bill(session, owner):
+    """ACC-26: the posted-on day decides the statement, as the user's Maribank purchase on its closing day."""
+    card, food = billed_card(session, owner)
+    late = buy(session, owner, card, food, "807.50", TODAY)
+    transaction_service.set_card_posted_on(session, owner, late.transactions[0].id, date(2026, 9, 16))
+    session.commit()
+    bills = bills_of(session, owner, date(2026, 9, 17))
+    assert bills[date(2026, 10, 15)].from_purchases == Decimal("0.00")
+    assert bills[date(2026, 11, 15)].from_purchases == Decimal("807.50")
+
+
+def test_a_list_saved_before_the_moment_was_kept_counts_purchases_from_its_day(session, owner):
+    from app.db.repositories.account_repository import AccountRepository
+
+    card, food = billed_card(session, owner)
+    repo = AccountRepository(session, owner)
+    record = repo.get(card.id)
+    repo.update(card.id, {k: v for k, v in record.data.items() if k not in ("bills_saved_at", "bills_cover_transactions", "bills_cover_rules")})
+    session.commit()
+    buy(session, owner, card, food, "180.00", TODAY)
+    assert bills_of(session, owner)[date(2026, 10, 15)].from_purchases == Decimal("180.00")
+
+
+def test_payments_settle_the_typed_part_then_the_purchases(session, owner):
+    card, food = billed_card(session, owner)
+    wallet = account_service.create_account(session, owner, {"name": "GCash", "type": "debit", "opening_balance": "9000.00"})
+    buy(session, owner, card, food, "500.00", TODAY)
+    pay(session, owner, wallet, card, "3200.00", date(2026, 9, 16))
+    october = bills_of(session, owner, date(2026, 9, 16))[date(2026, 10, 15)]
+    assert (october.typed_left, october.purchases_left, october.left) == (
+        Decimal("0.00"), Decimal("300.00"), Decimal("300.00"))
+
+
+def test_months_ahead_takes_new_purchases_with_the_bill_as_money_already_spent(session, owner):
+    card, food = billed_card(session, owner)
+    buy(session, owner, card, food, "164.00", date(2026, 9, 17))  # on the 15 Nov bill
+    months = projection_service.project(session, owner, today=date(2026, 9, 17), months=3).months
+    november = [i for m in months for i in m.items if i.name.startswith("Maribank bill due 15 Nov")]
+    assert [(i.kind, i.amount) for i in november] == [("bill", Decimal("1164.00"))]
+
+
+def test_a_plan_the_cards_app_already_counted_is_not_added_again(session, owner):
+    """Reported 2026-09-17: SPayLater's typed 8,280.76 showed as 8,296.09 - an older installment's 15.33 twice."""
+    card, food = billed_card(session, owner, bills=False)
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "type": "expense", "name": "Aerox", "account_id": card.id, "category_id": food.id,
+        "frequency": "monthly", "start": "2026-10-15", "price": "46.00", "payments": 3}, today=TODAY)
+    account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "8280.76"}], today=TODAY)
+    october = bills_of(session, owner)[date(2026, 10, 15)]
+    assert (october.from_plans, october.amount) == (Decimal("0.00"), Decimal("8280.76"))
+    assert max(bills_of(session, owner)) == date(2026, 10, 15)  # its later payments add no bill lines either
+
+    # A plan created AFTER the list is still added, as before.
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "type": "expense", "name": "Phone", "account_id": card.id, "category_id": food.id,
+        "frequency": "monthly", "start": "2026-10-15", "price": "300.00", "payments": 3}, today=TODAY)
+    assert bills_of(session, owner)[date(2026, 10, 15)].from_plans == Decimal("100.00")

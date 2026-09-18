@@ -34,7 +34,7 @@ export interface Statement {
 /** ACC-35 - one bill typed from the card's own app; what is paid of it is derived. */
 export interface Bill {
   due: string;
-  /** typed + from_plans */
+  /** typed + from_purchases + from_plans */
   amount: string;
   paid: string;
   left: string;
@@ -45,6 +45,9 @@ export interface Bill {
   from_plans: string;
   /** What is still unpaid of the typed part - what an edit starts from. */
   typed_left: string;
+  /** Purchases recorded on the card after the list was saved, on this bill's statement. */
+  from_purchases: string;
+  purchases_left: string;
 }
 
 export interface Credit {

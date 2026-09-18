@@ -30,8 +30,8 @@ CARDS WITH TYPED BILLS (ACC-35). Cash on hand already subtracts such a card's
 bill due now; each later bill enters it the day after the one before it falls
 due - so that is the day the projection takes it:
 
-    bills      = the TYPED part of those bills - past purchases, taken on top
-                 of the budget, never inside it
+    bills      = the TYPED part of those bills and the purchases recorded since
+                 - past purchases, taken on top of the budget, never inside it
     committed  + the PLAN part (installments and repeating charges that land
                  on a bill), on that same day instead of the day each posts
 
@@ -277,7 +277,7 @@ def _bill_items(
             if bill.overdue or bill.due <= now.due:
                 continue  # in cash on hand already
             enters = previous + ONE_DAY
-            typed = min(bill.typed_left, bill.left)
+            typed = min(bill.typed_left + bill.purchases_left, bill.left)  # money already spent
             planned = bill.left - typed
             label = f"{view.name} bill due {bill.due.day} {bill.due:%b}"
             for kind, amount, name in (("bill", typed, label), ("bill_plans", planned, f"{label} · plans")):

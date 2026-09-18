@@ -37,11 +37,12 @@ export function CardBills({ account }: { account: Account }) {
   const [error, setError] = useState<string | null>(null);
 
   const start = () => {
-    // Only the typed part: plan payments are added by the server on every read, and typing them in
-    // here as well would count them twice.
-    const unpaid = credit.bills.filter((b) => b.typed_left !== '0.00');
+    // Everything still unpaid, as the card's app shows it: a saved list replaces the plans and
+    // purchases recorded before it (the server adds only what is recorded later), so saving
+    // without a change keeps every total (2026-09-17).
+    const unpaid = credit.bills.filter((b) => b.left !== '0.00');
     setRows(unpaid.length
-      ? unpaid.map((b, i) => ({ key: i, due: b.due, amount: typedFrom(b.typed_left) }))
+      ? unpaid.map((b, i) => ({ key: i, due: b.due, amount: typedFrom(b.left) }))
       : [{ key: 0, due: credit.payment_due >= localToday() ? credit.payment_due : localToday(), amount: '' }]);
     setError(null);
     setEditing(true);
@@ -132,10 +133,20 @@ export function CardBills({ account }: { account: Account }) {
                 <span className="block text-body">Due {format(parseISO(bill.due), 'd MMM yyyy')}</span>
                 <span className={`block text-footnote ${bill.overdue ? 'font-semibold text-danger' : 'text-ink-3'}`}>
                   {paid ? '✓ Paid' : bill.overdue ? 'Overdue' : part ? `${formatPHP(bill.paid)} paid` : 'Unpaid'}
+                  {(bill.from_purchases ?? '0.00') !== '0.00' && (
+                    <span className="text-accent">
+                      {' · '}
+                      {bill.typed === '0.00' && bill.from_plans === '0.00'
+                        ? 'new purchases'
+                        : `incl. ${formatPHP(bill.from_purchases)} new purchases`}
+                    </span>
+                  )}
                   {bill.from_plans !== '0.00' && (
                     <span className="text-accent">
                       {' · '}
-                      {bill.typed === '0.00' ? 'from plans' : `incl. ${formatPHP(bill.from_plans)} from plans`}
+                      {bill.typed === '0.00' && (bill.from_purchases ?? '0.00') === '0.00'
+                        ? 'from plans'
+                        : `incl. ${formatPHP(bill.from_plans)} from plans`}
                     </span>
                   )}
                 </span>

@@ -2035,6 +2035,28 @@ Found while building Phase 10 (2026-09-15):
     the whole app down (a malformed one still throws), and the card no longer
     reads a missing shortfall as one. Verified by stripping those fields from
     the live /goals response in the browser.
+  - PLANS NOT COUNTED TWICE ON TYPED BILLS 2026-09-17 (user: SPayLater edited to
+    8,280.76 still showed 8,296). The Aerox TG installment (15.33, created 16 Sep)
+    was added on top of a list typed on 17 Sep that already held it. A saved list
+    now names what it covers - bills_cover_transactions / bills_cover_rules, via
+    _covered_rows - and _bills adds only charges from rows outside it (the
+    user's list from earlier that day falls back to bills_saved_at). Row ids
+    rather than a moment: Windows ticks ~15 ms (tests tied) and a restore
+    re-times and renumbers rows; the lists are backup references and are left
+    out of the merge key (MERGE_IGNORED). CardBills' editor starts from b.left.
+    Tests: plan-before-list, backup round trip keeps the bills; 720 passed.
+    Preview: Spaylater 15 Oct 8,280.76, 15 Nov 4,240.71, 15 Dec 2,504.69.
+  - PURCHASES JOIN TYPED BILLS 2026-09-17 (user: an expense added after the
+    bills were typed was on no bill for the next month). Read-only look: on
+    Maribank (list saved 16 Sep) 164 + 5 x 282 on 17 Sep and on Spaylater (saved
+    17 Sep, 2:36 pm) 180 + 141 recorded later were on no bill - _bills only added
+    recurring charges. Now _plan_charges also passes one-off purchases with
+    their created_at, set_bills stores `bills_saved_at`, and _bills puts a
+    purchase recorded after the save (dated on/after bills_from) on its
+    statement's bill (`from_purchases`, `purchases_left`); projection takes it
+    as kind bill. CardBills labels it. 7 tests; 719 passed. Preview: Spaylater
+    15 Nov +321.00, Maribank 5 Nov 1,574.00. The user says Maribank's 807.50 of
+    16 Sep was posted after the closing - it needs card_posted_on 17 Sep.
   - INTEREST CREDITED IN THE MORNING 2026-09-17 (user: "my MariBank added 2.58
     at 1:00am, not at the end of the day"). An entry dated d already paid for
     the closing balance of d - 1, so holding back today's was a day's lag for

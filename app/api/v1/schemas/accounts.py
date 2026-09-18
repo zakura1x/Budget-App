@@ -187,6 +187,8 @@ class BillOut(BaseModel):
     typed: Money = Decimal("0.00")
     from_plans: Money = Decimal("0.00")
     typed_left: Money = Decimal("0.00")
+    from_purchases: Money = Decimal("0.00")
+    purchases_left: Money = Decimal("0.00")
 
 
 class CreditOut(BaseModel):

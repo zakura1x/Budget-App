@@ -30,7 +30,7 @@ over the working set and the endpoints hand them in.
 """
 
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
@@ -239,13 +239,15 @@ class Bill:
     """
 
     due: date
-    amount: Decimal  # typed + from_plans
+    amount: Decimal  # typed + from_purchases + from_plans
     paid: Decimal
     left: Decimal
     overdue: bool
     typed: Decimal = ZERO  # what the card's app lists for this due date
     from_plans: Decimal = ZERO  # installments and repeating charges on the card that land on this bill
     typed_left: Decimal = ZERO  # unpaid of the typed part - payments settle the typed part first
+    from_purchases: Decimal = ZERO  # purchases recorded AFTER the list was saved, on this bill's statement
+    purchases_left: Decimal = ZERO  # unpaid of those - settled after the typed part, before the plans
 
 
 # One recurring charge on a card: the day it posts (or will), its amount, and whether its schedule ends.
@@ -259,12 +261,21 @@ class Charge(NamedTuple):
     schedule dates are the days the bank BILLS each payment - "first payment
     5 Oct" means it appears on the October bill - while an ordinary charge is a
     purchase, which lands on the statement it was made in and falls due later.
+
+    `source` is the row the charge comes from - the purchase itself, or the
+    PLAN a payment belongs to - and `recorded` when that row was put into the
+    app; `purchase` marks a one-off purchase already on the card. Either joins
+    typed bills only if it came after the list was saved - before that, the
+    card's app already counted it (2026-09-17).
     """
 
     on: date
     amount: Decimal
     ends: bool
     installment: bool = False
+    recorded: Optional[datetime] = None
+    purchase: bool = False
+    source: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -585,15 +596,48 @@ def set_bills(
     if cleaned:
         data["bills"] = [{"due": due.isoformat(), "amount": str(amount)} for due, amount in sorted(cleaned.items())]
         data["bills_from"] = (today or date.today()).isoformat()
+        # What the card's app already counted when this list was typed: the
+        # purchases on the card from that day and the plans on it. Anything else
+        # recorded later joins the bills (2026-09-17). Named rows, not a moment:
+        # a clock can tie and a restore renumbers and re-times every row, while
+        # these ids are references backup_service rewrites like any other.
+        day = today or date.today()
+        data["bills_cover_transactions"], data["bills_cover_rules"] = _covered_rows(db, cipher, account_id, day)
     else:
         data.pop("bills", None)
         data.pop("bills_from", None)
+    for stale in ("bills_saved_at",) + (() if cleaned else ("bills_cover_transactions", "bills_cover_rules")):
+        data.pop(stale, None)
     repo.update(account_id, data)
     audit_service.record(
         db, audit_service.UPDATE, user_id=cipher.user_id, entity="accounts", entity_id=account_id, cipher=cipher,
         detail={"name": data.get("name"), "bills": len(cleaned)},
     )
     db.commit()
+
+
+def _covered_rows(db: Session, cipher: UserCipher, account_id: int, day: date) -> Tuple[List[int], List[int]]:
+    """
+    ACC-35. The purchases on this card dated on or after `day` (earlier ones are
+    left out by date anyway) and every plan on it - what a list typed from the
+    card's app on `day` already includes.
+    """
+    from app.db.repositories.recurring_repository import RecurringRuleRepository
+    from app.db.repositories.transaction_repository import TransactionRepository
+
+    purchases = []
+    for record in TransactionRepository(db, cipher).cached():
+        data = record.data
+        if data.get("account_id") != account_id or data.get("type") != "expense" or data.get("recurring_id"):
+            continue
+        try:
+            on = date.fromisoformat(str(data.get("card_posted_on") or data.get("txn_date")))
+        except ValueError:
+            continue
+        if on >= day:
+            purchases.append(record.id)
+    rules = [record.id for record in RecurringRuleRepository(db, cipher).list() if record.data.get("account_id") == account_id]
+    return sorted(purchases), sorted(rules)
 
 
 def set_archived(db: Session, cipher: UserCipher, account_id: int, archived: bool) -> AccountView:
@@ -905,6 +949,17 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
     subscription - is counted only as far as the last typed bill, so the list
     does not grow a year of Netflix. Then the payments into the card since the
     list was saved settle the bills oldest first, the typed part of each first.
+    A plan created before the list was saved adds nothing: the typed bills hold
+    its payments already. Only a plan created after it is added.
+
+    A PURCHASE recorded after the list was saved joins the bill of the statement
+    it posts in (fixed 2026-09-17, user: a purchase added after typing the bills
+    was on no bill, so the next month's payment and Months ahead missed it). One
+    dated before the list, or recorded before it was saved, is left out - the
+    card's app already had it. A purchase the bank posted late belongs to the
+    NEXT statement: its "posted on" day (ACC-26) decides, not the purchase day.
+    A list saved before the moment was stored counts every purchase dated on or
+    after its day.
     """
     typed: Dict[date, Decimal] = {}
     for item in data.get("bills") or []:
@@ -919,10 +974,39 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
     except ValueError:
         since = None
 
+    try:
+        saved_at: Optional[datetime] = datetime.fromisoformat(str(data.get("bills_saved_at")))
+    except ValueError:
+        saved_at = None
+    covered = {
+        True: set(data.get("bills_cover_transactions") or ()),
+        False: set(data.get("bills_cover_rules") or ()),
+    } if "bills_cover_rules" in data else None
+
+    def listed_already(charge: Charge) -> bool:
+        """The card's app had it when the list was typed. A list saved on 2026-09-17 kept only its moment."""
+        if covered is not None:
+            return charge.source is not None and charge.source in covered[charge.purchase]
+        return saved_at is not None and charge.recorded is not None and charge.recorded <= saved_at
+
     closing_day, due_day = _card_days(data)
     last_typed = max(typed)
     planned: Dict[date, Decimal] = {}
+    purchased: Dict[date, Decimal] = {}
     for charge in charges:
+        if listed_already(charge):
+            # The card's app had it when the list was typed: a purchase already
+            # made, or every payment of a plan that already existed - its bills
+            # include them (fixed 2026-09-17, user: SPayLater's 8,280.76 showed as
+            # 8,296.09, an installment's 15.33 counted twice).
+            continue
+        if charge.purchase:
+            if since is not None and charge.on < since:
+                continue
+            due = statement_period(charge.on, closing_day, due_day).due
+            if since is None or due >= since:
+                purchased[due] = purchased.get(due, ZERO) + charge.amount
+            continue
         # An installment payment is already a bill line, dated the day it is
         # billed, so it joins the first bill falling due on or after that day
         # (fixed 2026-09-16, user: a payment dated 15 Oct was showing on the
@@ -941,17 +1025,20 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
         if p.amount > ZERO and p.kind in (None, "transfer", "income") and (since is None or p.on >= since)
     )
     result = []
-    for due in sorted(set(typed) | set(planned)):
+    for due in sorted(set(typed) | set(planned) | set(purchased)):
         own = typed.get(due, ZERO)
+        bought = purchased.get(due, ZERO)
         extra = planned.get(due, ZERO)
-        amount = own + extra
+        amount = own + bought + extra
         paid = min(pot, amount)
         pot -= paid
         left = amount - paid
+        typed_left = max(own - paid, ZERO)
         result.append(Bill(
             due=due, amount=amount.quantize(ZERO), paid=paid.quantize(ZERO), left=left.quantize(ZERO),
             overdue=today > due and left > ZERO, typed=own.quantize(ZERO), from_plans=extra.quantize(ZERO),
-            typed_left=max(own - paid, ZERO).quantize(ZERO),
+            typed_left=typed_left.quantize(ZERO), from_purchases=bought.quantize(ZERO),
+            purchases_left=(max(own + bought - paid, ZERO) - typed_left).quantize(ZERO),
         ))
     return tuple(result)
 
@@ -979,14 +1066,18 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
     """
     ACC-35. Every recurring expense per account: those already posted (they
     carry the rule's id) and those still to come from recurring_service.upcoming()
-    - the one schedule (REC-22), so no date here is worked out twice.
+    - the one schedule (REC-22), so no date here is worked out twice. Plus every
+    one-off purchase, marked with when it was recorded, for _bills to place.
     Imported here, not at the top: recurring_service imports transaction_service,
     which imports this module.
     """
+    from app.db.repositories.recurring_repository import RecurringRuleRepository
     from app.services import recurring_service, transaction_service
 
     when = today or date.today()
     plans = {rule.id: rule.kind for rule in recurring_service.list_rules(db, cipher, today=when)}
+    created = {record.id: record.row_created for record in RecurringRuleRepository(db, cipher).list()}
+    # Each charge carries the row it comes from, so _bills can tell what a saved list already holds.
     charges: Dict[int, List[Charge]] = {}
     for view in transaction_service.views(db, cipher):
         if view.recurring_id is not None and view.type == "expense":
@@ -994,12 +1085,17 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
             # an installment is its occurrence date, not the statement it fell in.
             plan = plans.get(view.recurring_id) == "installment"
             charges.setdefault(view.account_id, []).append(
-                Charge(view.recurring_on or view.card_posted_on or view.txn_date, view.amount, True, plan))
+                Charge(view.recurring_on or view.card_posted_on or view.txn_date, view.amount, True, plan,
+                       created.get(view.recurring_id), False, view.recurring_id))
+        elif view.type == "expense":
+            charges.setdefault(view.account_id, []).append(
+                Charge(view.card_posted_on or view.txn_date, view.amount, True, False, view.created_at, True, view.id))
     start = date.fromordinal(when.toordinal() + 1)
     for item in recurring_service.upcoming(db, cipher, start, date.fromordinal(when.toordinal() + 366 * 3)):
         if item.type == "expense" and not item.occurrence.paused:
             charges.setdefault(item.account_id, []).append(
-                Charge(item.on, item.amount, item.kind == "installment", item.kind == "installment"))
+                Charge(item.on, item.amount, item.kind == "installment", item.kind == "installment",
+                       created.get(item.rule_id), False, item.rule_id))
     return charges
 
 

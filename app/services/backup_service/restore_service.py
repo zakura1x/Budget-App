@@ -54,6 +54,10 @@ from app.services.backup_service.references import ORDER
 MODES = ("fresh", "merge", "verify")
 SINGLETONS = ("budgets", "user_preferences")  # one per account
 VOLATILE = {("attachments", "file_key_version")}  # differs by key version, not by content
+# Left out of a MERGE key only: bookkeeping ids of rows inserted after this table
+# (a card's bill list names what it covers, ACC-35), which cannot be mapped back
+# yet when the row is compared - so the same card would never be recognised.
+MERGE_IGNORED = {("accounts", "bills_cover_transactions"), ("accounts", "bills_cover_rules")}
 
 
 @dataclass(frozen=True)
@@ -334,7 +338,8 @@ def _key(table: str, deleted: bool, first: dict, maps, original: dict, deferred)
 def _record_key(table: str, deleted: bool, data: dict, deferred) -> tuple:
     if table == "budget_allocations":
         return ("allocation", deleted, data.get("budget_id"), data.get("category_id"))
-    content = {k: v for k, v in data.items() if (table, k) not in references.LINKS and (table, k) not in VOLATILE}
+    content = {k: v for k, v in data.items()
+               if (table, k) not in references.LINKS and (table, k) not in VOLATILE and (table, k) not in MERGE_IGNORED}
     digest = hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode("utf-8")).hexdigest()
     return ("content", deleted, digest)
 
