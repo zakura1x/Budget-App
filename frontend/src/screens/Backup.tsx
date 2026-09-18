@@ -151,13 +151,13 @@ function RestoreSheet({ source, onClose, onDone }: { source: Source | null; onCl
         </p>
 
         {otherAccount && (
-          <p className="rounded-2xl bg-warn/10 px-4 py-3 text-footnote text-ink">
+          <p className="rounded-2xl border-2 border-warn bg-warn/10 px-4 py-3 text-footnote text-ink">
             This backup belongs to a different account, so it can’t be restored from here. Whoever runs this server can
             restore it into your account with the restore script.
           </p>
         )}
 
-        {error && <p className="rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+        {error && <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
 
         {report && (
           <div className={`space-y-2 rounded-2xl px-4 py-3 ${report.ok && report.differences.length === 0 ? 'bg-ok/10' : 'bg-surface-2'}`}>
@@ -269,7 +269,7 @@ function ImportSheet({ file, onClose }: { file: { name: string; text: string } |
                     setMapping(next);
                     void check(next, dateFormat);
                   }}
-                  className="min-h-tap min-w-0 flex-1 rounded-xl border border-line bg-surface px-2 text-body text-ink"
+                  className="min-h-tap min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-body text-ink"
                 >
                   <option value="">—</option>
                   {headers.map((h) => <option key={h} value={h}>{h}</option>)}
@@ -293,8 +293,8 @@ function ImportSheet({ file, onClose }: { file: { name: string; text: string } |
           </div>
         )}
 
-        {error && <p className="rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
-        {result && <p className="rounded-2xl bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {result}</p>}
+        {error && <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+        {result && <p className="rounded-2xl border-2 border-ok bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {result}</p>}
 
         {preview && (
           <div className="space-y-2">
@@ -303,7 +303,7 @@ function ImportSheet({ file, onClose }: { file: { name: string; text: string } |
               {preview.duplicates > 0 && ` · ${preview.duplicates} already recorded (skipped)`}
             </p>
             {preview.errors.length > 0 && (
-              <div className="space-y-1 rounded-2xl bg-danger/10 px-4 py-3">
+              <div className="space-y-1 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3">
                 <p className="text-footnote font-semibold text-danger">
                   {preview.errors.length} row{preview.errors.length === 1 ? '' : 's'} to fix first — nothing is imported until then:
                 </p>
@@ -313,7 +313,7 @@ function ImportSheet({ file, onClose }: { file: { name: string; text: string } |
               </div>
             )}
             {preview.entries.length > 0 && (
-              <ul className="divide-y divide-line rounded-2xl bg-surface-2/60 px-3">
+              <ul className="divide-y divide-stroke/80 rounded-card border-2 border-stroke bg-surface-2 px-3">
                 {preview.entries.slice(0, 8).map((e) => (
                   <li key={e.line} className={`num flex min-h-10 items-center justify-between gap-2 text-footnote ${e.duplicate ? 'opacity-50' : ''}`}>
                     <span className="min-w-0 truncate">{e.txn_date} · {e.merchant ?? e.type} · {e.account}{e.duplicate ? ' · duplicate' : ''}</span>
@@ -375,9 +375,9 @@ export function Backup() {
     <>
       <ScreenHeader
         title="Backup & data"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
       />
-      {error && <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
 
       <Card>
         <p className="text-footnote font-medium text-ink-2">Last backup</p>
@@ -399,7 +399,7 @@ export function Backup() {
       {list && list.backups.length > 0 && (
         <>
           <SectionTitle>Kept on the server · {list.retention_days} days</SectionTitle>
-          <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+          <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
             {list.backups.map((b) => (
               <div key={b.name} className="flex min-h-14 items-center gap-2 px-4 py-2">
                 <span className="min-w-0 flex-1">
@@ -429,7 +429,7 @@ export function Backup() {
 
       <SectionTitle>Export to CSV</SectionTitle>
       <Card className="space-y-3">
-        <p className="rounded-xl bg-warn/10 px-3 py-2 text-footnote font-semibold text-warn">
+        <p className="rounded-card border-2 border-warn bg-warn/10 px-3 py-2 text-footnote font-semibold text-warn">
           A CSV is not encrypted. Anyone who opens the file can read every amount, merchant and note in it.
         </p>
         <p className="text-footnote text-ink-2">
@@ -441,7 +441,7 @@ export function Backup() {
             <label key={label} className="text-footnote font-semibold text-ink-2">
               {label}
               <input type="date" value={value} onChange={(e) => set(e.target.value)}
-                className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink" />
+                className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
             </label>
           ))}
         </div>

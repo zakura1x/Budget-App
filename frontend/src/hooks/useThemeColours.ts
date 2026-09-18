@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 
-const NAMES = ['ink', 'ink-2', 'ink-3', 'line', 'surface', 'surface-2', 'accent', 'ok', 'warn', 'danger'] as const;
+const NAMES = ['ink', 'ink-2', 'ink-3', 'line', 'stroke', 'surface', 'surface-2', 'accent', 'ok', 'warn', 'danger'] as const;
 
 export type ThemeColours = Record<(typeof NAMES)[number], string>;
 
@@ -25,7 +25,7 @@ export function useThemeColours(): ThemeColours {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     media.addEventListener('change', update);
     const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-palette'] });
     return () => {
       media.removeEventListener('change', update);
       observer.disconnect();

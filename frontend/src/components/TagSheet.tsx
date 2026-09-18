@@ -85,7 +85,7 @@ export function TagSheet({ open, tag, onClose, onSaved }: TagSheetProps) {
         {error && <p className="text-footnote text-danger">{error}</p>}
 
         {confirming && tag ? (
-          <div className="space-y-3 rounded-2xl bg-surface-2 p-4">
+          <div className="space-y-3 rounded-card border-2 border-stroke bg-surface-2 p-4">
             <p className="text-body">
               {tag.usage} transaction{tag.usage === 1 ? '' : 's'} carry this tag. They stay as they are, without it.
             </p>

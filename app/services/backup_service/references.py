@@ -65,6 +65,10 @@ REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
         ("category_id", "categories"),
         ("interest_category_id", "categories"),
         ("tag_ids[]", "tags"),
+        # REC-34. A plan made from a purchase: that purchase (deferred - transactions come
+        # later) and the categories its payments are split across.
+        ("from_transaction", "transactions"),
+        ("category_shares[].category_id", "categories"),
     ),
     "subscriptions": (("recurring_rule_id", "recurring_rules"),),
     "savings_goals": (("account_id", "accounts"),),
@@ -82,6 +86,8 @@ REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
         ("cashback_of", "transactions"),
         ("pair_id", "transactions"),
         ("attachment_id", "attachments"),
+        # REC-34. The plan a hidden purchase became.
+        ("converted_to", "recurring_rules"),
     ),
     "attachments": (("transaction_id", "transactions"),),
 }

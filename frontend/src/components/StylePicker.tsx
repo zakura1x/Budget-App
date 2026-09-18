@@ -3,19 +3,24 @@
  *
  * The colour a category is given shows up in the ledger, the pie and the
  * budget bars, so it is stored data rather than theme - which is why these
- * twelve hex values live here and not in theme.css. They are picked to stay
- * apart from each other in both light and dark. They are stored per account
- * and category, so changing the accent (green to indigo, 2026-09-15) never
- * rewrites them.
+ * twelve hex values live here and not in theme.css. They are stored per
+ * account and category, so changing the palette never rewrites them.
+ *
+ * The neo-brutalist set (2026-09-18, user: "replace them"): bright, flat
+ * fills that carry a BLACK glyph and a black outline in every palette, light
+ * or dark - a colour is the tile's fill now, not a tint behind a coloured
+ * glyph. The order keeps the old roles (5 blue, 6 indigo, 8 pink, 3 green),
+ * which TransactionSheet's presets pick by index. Colours saved before keep
+ * working; they are only no longer offered.
  */
 import { GLYPH_NAMES, Glyph } from './Glyph';
 
-export const DEFAULT_COLOUR = '#E8734A';
+export const DEFAULT_COLOUR = '#FF7A59';
 
 export const PALETTE = [
-  DEFAULT_COLOUR, '#F2B544', '#8CA83D', '#3FA37A',
-  '#5BB3A6', '#4A90D9', '#5C6BC7', '#8B6FD4',
-  '#C86FB0', '#E05A8A', '#D64C40', '#6E7B8B',
+  DEFAULT_COLOUR, '#FFC53D', '#C6F04D', '#5FD68A',
+  '#4FD1C5', '#5AB8FF', '#8C9EFF', '#B98CFF',
+  '#FF8AD8', '#FF6B9A', '#FF5C5C', '#AEB6C2',
 ];
 
 export function ColourPicker({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
@@ -33,8 +38,8 @@ export function ColourPicker({ value, onChange }: { value: string; onChange: (he
             onClick={() => onChange(hex)}
             style={{ backgroundColor: hex }}
             className={[
-              'h-9 w-9 rounded-full transition',
-              selected ? 'ring-2 ring-ink ring-offset-2 ring-offset-surface' : 'active:scale-90',
+              'h-9 w-9 rounded-lg shadow-edge transition',
+              selected ? 'ring-2 ring-stroke ring-offset-4 ring-offset-surface' : 'active:scale-90',
             ].join(' ')}
           />
         );
@@ -66,10 +71,10 @@ export function IconPicker({
             aria-checked={selected}
             aria-label={name.replace(/-/g, ' ')}
             onClick={() => onChange(name)}
-            style={selected ? { backgroundColor: colour, color: '#fff' } : undefined}
+            style={selected ? { backgroundColor: colour } : undefined}
             className={[
-              'flex aspect-square items-center justify-center rounded-xl transition',
-              selected ? '' : 'bg-surface-2 text-ink-2 active:bg-line',
+              'flex aspect-square items-center justify-center rounded-lg shadow-edge transition',
+              selected ? 'text-black' : 'bg-surface text-ink-2 active:bg-surface-2',
             ].join(' ')}
           >
             <Glyph name={name} size={22} />
@@ -80,12 +85,12 @@ export function IconPicker({
   );
 }
 
-/** The rounded tile an account or category is shown by, in its own colour. */
+/** The outlined tile an account or category is shown by, filled with its own colour. */
 export function GlyphTile({ icon, colour, size = 40 }: { icon: string; colour: string; size?: number }) {
   return (
     <span
-      className="flex shrink-0 items-center justify-center rounded-xl"
-      style={{ width: size, height: size, backgroundColor: `${colour}1F`, color: colour }}
+      className="flex shrink-0 items-center justify-center rounded-lg text-black shadow-edge"
+      style={{ width: size, height: size, backgroundColor: colour }}
     >
       <Glyph name={icon} size={Math.round(size * 0.55)} />
     </span>

@@ -32,7 +32,7 @@ export function ForgotPassword() {
     }
   };
 
-  const back = <Link to="/login" className="font-semibold text-accent">Back to sign in</Link>;
+  const back = <Link to="/login" className="font-semibold text-accent-ink">Back to sign in</Link>;
 
   if (config && !config.password_reset_enabled) {
     return (

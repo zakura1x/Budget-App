@@ -3,7 +3,8 @@
  *
  * `progress` is the share of the budget USED, 0..1 (over 1 = overspent). The
  * tone follows the one colour rule of this app: ok -> warn -> danger, and
- * only money state ever uses those colours.
+ * only money state ever uses those colours. The track is outlined and the
+ * arc has square ends (the neo-brutalist look, 2026-09-18).
  */
 import type { ReactNode } from 'react';
 
@@ -32,7 +33,7 @@ export interface RingProps {
 
 export function Ring({ progress, size = 232, thickness = 18, tone, label, children }: RingProps) {
   const clamped = Math.min(Math.max(progress, 0), 1);
-  const radius = (size - thickness) / 2;
+  const radius = (size - thickness) / 2 - 2; // room for the outline
   const circumference = 2 * Math.PI * radius;
   const resolved = tone ?? toneFor(progress);
 
@@ -44,6 +45,7 @@ export function Ring({ progress, size = 232, thickness = 18, tone, label, childr
       aria-label={label ?? `${Math.round(clamped * 100)} percent of budget used`}
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={thickness + 4} className="stroke-stroke" />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={thickness} className="stroke-surface-2" />
         <circle
           cx={size / 2}
@@ -51,7 +53,6 @@ export function Ring({ progress, size = 232, thickness = 18, tone, label, childr
           r={radius}
           fill="none"
           strokeWidth={thickness}
-          strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - clamped)}
           className={`${STROKE[resolved]} transition-[stroke-dashoffset] duration-700 ease-ios`}

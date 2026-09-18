@@ -54,7 +54,7 @@ function typedFrom(amount: string): string {
 function ProgressBar({ used, over, warnAt = 0.8 }: { used: number; over: boolean; warnAt?: number }) {
   const tone = over ? 'bg-danger' : used >= warnAt ? 'bg-warn' : 'bg-ok';
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2 shadow-edge">
       <div className={`h-full rounded-full ${tone} transition-[width] duration-500 ease-ios`}
         style={{ width: `${Math.min(used, 1) * 100}%` }} />
     </div>
@@ -76,7 +76,7 @@ function BudgetGauge({ status }: { status: BudgetStatus }) {
         <span className="num text-title">{formatPHP(over ? a.remaining.slice(1) : a.remaining)}</span>
         <span className="num text-caption text-ink-3">{Math.round(used * 100)}% used</span>
       </Gauge>
-      <div className="mt-4 grid grid-cols-2 divide-x divide-line text-center">
+      <div className="mt-4 grid grid-cols-2 divide-x divide-stroke/80 text-center">
         <div>
           <p className="text-caption text-ink-3">Spent</p>
           <p className="num text-headline">{formatPHP(a.spent)}</p>
@@ -238,7 +238,7 @@ export function Budget() {
     <>
       <ScreenHeader
         title="Budget"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/')}>‹ Home</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/')}>‹ Home</button>}
       />
 
       {budget && current && <BudgetGauge status={current} />}
@@ -293,7 +293,7 @@ export function Budget() {
             <div className="flex flex-wrap gap-2">
               {WEEKDAYS.map((day, i) => (
                 <button key={day} type="button" onClick={() => setWeekStart(i + 1)} aria-pressed={weekStart === i + 1}
-                  className={`min-h-tap rounded-xl px-3 text-footnote font-medium ${weekStart === i + 1 ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2'}`}>
+                  className={`min-h-tap rounded-xl px-3 text-footnote font-medium ${weekStart === i + 1 ? 'bg-accent text-on-accent shadow-edge' : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2'}`}>
                   {day.slice(0, 3)}
                 </button>
               ))}
@@ -307,7 +307,7 @@ export function Budget() {
             <label className="text-footnote font-semibold text-ink-2">
               First day
               <input type="date" value={customAnchor} onChange={(e) => e.target.value && setCustomAnchor(e.target.value)}
-                className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink" />
+                className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
             </label>
           </div>
         )}
@@ -330,11 +330,11 @@ export function Budget() {
       </div>
 
       {categories.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-line px-4 py-3 text-footnote text-ink-2">
+        <p className="rounded-2xl border-2 border-dashed border-stroke/70 px-4 py-3 text-footnote text-ink-2">
           Add spending categories under More → Categories to share the budget out.
         </p>
       ) : (
-        <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+        <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
           {categories.map((category) => {
             const value = allocations[category.id] ?? '';
             const pesos = Math.floor(cents(value) / 100);

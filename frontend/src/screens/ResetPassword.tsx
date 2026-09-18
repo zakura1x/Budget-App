@@ -33,7 +33,7 @@ export function ResetPassword() {
     if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
   }, []);
 
-  const again = <Link to="/forgot" className="font-semibold text-accent">Send me a new link</Link>;
+  const again = <Link to="/forgot" className="font-semibold text-accent-ink">Send me a new link</Link>;
 
   if (!token || expired) {
     return (
@@ -42,7 +42,7 @@ export function ResetPassword() {
         subtitle={expired
           ? 'Reset links work once, for a short time. Ask for a new one - it only takes a moment.'
           : 'Open the link straight from the email, or ask for a new one.'}
-        footer={<Link to="/login" className="font-semibold text-accent">Back to sign in</Link>}
+        footer={<Link to="/login" className="font-semibold text-accent-ink">Back to sign in</Link>}
       >
         {again}
       </AuthLayout>

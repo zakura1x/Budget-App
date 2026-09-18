@@ -1,8 +1,8 @@
 """
 Stats (STA-01..STA-11) - every figure computed in Python over the working set.
 
-The expensive bugs this guards against: counting a transfer or a balance
-adjustment as spending, reading a category from anywhere but the splits,
+The expensive bugs this guards against: counting a transfer as spending (a
+balance adjustment IS counted here since 2026-09-18, as its own row), reading a category from anywhere but the splits,
 comparing a 31-day month against the last 31 days instead of the month before,
 and a forecast that multiplies a rounding error by thirty.
 """
@@ -117,7 +117,7 @@ def test_spending_comes_from_splits_and_rolls_up_for_the_drill_down(session, own
     assert (household.category_id, household.transaction_count) == (books.household, 1)
 
 
-def test_transfers_and_adjustments_are_neither_spending_nor_income(session, owner, books):
+def test_transfers_are_neither_and_an_unrecorded_loss_is_its_own_spending_row(session, owner, books):
     expense(session, owner, books, "100.00", "2026-09-02")
     income(session, owner, books, "20000.00", "2026-09-05")
     transaction_service.create_transaction(session, owner, {
@@ -129,10 +129,15 @@ def test_transfers_and_adjustments_are_neither_spending_nor_income(session, owne
         postings=transaction_service.postings(session, owner), today=TODAY,
     )
 
-    totals = month_of(session, owner).totals
+    overview = month_of(session, owner)
+    totals = overview.totals
     assert (str(totals.spent), str(totals.earned), str(totals.net), totals.transaction_count) == (
-        "100.00", "20000.00", "19900.00", 2)
+        "1000.00", "20000.00", "19000.00", 3)  # the transfer is nothing; the 900.00 loss is spending
     assert (str(totals.adjustment_losses), str(totals.adjustment_gains)) == ("900.00", "0.00")
+    loss = next(c for c in overview.categories if c.unrecorded)
+    assert (loss.category_id, str(loss.amount), loss.transaction_count, loss.children) == (None, "900.00", 1, ())
+    assert not any(c.unrecorded for c in overview.income_categories)
+    assert overview.merchants == [] or all(m.name for m in overview.merchants)  # an adjustment has no merchant
 
 
 def test_average_daily_spend_counts_the_days_so_far(session, owner, books):
@@ -246,7 +251,7 @@ def test_stats_through_the_api(api):
     assert (body["start"], body["end"], body["totals"]["spent"]) == ("2026-09-01", "2026-09-30", "300.00")
     assert body["categories"][0] == {"category_id": food, "amount": "300.00", "share": "1.0000",
                                      "transaction_count": 1, "previous_amount": "0.00", "direct": "300.00",
-                                     "children": []}
+                                     "children": [], "unrecorded": False}
     assert body["forecast"]["projected"] == "900.00"
     assert api.get("/stats/overview?span=decade").status_code == 422
 

@@ -12,7 +12,11 @@ import { ACCEPTED, attachReceipt, getReceipt, removeReceipt } from '../lib/attac
 import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 
-export function ReceiptControl({ transactionId, attachmentId }: { transactionId: number; attachmentId: number | null }) {
+export function ReceiptControl({ transactionId, attachmentId, readOnly = false }: {
+  transactionId: number; attachmentId: number | null;
+  /** REC-34: a plan shows the receipt of the purchase it replaced - to look at, not to change. */
+  readOnly?: boolean;
+}) {
   const [current, setCurrent] = useState<number | null>(attachmentId);
   const [url, setUrl] = useState<string | null>(null);
   const [kind, setKind] = useState<string>('');
@@ -80,7 +84,7 @@ export function ReceiptControl({ transactionId, attachmentId }: { transactionId:
   };
 
   return (
-    <div className="space-y-2 rounded-2xl bg-surface-2/60 p-3">
+    <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex-1 text-footnote font-semibold text-ink-2">{current ? 'Receipt attached' : 'Receipt'}</span>
         {current && (
@@ -88,10 +92,12 @@ export function ReceiptControl({ transactionId, attachmentId }: { transactionId:
             {showing ? 'Hide' : 'View'}
           </Button>
         )}
-        <Button variant="secondary" disabled={busy} onClick={() => input.current?.click()}>
-          {current ? 'Replace' : 'Attach photo or PDF'}
-        </Button>
-        {current && (
+        {!readOnly && (
+          <Button variant="secondary" disabled={busy} onClick={() => input.current?.click()}>
+            {current ? 'Replace' : 'Attach photo or PDF'}
+          </Button>
+        )}
+        {current && !readOnly && (
           <Button variant="ghost" className="text-danger" disabled={busy} onClick={() => void remove()}>
             Remove
           </Button>
@@ -99,7 +105,7 @@ export function ReceiptControl({ transactionId, attachmentId }: { transactionId:
       </div>
       <input ref={input} type="file" accept={ACCEPTED} className="hidden" onChange={(e) => void attach(e.target.files?.[0])} />
       {showing && url && (kind === 'application/pdf' ? (
-        <a href={url} target="_blank" rel="noreferrer" className="block text-footnote font-semibold text-accent">
+        <a href={url} target="_blank" rel="noreferrer" className="block text-footnote font-semibold text-accent-ink">
           Open the PDF
         </a>
       ) : (

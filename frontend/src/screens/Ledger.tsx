@@ -123,7 +123,7 @@ function FilterSheet({
   const pick = (key: 'account' | 'category' | 'tag', id: number) =>
     setDraft((d) => ({ ...d, [key]: d[key] === id ? undefined : id }));
   const chip = (selected: boolean) =>
-    `min-h-tap rounded-xl px-3 text-footnote font-medium transition ${selected ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2'}`;
+    `min-h-tap rounded-xl px-3 text-footnote font-medium transition ${selected ? 'bg-accent text-on-accent shadow-edge' : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2'}`;
 
   return (
     <Sheet open={open} onClose={onClose} title="Filter">
@@ -177,12 +177,12 @@ function FilterSheet({
           <label className="text-footnote font-semibold text-ink-2">
             From
             <input type="date" value={draft.from ?? ''} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value || undefined }))}
-              className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink" />
+              className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
           </label>
           <label className="text-footnote font-semibold text-ink-2">
             To
             <input type="date" value={draft.to ?? ''} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value || undefined }))}
-              className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink" />
+              className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
           </label>
         </div>
         <Button block size="lg" onClick={() => { onApply({ ...draft, q: filters.q }); onClose(); }}>
@@ -254,7 +254,7 @@ export function Ledger() {
     <>
       <ScreenHeader
         title="Transactions"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/')}>‹ Home</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/')}>‹ Home</button>}
         action={
           <Button variant="secondary" onClick={() => setFiltering(true)}>
             Filter{activeFilters ? ` · ${activeFilters}` : ''}
@@ -268,11 +268,11 @@ export function Ledger() {
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search merchants and notes"
         aria-label="Search transactions"
-        className="mb-3 min-h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-body outline-none placeholder:text-ink-3 focus:border-accent"
+        className="mb-3 min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3.5 text-body outline-none placeholder:text-ink-3 focus:shadow-[var(--lift)_var(--lift)_0_0_rgb(var(--c-shadow))]"
       />
 
       {error && (
-        <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+        <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
           {error}{' '}
           <button type="button" className="font-semibold underline" onClick={() => void load()}>
             Reload
@@ -301,7 +301,7 @@ export function Ledger() {
                 {totals && totals.earned !== '0.00' && `+${formatPHP(totals.earned)}`}
               </span>
             </h2>
-            <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+            <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
               {group.rows.map((row) => (
                 <SwipeRow
                   key={row.id}

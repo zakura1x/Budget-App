@@ -87,6 +87,21 @@ export function applyTheme(theme: string | undefined | null): void {
 
 const THEME_COOKIE = 'zbdgt_theme';
 
+const PALETTES = ['candy', 'lime', 'mono'];
+
+/**
+ * UX-05 (2026-09-18). The colour palette on <html>; classic is the default and
+ * is shown as no attribute at all. Unlike the light/dark word, the palette is
+ * NEVER remembered in the browser (invariant 10, user's decision the same
+ * day): it lives in the encrypted preferences, so sign-in and the lock screen
+ * of a reopened app show classic.
+ */
+export function applyPalette(palette: string | undefined | null): void {
+  const root = document.documentElement;
+  if (palette && PALETTES.includes(palette)) root.dataset.palette = palette;
+  else delete root.dataset.palette;
+}
+
 /**
  * Put the remembered theme on <html> before the first paint. The server does
  * this in the shell already; this covers a shell served from the service

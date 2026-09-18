@@ -372,8 +372,9 @@ so a projected salary cannot turn into a real transaction by accident
 ## 8. The screens
 
 Bottom tab bar, thumb-reachable, `[+]` centre and raised. Designed at 390 px.
-Since 2026-09-15 the tabs are Home · Accounts · [+] · Calendar · More, in the
-look of `sample_ui/` (lavender ground, white tiles, indigo accent).
+Since 2026-09-15 the tabs are Home · Accounts · [+] · Calendar · More. Since
+2026-09-18 the look is neo-brutalist - outlined tiles, hard shadows, mono
+figures - in four palettes (classic, candy, lime, mono), each light and dark.
 
 ```mermaid
 graph TD

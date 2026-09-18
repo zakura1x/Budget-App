@@ -141,6 +141,7 @@ class PreferencesIn(BaseModel):
     alert_warn_threshold_pct: Optional[int] = Field(default=None, ge=50, le=100)
     alert_pace_enabled: Optional[bool] = None
     theme: Optional[Literal["system", "light", "dark"]] = None  # UX-05
+    palette: Optional[Literal["classic", "candy", "lime", "mono"]] = None  # UX-05, 2026-09-18
     budget_period: Optional[PeriodKind] = None  # the default for a new budget
     month_start_day: Optional[int] = Field(default=None, ge=1, le=31)
     week_start_day: Optional[int] = Field(default=None, ge=1, le=7)

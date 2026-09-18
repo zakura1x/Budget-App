@@ -263,12 +263,12 @@ export function AccountDetail() {
     <>
       <header className="flex items-center gap-3 pb-3 pt-4">
         <button type="button" onClick={() => navigate('/accounts')} aria-label="Close"
-          className="flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-surface text-ink shadow-card active:bg-surface-2">
+          className="flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-surface text-ink press">
           <CloseIcon size={20} />
         </button>
         <h1 className="min-w-0 flex-1 truncate text-center text-headline">{account?.name ?? ' '}</h1>
         <button type="button" onClick={() => setEditing(true)} disabled={!account}
-          className="min-h-tap shrink-0 rounded-full bg-accent-soft px-4 text-body font-semibold text-accent active:scale-95 disabled:opacity-40">
+          className="min-h-tap shrink-0 press rounded-full bg-accent-soft px-4 text-body font-semibold text-accent-ink disabled:opacity-40">
           Edit
         </button>
       </header>
@@ -290,12 +290,12 @@ export function AccountDetail() {
               <div className="flex shrink-0 gap-2">
                 <button type="button" aria-label={`Add a transaction on ${account.name}`}
                   onClick={() => openSheet(undefined, undefined, { accountId: account.id })}
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-on-accent shadow-raised active:scale-95">
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-on-accent press">
                   <PlusIcon size={24} />
                 </button>
                 <button type="button" aria-label={`Transfer from ${account.name}`}
                   onClick={() => openSheet(undefined, undefined, { accountId: account.id, type: 'transfer' })}
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface text-accent shadow-card active:scale-95">
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface text-accent-ink press">
                   <TransferIcon size={22} />
                 </button>
               </div>
@@ -351,7 +351,7 @@ export function AccountDetail() {
               {account.valuations.length > 0 && ` ${format(parseISO(account.valuations[account.valuations.length - 1]!.on), 'd MMM')}`}
               {' · '}
               <span className="num font-semibold text-ink">{formatPHP(movedSince.amount)}</span>{' '}
-              {movedSince.inward ? 'moved in since' : 'taken out since'}
+              {movedSince.inward ? 'up since' : 'down since'}
             </p>
           )}
           {account.interest && !account.archived && (
@@ -387,8 +387,8 @@ export function AccountDetail() {
                       ? setPaying(openPlans[0])
                       : openSheet(undefined, undefined, action.preset)
                   }
-                  className={`min-h-tap rounded-full px-4 text-body font-semibold transition active:scale-[0.98] ${
-                    i === 0 ? 'bg-surface text-accent shadow-card' : 'bg-accent text-on-accent shadow-raised'
+                  className={`press min-h-tap rounded-xl px-4 text-body font-bold ${
+                    i === 0 ? 'bg-surface text-ink' : 'bg-accent text-on-accent'
                   }`}>
                   {action.label}
                 </button>
@@ -446,7 +446,7 @@ export function AccountDetail() {
       </div>
 
       {error && (
-        <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+        <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
           {error}{' '}
           <button type="button" className="font-semibold underline" onClick={() => void loadTrail(view === 'month')}>Try again</button>
         </p>
@@ -454,7 +454,7 @@ export function AccountDetail() {
 
       {rows === null && !error && <div className="skeleton h-48 rounded-card" aria-hidden="true" />}
       {rows && rows.length === 0 && (
-        <p className="rounded-2xl border border-dashed border-line px-4 py-3 text-footnote text-ink-2">
+        <p className="rounded-2xl border-2 border-dashed border-stroke/70 px-4 py-3 text-footnote text-ink-2">
           Nothing has moved in or out of this account yet.
         </p>
       )}
@@ -462,11 +462,11 @@ export function AccountDetail() {
       {view === 'day' &&
         days.map((d) => (
           <section key={d.key} className="mb-3 overflow-hidden rounded-card bg-surface shadow-card">
-            <div className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-2.5">
+            <div className="flex items-baseline justify-between gap-2 border-b border-stroke/40 px-4 py-2.5">
               <span className="text-footnote font-semibold">{format(parseISO(d.key), 'EEE, MMM d')}</span>
               <InOut rows={d.rows} />
             </div>
-            <div className="divide-y divide-line">
+            <div className="divide-y divide-stroke/80">
               {d.rows.map((row) => (
                 <button key={row.id} type="button" onClick={() => openSheet(row)} className="block w-full transition active:bg-surface-2">
                   <TransactionRow row={row} lookups={lookups} accountId={accountId} />
@@ -488,7 +488,7 @@ export function AccountDetail() {
                   {m.rows.length} transaction{m.rows.length === 1 ? '' : 's'}
                 </span>
               </div>
-              <div className="mt-3 grid grid-cols-3 divide-x divide-line text-center">
+              <div className="mt-3 grid grid-cols-3 divide-x divide-stroke/80 text-center">
                 <div>
                   <p className="text-caption text-ok">IN</p>
                   <p className="num text-footnote font-semibold">{formatPHP(fromCentavos(inward))}</p>
@@ -522,7 +522,14 @@ export function AccountDetail() {
         </p>
       )}
 
-      <AccountSheet open={editing} account={account} onClose={() => setEditing(false)} onSaved={() => void loadAccount()} />
+      <AccountSheet open={editing} account={account} onClose={() => setEditing(false)}
+        onSaved={() => {
+          // A typed balance may have written an unrecorded gain or loss (ACC-29): the trail and
+          // every other figure (Home, Stats) must show it, not only this banner.
+          void loadAccount();
+          void loadTrail(view === 'month');
+          useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+        }} />
       <StatementSheet open={checking} account={checking ? account : null} onClose={() => setChecking(false)}
         onChanged={() => { void loadAccount(); void loadTrail(view === 'month'); }} />
     </>

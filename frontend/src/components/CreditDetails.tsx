@@ -24,7 +24,7 @@ const TEXT: Record<Tone, string> = { ok: 'text-ink-2', warn: 'text-warn', danger
 
 function Bar({ percent, className, colour }: { percent: number; className?: string; colour?: string }) {
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2 shadow-edge">
       <div
         className={`h-full rounded-full transition-[width] duration-500 ease-ios ${className ?? ''}`}
         style={{ width: `${Math.min(100, Math.max(0, percent))}%`, ...(colour ? { backgroundColor: colour } : {}) }}
@@ -99,7 +99,7 @@ function OwnLimit({ credit }: { credit: Credit }) {
 
 function statementAction(credit: Credit): { label: string; className: string } {
   const difference = credit.bill.difference;
-  if (difference === null) return { label: 'Check statement', className: 'bg-accent-soft text-accent' };
+  if (difference === null) return { label: 'Check statement', className: 'bg-accent-soft text-accent-ink' };
   if (isZero(difference)) return { label: '✓ Statement matches the bank', className: 'bg-ok/10 text-ok' };
   return { label: `Statement differs by ${formatPHP(difference.replace(/^-/, ''))}`, className: 'bg-warn/10 text-warn' };
 }
@@ -141,7 +141,7 @@ export function CreditDetails({ account, onCheck }: { account: Account; onCheck:
       <button
         type="button"
         onClick={onCheck}
-        className={`min-h-tap rounded-full px-4 text-footnote font-semibold transition active:scale-[0.98] ${action.className}`}
+        className={`press min-h-tap rounded-xl px-4 text-footnote font-bold ${action.className}`}
       >
         {action.label}
       </button>

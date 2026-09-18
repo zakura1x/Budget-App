@@ -43,7 +43,7 @@ export function Tags() {
     <>
       <ScreenHeader
         title="Tags"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
         action={
           <Button onClick={() => open(null)} aria-label="Add tag">
             <PlusIcon size={20} />
@@ -53,7 +53,7 @@ export function Tags() {
       />
 
       {error && (
-        <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+        <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
           {error}{' '}
           <button type="button" className="font-semibold underline" onClick={() => void load()}>
             Try again
@@ -75,7 +75,7 @@ export function Tags() {
       )}
 
       {tags && tags.length > 0 && (
-        <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+        <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
           {tags.map((tag) => (
             <button
               key={tag.id}

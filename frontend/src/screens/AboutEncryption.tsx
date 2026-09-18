@@ -28,7 +28,7 @@ export function AboutEncryption() {
     <>
       <ScreenHeader
         title="Your encryption"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate(-1)}>‹ Back</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate(-1)}>‹ Back</button>}
       />
 
       <Section title="What is protected">

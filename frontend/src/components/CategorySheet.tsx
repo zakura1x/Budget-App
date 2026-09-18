@@ -136,7 +136,7 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
         )}
 
         {editing && hasChildren && (
-          <p className="rounded-2xl bg-surface-2 px-4 py-3 text-footnote text-ink-2">
+          <p className="rounded-card border-2 border-stroke bg-surface-2 px-4 py-3 text-footnote text-ink-2">
             {category?.children.length} sub-categories sit under this one. Deleting it deletes them too.
           </p>
         )}
@@ -154,7 +154,7 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
         {pendingUsage === null ? (
           // Pinned to the bottom of the sheet: the icon grid is long, and below it Save and Delete
           // were out of sight - on a PC window the editor looked as if it had no buttons.
-          <div className="sticky -bottom-4 -mx-5 space-y-1 border-t border-line bg-surface px-5 pb-6 pt-3">
+          <div className="sticky -bottom-4 -mx-5 space-y-1 border-t border-stroke/40 bg-surface px-5 pb-6 pt-3">
             {error && <p className="pb-1 text-footnote text-danger">{error}</p>}
             <Button block size="lg" onClick={() => void save()} disabled={busy || !name.trim()}>
               {editing ? 'Save changes' : 'Add category'}
@@ -166,7 +166,7 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
             )}
           </div>
         ) : (
-          <div className="space-y-3 rounded-2xl bg-surface-2 p-4">
+          <div className="space-y-3 rounded-card border-2 border-stroke bg-surface-2 p-4">
             {error && <p className="text-footnote text-danger">{error}</p>}
             <p className="text-body">
               {pendingUsage} transaction{pendingUsage === 1 ? '' : 's'} use this category. Where should they go?
@@ -179,7 +179,7 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
                   onClick={() => setMoveTo(option.id)}
                   className={[
                     'flex min-h-tap w-full items-center gap-3 rounded-xl px-3 text-left transition',
-                    moveTo === option.id ? 'bg-accent-soft text-accent' : 'active:bg-line',
+                    moveTo === option.id ? 'bg-accent-soft text-accent-ink' : 'active:bg-line',
                   ].join(' ')}
                 >
                   <GlyphTile icon={option.icon} colour={option.colour} size={32} />
@@ -216,7 +216,7 @@ function Chip({ selected, onClick, children }: { selected: boolean; onClick: () 
       aria-pressed={selected}
       className={[
         'min-h-tap rounded-xl px-3.5 text-footnote font-medium transition',
-        selected ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2 active:bg-line',
+        selected ? 'bg-accent text-on-accent shadow-edge' : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2',
       ].join(' ')}
     >
       {children}

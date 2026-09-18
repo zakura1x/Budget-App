@@ -41,7 +41,7 @@ const SWIPE_PX = 60;
 
 /** Static, so Tailwind sees every class. */
 const LEVEL: Record<number, string> = {
-  0: 'bg-surface-2/60 text-ink',
+  0: 'bg-surface text-ink',
   1: 'bg-accent/15 text-ink',
   2: 'bg-accent/35 text-ink',
   3: 'bg-accent/65 text-on-accent',
@@ -98,7 +98,7 @@ function DaySheet({ day, onClose }: { day: CalendarDay | null; onClose: () => vo
           {error && <p className="text-footnote text-danger">{error}</p>}
           {rows === null && !error && <div className="skeleton h-28 rounded-card" aria-hidden="true" />}
           {rows && rows.length > 0 && (
-            <div className="divide-y divide-line overflow-hidden rounded-card bg-surface-2/40">
+            <div className="divide-y divide-stroke/80 overflow-hidden rounded-card border-2 border-stroke bg-surface-2">
               {rows.map((row) => (
                 <button key={row.id} type="button" onClick={() => open(row)} className="block w-full transition active:bg-surface-2">
                   <TransactionRow row={row} lookups={lookups} />
@@ -146,7 +146,7 @@ function MonthList({ month, spent, earned }: { month: Date; spent: string; earne
 
   return (
     <>
-      <Card className="mt-4 grid grid-cols-3 divide-x divide-line py-3 text-center">
+      <Card className="mt-4 grid grid-cols-3 divide-x divide-stroke/80 py-3 text-center">
         <div>
           <p className="text-caption text-ink-3">Income</p>
           <p className="num text-footnote font-semibold text-ok">{formatPHP(earned)}</p>
@@ -163,7 +163,7 @@ function MonthList({ month, spent, earned }: { month: Date; spent: string; earne
 
       {page === null && <div className="skeleton mt-3 h-40 rounded-card" aria-hidden="true" />}
       {page && page.items.length === 0 && (
-        <p className="mt-3 rounded-2xl border border-dashed border-line px-4 py-3 text-footnote text-ink-2">
+        <p className="mt-3 rounded-2xl border-2 border-dashed border-stroke/70 px-4 py-3 text-footnote text-ink-2">
           Nothing recorded this month.
         </p>
       )}
@@ -177,7 +177,7 @@ function MonthList({ month, spent, earned }: { month: Date; spent: string; earne
                 <span className="num text-caption text-ink-3">{formatPHP(total.spent)} spent</span>
               )}
             </div>
-            <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+            <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
               {group.rows.map((row) => (
                 <button key={row.id} type="button" onClick={() => row.id > 0 && openSheet(row)}
                   className="block w-full transition active:bg-surface-2">
@@ -240,18 +240,18 @@ export function Calendar() {
         action={
           <div className="flex gap-1">
             <button type="button" aria-label="Previous month" onClick={() => go(-1)}
-              className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 shadow-card active:bg-surface-2">
+              className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 press">
               ‹
             </button>
             <button type="button" aria-label="Next month" onClick={() => go(1)}
-              className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 shadow-card active:bg-surface-2">
+              className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 press">
               ›
             </button>
           </div>
         }
       />
 
-      {error && <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
 
       <Card
         className="touch-pan-y px-2.5"
@@ -289,12 +289,12 @@ export function Calendar() {
                 onClick={() => day && setChosen(day)}
                 aria-label={`${format(d, 'EEEE d MMMM')}${spent ? `, ${formatPHP(day.spent)} spent` : ''}`}
                 className={[
-                  'num flex aspect-square flex-col items-center justify-start rounded-xl pt-1.5 transition active:scale-95',
+                  'num flex aspect-square flex-col items-center justify-start rounded-lg pt-1.5 shadow-edge transition active:translate-x-px active:translate-y-px',
                   day ? LEVEL[day.level] : LEVEL[0],
                 ].join(' ')}
               >
                 <span
-                  className={`text-footnote ${isToday(d) ? 'rounded-full bg-highlight px-1.5 font-bold text-on-highlight' : 'font-medium'}`}
+                  className={`text-footnote ${isToday(d) ? 'rounded bg-highlight px-1.5 font-bold text-on-highlight shadow-edge' : 'font-medium'}`}
                   aria-current={isToday(d) ? 'date' : undefined}
                 >
                   {format(d, 'd')}

@@ -50,9 +50,12 @@ import {
   type EntryType,
   type TransactionDraft,
 } from '../lib/transactions';
+import { convertPurchase, createPurchaseWithPlan } from '../lib/recurring';
 import { listTags, type Tag } from '../lib/tags';
+import { useBudgetStore } from '../stores/budgetStore';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore, type RuleSheetRequest } from '../stores/uiStore';
+import { EMPTY_CHOICE, InstallmentFields, termsOf, type InstallmentChoice } from './InstallmentFields';
 import { ReceiptControl } from './ReceiptControl';
 import { DEFAULT_COLOUR, GlyphTile, PALETTE } from './StylePicker';
 import { Button } from './ui/Button';
@@ -98,9 +101,10 @@ function Chip({
       aria-pressed={selected}
       className={[
         'flex min-h-tap shrink-0 items-center gap-2 rounded-xl px-3 text-footnote font-medium transition',
-        selected ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2 active:bg-line',
+        // A stored colour is a bright fill made for a black label (StylePicker's set, 2026-09-18).
+        selected ? `${colour ? 'text-black' : 'bg-accent text-on-accent'} font-bold shadow-edge` : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2',
       ].join(' ')}
-      style={selected && colour ? { backgroundColor: colour, color: '#fff' } : undefined}
+      style={selected && colour ? { backgroundColor: colour } : undefined}
     >
       {children}
     </button>
@@ -146,7 +150,7 @@ function RepeatingChoices({
   return (
     <div className="space-y-2 pb-2">
       <p className="px-1 text-footnote text-ink-2">Set it up once — it records itself on its day, and shows in Months ahead.</p>
-      <div className="divide-y divide-line overflow-hidden rounded-card bg-surface-2/60">
+      <div className="divide-y divide-stroke/80 overflow-hidden rounded-card border-2 border-stroke bg-surface-2">
         {choices.map((choice) => (
           <button key={choice.title} type="button" onClick={() => onChoose(choice.request)}
             className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left transition active:bg-line">
@@ -195,6 +199,10 @@ export function TransactionSheet() {
   const [cashbackCategory, setCashbackCategory] = useState<number | null>(null);
   const [cashbackRate, setCashbackRate] = useState<string | null>(null);
   const [showCashback, setShowCashback] = useState(false);
+  /** REC-34. This purchase paid in installments instead: the plan replaces it. */
+  const [showPlan, setShowPlan] = useState(false);
+  const [plan, setPlan] = useState<InstallmentChoice>(EMPTY_CHOICE);
+  const [planReady, setPlanReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -203,6 +211,9 @@ export function TransactionSheet() {
     if (!open) return;
     setError(null);
     setBusy(false);
+    setShowPlan(false);
+    setPlan(EMPTY_CHOICE);
+    setPlanReady(false);
     const controller = new AbortController();
     Promise.all([listAccounts(controller.signal), listCategories(controller.signal), listTags(controller.signal)])
       .then(([accountList, categories, tagList]) => {
@@ -356,7 +367,13 @@ export function TransactionSheet() {
     if (categoryId === null) return 'Choose a category';
     return null;
   })();
-  const canSave = !busy && problem === null && (!splitting || kind === 'transfer' || remaining === 0);
+  // REC-34. Only a purchase on a card or a loan can be spread - and not one that is already a plan's payment.
+  const spreadable = kind === 'expense'
+    && ['credit', 'borrowed'].includes(accounts.find((a) => a.id === accountId)?.type ?? '')
+    && (!editing || (editing.id > 0 && editing.recurring_id == null));
+  const spreading = showPlan && spreadable;
+  const canSave = !busy && problem === null && (!splitting || kind === 'transfer' || remaining === 0)
+    && (!spreading || planReady);
 
   const draft = (): TransactionDraft => {
     const base = { type: kind, amount, account_id: accountId as number, txn_date: txnDate, notes: note.trim() || null };
@@ -390,9 +407,37 @@ export function TransactionSheet() {
     return { ...withCashback, category_id: categoryId as number };
   };
 
+  /** Everything that shows money reloads: the plan posted payments and hid the purchase. */
+  const refreshMoney = () => {
+    useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+    void useLedgerStore.getState().load();
+    void useBudgetStore.getState().load(null);
+  };
+
   const save = async () => {
     if (!canSave) return;
     const body = draft();
+
+    if (spreading) {
+      // REC-34. Not optimistic: the purchase becomes a plan, and the server decides what posts.
+      setBusy(true);
+      setError(null);
+      try {
+        if (editing) {
+          await updateTransaction(editing.id, body); // any edit first, so the plan takes the purchase as shown
+          await convertPurchase(editing.id, termsOf(plan));
+        } else {
+          const { cashback: _dropped, ...purchase } = body as TransactionDraft & { cashback?: unknown };
+          await createPurchaseWithPlan(purchase, termsOf(plan));
+        }
+        refreshMoney();
+        close();
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
+        setBusy(false);
+      }
+      return;
+    }
 
     if (!editing) {
       // Optimistic: the row is in the ledger before the server has answered.
@@ -492,7 +537,7 @@ export function TransactionSheet() {
             {[chosen?.name, editing.txn_date].filter(Boolean).join(' · ')}
           </p>
           {editing.notes && <p className="text-center text-body">{editing.notes}</p>}
-          <p className="rounded-2xl bg-surface-2 px-4 py-3 text-footnote text-ink-2">
+          <p className="rounded-card border-2 border-stroke bg-surface-2 px-4 py-3 text-footnote text-ink-2">
             Recorded when you set this account’s balance. It moves the balance only — your budget stays the same —
             and it can’t be edited; delete it and set the balance again.
           </p>
@@ -562,7 +607,7 @@ export function TransactionSheet() {
               type="button"
               onClick={() => void repeat()}
               disabled={busy}
-              className="min-h-tap rounded-xl px-3 text-footnote font-semibold text-accent active:bg-accent/10"
+              className="min-h-tap rounded-xl px-3 text-footnote font-semibold text-accent-ink active:bg-accent/10"
             >
               ↻ Repeat last entry
             </button>
@@ -572,11 +617,11 @@ export function TransactionSheet() {
         {kind === 'transfer' ? (
           <div className="space-y-2">
             <p className="text-footnote font-semibold text-ink-2">From</p>
-            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5">
+            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
               {accountChips(accountId, setAccountId)}
             </div>
             <p className="text-footnote font-semibold text-ink-2">To</p>
-            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5">
+            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
               {accountChips(counterId, setCounterId, accountId)}
             </div>
           </div>
@@ -584,7 +629,7 @@ export function TransactionSheet() {
           <>
             {!splitting && (
               <>
-                <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Category">
+                <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1" role="group" aria-label="Category">
                   {mains.map((c) => (
                     <Chip key={c.id} selected={mainId === c.id} onClick={() => setCategoryId(c.id)} colour={c.colour}>
                       {mainId !== c.id && <GlyphTile icon={c.icon} colour={c.colour} size={24} />}
@@ -596,7 +641,7 @@ export function TransactionSheet() {
                   )}
                 </div>
                 {subs.length > 0 && (
-                  <div className="no-scrollbar -mx-5 flex items-center gap-2 overflow-x-auto px-5"
+                  <div className="no-scrollbar -mx-5 flex items-center gap-2 overflow-x-auto px-5 py-1"
                     role="group" aria-label={`In ${main?.name}`}>
                     <span className="shrink-0 text-footnote text-ink-3" aria-hidden="true">↳</span>
                     {subs.map((c) => (
@@ -615,7 +660,7 @@ export function TransactionSheet() {
                 )}
               </>
             )}
-            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Account">
+            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1" role="group" aria-label="Account">
               {accountChips(accountId, setAccountId)}
             </div>
             {limitHint && (
@@ -632,29 +677,35 @@ export function TransactionSheet() {
             value={txnDate}
             onChange={(e) => e.target.value && setTxnDate(e.target.value)}
             aria-label="Date"
-            className="min-h-tap rounded-xl bg-surface-2 px-3 text-footnote font-medium text-ink"
+            className="min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-footnote font-medium text-ink"
           />
           {!showNote && (
             <button type="button" onClick={() => setShowNote(true)}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent active:bg-accent/10">
+              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
               Add note
             </button>
           )}
           {kind !== 'transfer' && tags.length > 0 && !showTags && (
             <button type="button" onClick={() => setShowTags(true)}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent active:bg-accent/10">
+              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
               Tags
             </button>
           )}
           {kind !== 'transfer' && !splitting && (
             <button type="button" onClick={startSplit}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent active:bg-accent/10">
+              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
               Split
             </button>
           )}
-          {kind === 'expense' && !showCashback && incomeCategories.length > 0 && (
+          {spreadable && !showPlan && (
+            <button type="button" onClick={() => setShowPlan(true)}
+              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
+              Installments
+            </button>
+          )}
+          {kind === 'expense' && !showCashback && !spreading && incomeCategories.length > 0 && (
             <button type="button" onClick={openCashback}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent active:bg-accent/10">
+              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
               {suggestion && suggestion !== '0.00'
                 ? `Cashback ${formatPHP(suggestion)}`
                 : 'Cashback'}
@@ -663,7 +714,7 @@ export function TransactionSheet() {
         </div>
 
         {kind !== 'transfer' && showTags && tags.length > 0 && (
-          <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="Tags">
+          <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1" role="group" aria-label="Tags">
             {tags.map((t) => {
               const on = tagIds.includes(t.id);
               return (
@@ -677,8 +728,19 @@ export function TransactionSheet() {
           </div>
         )}
 
-        {kind === 'expense' && showCashback && (
-          <div className="space-y-2 rounded-2xl bg-surface-2 p-3" role="group" aria-label="Cashback">
+        {spreading && accountId !== null && (
+          <div className="space-y-1">
+            <InstallmentFields accountId={accountId} amount={amount} txnDate={txnDate}
+              cardPostedOn={editing?.card_posted_on ?? null} choice={plan} onChange={setPlan}
+              onPreview={(found) => setPlanReady(found !== null)} />
+            <button type="button" onClick={() => setShowPlan(false)} className="min-h-tap text-footnote text-ink-2">
+              Pay it in one go
+            </button>
+          </div>
+        )}
+
+        {kind === 'expense' && showCashback && !spreading && (
+          <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 p-3" role="group" aria-label="Cashback">
             <div className="flex items-center gap-2">
               <span className="shrink-0 text-footnote font-semibold text-ink-2">Cashback</span>
               <input
@@ -692,7 +754,7 @@ export function TransactionSheet() {
               {suggestion && suggestion !== '0.00' && cents(cashback) !== cents(suggestion) && (
                 <button type="button"
                   onClick={() => { setCashback(typedFrom(suggestion)); setCashbackRate(cashbackRule?.rate ?? null); }}
-                  className="min-h-11 rounded-xl px-2 text-footnote font-medium text-accent active:bg-accent/10">
+                  className="min-h-11 rounded-xl px-2 text-footnote font-medium text-accent-ink active:bg-accent/10">
                   {formatPHP(suggestion)} ({Number(cashbackRule?.rate)}%)
                 </button>
               )}
@@ -706,7 +768,7 @@ export function TransactionSheet() {
                 value={cashbackCategory ?? ''}
                 onChange={(e) => setCashbackCategory(Number(e.target.value) || null)}
                 aria-label="Cashback category"
-                className="min-h-11 min-w-0 flex-1 rounded-xl bg-surface px-2 text-footnote"
+                className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
               >
                 <option value="">Category…</option>
                 {incomeCategories.map((c) => (
@@ -717,7 +779,7 @@ export function TransactionSheet() {
                 value={cashbackTo ?? accountId ?? ''}
                 onChange={(e) => setCashbackTo(Number(e.target.value) || null)}
                 aria-label="Cashback lands in"
-                className="min-h-11 min-w-0 flex-1 rounded-xl bg-surface px-2 text-footnote"
+                className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
               >
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.name}</option>
@@ -728,7 +790,7 @@ export function TransactionSheet() {
                 value={cashbackOn ?? txnDate}
                 onChange={(e) => e.target.value && setCashbackOn(e.target.value)}
                 aria-label="Cashback lands on"
-                className="min-h-11 rounded-xl bg-surface px-2 text-footnote"
+                className="min-h-11 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
               />
             </div>
             <p className="text-caption text-ink-3">
@@ -745,12 +807,12 @@ export function TransactionSheet() {
             maxLength={500}
             placeholder="Note"
             aria-label="Note"
-            className="min-h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-body outline-none focus:border-accent"
+            className="min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3.5 text-body outline-none focus:shadow-[var(--lift)_var(--lift)_0_0_rgb(var(--c-shadow))]"
           />
         )}
 
         {splitting && kind !== 'transfer' && (
-          <div className="space-y-2 rounded-2xl bg-surface-2 p-3">
+          <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 p-3">
             {lines.map((line) => (
               <div key={line.key} className="flex items-center gap-2">
                 <select
@@ -792,7 +854,7 @@ export function TransactionSheet() {
               <button
                 type="button"
                 onClick={() => setLines((ls) => [...ls, { key: Date.now(), category_id: null, amount: remaining > 0 ? fromCentavos(remaining) : '' }])}
-                className="min-h-tap text-footnote font-semibold text-accent"
+                className="min-h-tap text-footnote font-semibold text-accent-ink"
               >
                 + Add a line
               </button>
@@ -819,7 +881,9 @@ export function TransactionSheet() {
         {error && <p className="text-footnote text-danger">{error}</p>}
 
         <Button block size="lg" onClick={() => void save()} disabled={!canSave}>
-          {problem ?? (editing ? 'Save changes' : 'Save')}
+          {problem ?? (spreading
+            ? `${editing ? 'Convert to' : 'Save as'} ${plan.payments} monthly payment${plan.payments === 1 ? '' : 's'}`
+            : editing ? 'Save changes' : 'Save')}
         </Button>
 
         {editing && editing.id > 0 && (

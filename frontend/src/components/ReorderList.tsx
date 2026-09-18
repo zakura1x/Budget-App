@@ -151,7 +151,7 @@ export function ReorderList<T>({ items, idOf, renderItem, onReorder, label }: Re
   };
 
   return (
-    <ul aria-label={label} className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+    <ul aria-label={label} className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
       {order.map((item) => {
         const id = idOf(item);
         const lifted = liftedId === id;
@@ -194,7 +194,7 @@ export function ReorderList<T>({ items, idOf, renderItem, onReorder, label }: Re
             style={{ touchAction: 'pan-y' }}
             className={[
               'bg-surface transition-shadow',
-              lifted ? 'relative z-10 scale-[1.02] shadow-sheet' : '',
+              lifted ? 'relative z-10 scale-[1.02] shadow-raised' : '',
             ].join(' ')}
           >
             {renderItem(item, grip, lifted)}

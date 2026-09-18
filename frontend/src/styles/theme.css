@@ -1,74 +1,253 @@
 /*
- * Colour tokens - lavender ground, white rounded tiles, an indigo accent
- * (the look of sample_ui/, adopted 2026-09-15).
+ * Colour tokens - neo-brutalism in four palettes, each light and dark
+ * (UX-05, the user's redesign of 2026-09-18; replaces the lavender look of
+ * 2026-09-15).
  *
  * Values are bare "R G B" triplets so Tailwind can apply opacity
- * (bg-accent/10). Light is the default; dark follows the system unless the
- * user has chosen explicitly, which sets data-theme on <html> (Settings,
- * Phase 8b).
+ * (bg-accent/10). Two switches on <html> pick them:
+ *
+ *   data-palette  classic | candy | lime | mono - absent means classic. Set
+ *                 from the preferences after unlock and NEVER remembered in
+ *                 the browser (invariant 10), so sign-in and the lock screen
+ *                 of a reopened app show classic.
+ *   data-theme    light | dark - absent follows the device. The one value the
+ *                 zbdgt_theme cookie may hold.
+ *
+ * A palette defines its light values as --l-* and its dark values as --d-*;
+ * the two mode rules at the bottom map them onto the --c-* tokens, so each
+ * palette is written once and the light/dark switch is written once. The
+ * attribute works on any element, not only <html>: Settings previews every
+ * palette by putting it on a swatch.
  *
  * Money states use ok -> warn -> danger, and nothing else uses those three -
- * so green, amber and red always mean the same thing in this app.
+ * so green, amber and red always mean the same thing in this app. They are
+ * the SAME in every palette (user, 2026-09-18): a theme changes the look,
+ * never what a colour says about money.
  *
  * `highlight` marks WHERE you are - today on the calendar, the chosen period -
  * and is never used for an amount, so it cannot be read as the amber of warn.
+ *
+ * `stroke` is the outline every tile, sheet and control is drawn with and
+ * `shadow` the hard offset shadow under it; `accent-ink` is the accent when it
+ * is TEXT, because a pink or lime fill does not read as letters on white.
  */
 
+/* ---- Shape: the same in every palette ---------------------------------- */
 :root {
+  --bw: 2px; /* outline width */
+  --lift: 4px; /* how far the hard shadow sits below and right */
+  --edge: 0 0 0 var(--bw) rgb(var(--c-stroke)); /* the outline, as a box-shadow */
+}
+
+/* ---- Classic: cream paper, black ink, a cobalt accent (the default) ---- */
+:root,
+[data-palette='classic'] {
+  --l-bg: 246 241 228;
+  --l-surface: 255 253 247;
+  --l-surface-2: 238 232 214;
+  --l-ink: 20 19 17;
+  --l-ink-2: 82 78 70;
+  --l-ink-3: 128 123 112;
+  --l-line: 196 188 168;
+  --l-stroke: 20 19 17;
+  --l-shadow: 20 19 17;
+  --l-accent: 58 80 230;
+  --l-accent-soft: 221 226 255;
+  --l-accent-ink: 46 66 204;
+  --l-on-accent: 255 255 255;
+  --l-highlight: 255 214 77;
+  --l-on-highlight: 20 19 17;
+
+  --d-bg: 20 19 17;
+  --d-surface: 33 31 28;
+  --d-surface-2: 47 45 40;
+  --d-ink: 246 241 228;
+  --d-ink-2: 192 186 172;
+  --d-ink-3: 134 129 118;
+  --d-line: 78 74 66;
+  --d-stroke: 236 230 214;
+  --d-shadow: 125 145 255;
+  --d-accent: 125 145 255;
+  --d-accent-soft: 40 46 92;
+  --d-accent-ink: 150 166 255;
+  --d-on-accent: 12 14 30;
+  --d-highlight: 240 200 70;
+  --d-on-highlight: 20 19 17;
+}
+
+/* ---- Candy: cyan ground, pink accent ------------------------------------ */
+[data-palette='candy'] {
+  --l-bg: 192 247 254;
+  --l-surface: 255 255 255;
+  --l-surface-2: 226 250 254;
+  --l-ink: 17 17 17;
+  --l-ink-2: 62 72 78;
+  --l-ink-3: 112 124 130;
+  --l-line: 150 206 214;
+  --l-stroke: 17 17 17;
+  --l-shadow: 17 17 17;
+  --l-accent: 254 144 232;
+  --l-accent-soft: 255 224 248;
+  --l-accent-ink: 170 22 142;
+  --l-on-accent: 17 17 17;
+  --l-highlight: 247 203 70;
+  --l-on-highlight: 17 17 17;
+
+  --d-bg: 22 16 30;
+  --d-surface: 37 29 47;
+  --d-surface-2: 52 42 64;
+  --d-ink: 250 240 250;
+  --d-ink-2: 202 188 208;
+  --d-ink-3: 142 130 150;
+  --d-line: 82 68 96;
+  --d-stroke: 240 228 242;
+  --d-shadow: 254 144 232;
+  --d-accent: 254 144 232;
+  --d-accent-soft: 72 36 66;
+  --d-accent-ink: 255 160 236;
+  --d-on-accent: 17 17 17;
+  --d-highlight: 247 203 70;
+  --d-on-highlight: 17 17 17;
+}
+
+/* ---- Lime: white paper, black grid, one lime accent ---------------------- */
+[data-palette='lime'] {
+  --l-bg: 243 243 238;
+  --l-surface: 255 255 255;
+  --l-surface-2: 234 234 227;
+  --l-ink: 12 12 12;
+  --l-ink-2: 72 72 68;
+  --l-ink-3: 126 126 118;
+  --l-line: 200 200 190;
+  --l-stroke: 12 12 12;
+  --l-shadow: 12 12 12;
+  --l-accent: 204 242 0;
+  --l-accent-soft: 240 252 196;
+  --l-accent-ink: 12 12 12;
+  --l-on-accent: 12 12 12;
+  --l-highlight: 204 242 0;
+  --l-on-highlight: 12 12 12;
+
+  --d-bg: 12 12 12;
+  --d-surface: 25 25 24;
+  --d-surface-2: 38 38 36;
+  --d-ink: 242 242 236;
+  --d-ink-2: 172 172 164;
+  --d-ink-3: 118 118 110;
+  --d-line: 66 66 62;
+  --d-stroke: 236 236 228;
+  --d-shadow: 204 242 0;
+  --d-accent: 204 242 0;
+  --d-accent-soft: 44 52 10;
+  --d-accent-ink: 214 248 60;
+  --d-on-accent: 12 12 12;
+  --d-highlight: 204 242 0;
+  --d-on-highlight: 12 12 12;
+}
+
+/* ---- Mono: black and white, nothing else but money ---------------------- */
+[data-palette='mono'] {
+  --l-bg: 232 232 232;
+  --l-surface: 255 255 255;
+  --l-surface-2: 240 240 240;
+  --l-ink: 0 0 0;
+  --l-ink-2: 68 68 68;
+  --l-ink-3: 118 118 118;
+  --l-line: 190 190 190;
+  --l-stroke: 0 0 0;
+  --l-shadow: 0 0 0;
+  --l-accent: 0 0 0;
+  --l-accent-soft: 222 222 222;
+  --l-accent-ink: 0 0 0;
+  --l-on-accent: 255 255 255;
+  --l-highlight: 0 0 0;
+  --l-on-highlight: 255 255 255;
+
+  --d-bg: 0 0 0;
+  --d-surface: 20 20 20;
+  --d-surface-2: 34 34 34;
+  --d-ink: 245 245 245;
+  --d-ink-2: 176 176 176;
+  --d-ink-3: 118 118 118;
+  --d-line: 70 70 70;
+  --d-stroke: 245 245 245;
+  --d-shadow: 245 245 245;
+  --d-accent: 245 245 245;
+  --d-accent-soft: 46 46 46;
+  --d-accent-ink: 245 245 245;
+  --d-on-accent: 0 0 0;
+  --d-highlight: 245 245 245;
+  --d-on-highlight: 0 0 0;
+}
+
+/* ---- Light and dark: the palette's values onto the tokens --------------- */
+:root,
+[data-palette] {
   color-scheme: light;
-  --c-bg: 242 242 250;
-  --c-surface: 255 255 255;
-  --c-surface-2: 235 235 246;
-  --c-ink: 27 28 48;
-  --c-ink-2: 94 96 124;
-  --c-ink-3: 146 148 172;
-  --c-line: 225 225 238;
-  --c-accent: 79 84 170;
-  --c-accent-soft: 230 231 250;
-  --c-on-accent: 255 255 255;
-  --c-highlight: 255 222 110;
-  --c-on-highlight: 48 40 8;
-  --c-ok: 40 156 104;
-  --c-warn: 214 146 42;
-  --c-danger: 214 76 64;
+  --c-bg: var(--l-bg);
+  --c-surface: var(--l-surface);
+  --c-surface-2: var(--l-surface-2);
+  --c-ink: var(--l-ink);
+  --c-ink-2: var(--l-ink-2);
+  --c-ink-3: var(--l-ink-3);
+  --c-line: var(--l-line);
+  --c-stroke: var(--l-stroke);
+  --c-shadow: var(--l-shadow);
+  --c-accent: var(--l-accent);
+  --c-accent-soft: var(--l-accent-soft);
+  --c-accent-ink: var(--l-accent-ink);
+  --c-on-accent: var(--l-on-accent);
+  --c-highlight: var(--l-highlight);
+  --c-on-highlight: var(--l-on-highlight);
+  --c-ok: 32 150 96;
+  --c-warn: 212 140 30;
+  --c-danger: 214 64 52;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme='light']),
+  :root:not([data-theme='light']) [data-palette] {
     color-scheme: dark;
-    --c-bg: 16 16 28;
-    --c-surface: 27 27 44;
-    --c-surface-2: 38 38 58;
-    --c-ink: 236 236 248;
-    --c-ink-2: 166 168 194;
-    --c-ink-3: 116 118 144;
-    --c-line: 48 48 70;
-    --c-accent: 152 158 245;
-    --c-accent-soft: 44 46 86;
-    --c-on-accent: 16 16 40;
-    --c-highlight: 232 192 84;
-    --c-on-highlight: 30 24 6;
-    --c-ok: 76 192 140;
-    --c-warn: 236 178 76;
-    --c-danger: 238 110 98;
+    --c-bg: var(--d-bg);
+    --c-surface: var(--d-surface);
+    --c-surface-2: var(--d-surface-2);
+    --c-ink: var(--d-ink);
+    --c-ink-2: var(--d-ink-2);
+    --c-ink-3: var(--d-ink-3);
+    --c-line: var(--d-line);
+    --c-stroke: var(--d-stroke);
+    --c-shadow: var(--d-shadow);
+    --c-accent: var(--d-accent);
+    --c-accent-soft: var(--d-accent-soft);
+    --c-accent-ink: var(--d-accent-ink);
+    --c-on-accent: var(--d-on-accent);
+    --c-highlight: var(--d-highlight);
+    --c-on-highlight: var(--d-on-highlight);
+    --c-ok: 76 200 138;
+    --c-warn: 240 180 70;
+    --c-danger: 244 108 94;
   }
 }
 
-:root[data-theme='dark'] {
+:root[data-theme='dark'],
+:root[data-theme='dark'] [data-palette] {
   color-scheme: dark;
-  --c-bg: 16 16 28;
-  --c-surface: 27 27 44;
-  --c-surface-2: 38 38 58;
-  --c-ink: 236 236 248;
-  --c-ink-2: 166 168 194;
-  --c-ink-3: 116 118 144;
-  --c-line: 48 48 70;
-  --c-accent: 152 158 245;
-  --c-accent-soft: 44 46 86;
-  --c-on-accent: 16 16 40;
-  --c-highlight: 232 192 84;
-  --c-on-highlight: 30 24 6;
-  --c-ok: 76 192 140;
-  --c-warn: 236 178 76;
-  --c-danger: 238 110 98;
+  --c-bg: var(--d-bg);
+  --c-surface: var(--d-surface);
+  --c-surface-2: var(--d-surface-2);
+  --c-ink: var(--d-ink);
+  --c-ink-2: var(--d-ink-2);
+  --c-ink-3: var(--d-ink-3);
+  --c-line: var(--d-line);
+  --c-stroke: var(--d-stroke);
+  --c-shadow: var(--d-shadow);
+  --c-accent: var(--d-accent);
+  --c-accent-soft: var(--d-accent-soft);
+  --c-accent-ink: var(--d-accent-ink);
+  --c-on-accent: var(--d-on-accent);
+  --c-highlight: var(--d-highlight);
+  --c-on-highlight: var(--d-on-highlight);
+  --c-ok: 76 200 138;
+  --c-warn: 240 180 70;
+  --c-danger: 244 108 94;
 }

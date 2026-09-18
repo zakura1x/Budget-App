@@ -74,7 +74,7 @@ export const MoneyField = forwardRef<HTMLInputElement, MoneyFieldProps>(function
       inputMode="decimal"
       autoComplete="off"
       placeholder={placeholder ? groupedAmount(plainAmount(placeholder, allowNegative)) : undefined}
-      leading={<span className="-mr-2 pl-3.5 text-body text-ink-3" aria-hidden="true">₱</span>}
+      leading={<span className="num -mr-2 pl-3.5 text-body text-ink-3" aria-hidden="true">₱</span>}
       hint={hint}
       error={error}
       onChange={(e) => {

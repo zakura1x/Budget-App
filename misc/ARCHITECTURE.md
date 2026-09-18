@@ -156,6 +156,7 @@ This project adds one rule of its own, and it is absolute:
 | *(no service)* | Key handling lives in `app/core/crypto/`. Its façade is `UserCipher`: repositories are handed one, services pass it along, and neither ever holds a key |
 | `auth_service/` | Login, JWT issue/refresh, lockout, PIN, password rules |
 | `account_service` | Cash, debit, credit, savings, investment, lent, borrowed and member accounts (with a `subtype` label); balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit; bills typed from a card's own app and what is due now (ACC-35); cash on hand and net worth (ACC-36); the interest terms an account earns on (ACC-37) and the cashback it usually pays (ACC-38) |
+| `installment_conversion` | REC-34: a purchase on a card or loan turned into an installment plan and back. The purchase is hidden and linked both ways, so nothing counts twice; the plan is an ordinary recurring rule. Imports `recurring_service` and `transaction_service`; only its endpoints import it |
 | `interest_service` | ACC-37: the daily savings interest a bank pays, credited day by day as ordinary income. A catch-up, like the recurring engine (§4.6); the arithmetic itself is pure, in `app/core/utils/interest.py`, and shared with the projection. Imports `transaction_service`; nothing imports it |
 | `statement_service` | Checks a card statement against the bank's total and applies what you say the difference was (§4.4). Writes only through `transaction_service` and `recurring_service`; nothing imports it |
 | `category_service` | Categories and sub-categories, icons, colours, ordering |
@@ -1032,8 +1033,11 @@ the phone layout, never a separate design.
   raised, and larger than the rest — it is the action the app exists for.
   Accounts is a tab because editing one should never be a trip through More;
   Stats sits behind a Calendar | Stats switch at the top of both screens, each
-  still its own route. The look follows `sample_ui/`: lavender ground, white
-  rounded tiles, indigo accent, a floating pill bar — all tokens in `theme.css`.
+  still its own route. The look is neo-brutalist (2026-09-18, replacing the
+  lavender look of `sample_ui/`): outlined tiles on hard offset shadows, 8px
+  corners, amounts and labels in a self-hosted mono face, a floating pill bar.
+  Four colour palettes (classic, candy, lime, mono), each light and dark — all
+  tokens in `theme.css`, picked by `data-palette` and `data-theme` on `<html>`.
 - **Add-transaction is a bottom sheet with a numpad**, not a form with a text
   input. It opens with the amount field focused and the numpad already up.
   Two taps and a number should complete an entry.

@@ -69,8 +69,8 @@ UNASSIGNED_KEY = "unassigned"
 UNASSIGNED_NAME = "Unassigned (Budget App)"
 REFUNDS = "Refunds"
 FEES = "Fees"
-DEFAULT_ACCOUNT_COLOUR = "#4A90D9"
-LOAN_COLOUR = "#C86FB0"
+DEFAULT_ACCOUNT_COLOUR = "#5AB8FF"  # from the picker set (2026-09-18)
+LOAN_COLOUR = "#FF8AD8"
 OWED_TYPES = ("credit", "borrowed")
 
 _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"

@@ -12,8 +12,13 @@ WHAT COUNTS, the same rules as the budget and the ledger:
     to the total count, on purpose.
   * INCOME is income splits.
   * A TRANSFER is neither (TXN-04).
-  * A BALANCE ADJUSTMENT is neither (ACC-29). Losses and gains are reported
-    only as their own totals, so the user can still see them.
+  * A BALANCE ADJUSTMENT counts HERE, and only here (decided 2026-09-18, user:
+    "have another category in By Category, the unrecorded loss and gain"): a
+    loss is spending and a gain is income, each one row of its own - "Unrecorded
+    loss" / "Unrecorded gain" (`CategoryShare.unrecorded`) - in the totals, the
+    trend, the comparison and the per-account figures. The budget, the daily
+    allowance, the calendar and a card's limit still never count one (ACC-29).
+    Merchants and tags stay purchases only: an adjustment has neither.
   * An INVESTMENT REVALUATION is not a transaction at all (ACC-12) - it lives
     on the account - so nothing here can count it.
   * SPENDING BY TAG gives each tag the whole amount of every expense carrying
@@ -55,6 +60,7 @@ GRANULARITIES = ("day", "week", "month")
 MAX_RANGE_DAYS = 366 * 5
 TOP_MERCHANTS = 5
 RATIO = Decimal("0.0001")
+UNRECORDED = -1  # the roll-up's key for balance adjustments; never a category id
 
 
 # ------------------------------------------------------------------- shapes
@@ -69,8 +75,8 @@ class Totals:
     days: int
     days_counted: int  # days up to today, when the range runs past it
     average_daily_spend: Decimal  # STA-07, over days_counted
-    adjustment_losses: Decimal  # ACC-29 - reported, never spending
-    adjustment_gains: Decimal
+    adjustment_losses: Decimal  # ACC-29 - INSIDE spent since 2026-09-18, shown on their own too
+    adjustment_gains: Decimal  # inside earned
 
 
 @dataclass(frozen=True)
@@ -82,6 +88,7 @@ class CategoryShare:
     previous_amount: Decimal = ZERO
     direct: Decimal = ZERO  # on the parent itself, not one of its sub-categories
     children: Tuple["CategoryShare", ...] = ()
+    unrecorded: bool = False  # the balance adjustments' own row - category_id is None
 
 
 @dataclass(frozen=True)
@@ -231,6 +238,13 @@ def category_shares(
 
     shares: List[CategoryShare] = []
     for top, amount in now.tops.items():
+        if top == UNRECORDED:
+            shares.append(CategoryShare(
+                category_id=None, amount=amount, share=_ratio(amount, grand),
+                transaction_count=len(now.top_txns[top]), previous_amount=before.tops.get(top, ZERO),
+                direct=amount, unrecorded=True,
+            ))
+            continue
         children = tuple(sorted(
             (
                 CategoryShare(
@@ -285,9 +299,10 @@ def overview(
         elif prev_start <= view.txn_date <= prev_end:
             earlier.append(view)
 
-    expenses = [v for v in current if v.type == "expense"]
-    incomes = [v for v in current if v.type == "income"]
-    earlier_expenses = [v for v in earlier if v.type == "expense"]
+    purchases = [v for v in current if v.type == "expense"]
+    expenses = [v for v in current if _spending(v)]
+    incomes = [v for v in current if _earning(v)]
+    earlier_expenses = [v for v in earlier if _spending(v)]
     parents = _parents(db, cipher)
 
     contains_today = start <= today <= end
@@ -300,7 +315,7 @@ def overview(
         spent=spent,
         earned=total(v.amount for v in incomes),
         net=total(v.amount for v in incomes) - spent,
-        transaction_count=len(expenses) + len(incomes),
+        transaction_count=len(expenses) + len(incomes),  # adjustments included, as they are in the totals
         days=(end - start).days + 1,
         days_counted=days_counted,
         average_daily_spend=(counted_spent / days_counted).quantize(CENTS, rounding=ROUND_HALF_UP),
@@ -315,7 +330,7 @@ def overview(
     previous = Comparison(
         start=prev_start, end=prev_end,
         spent=total(v.amount for v in earlier_expenses),
-        earned=total(v.amount for v in earlier if v.type == "income"),
+        earned=total(v.amount for v in earlier if _earning(v)),
         spent_to_same_day=same_day,
     )
 
@@ -329,9 +344,9 @@ def overview(
         income_categories=category_shares(incomes, parents),
         previous=previous,
         trend=_trend(expenses, incomes, start, end, granularity),
-        merchants=_merchants(expenses),
+        merchants=_merchants(purchases),
         accounts=_accounts(expenses, incomes),
-        tags=_tags(expenses),
+        tags=_tags(purchases),
         forecast=_forecast(db, cipher, counted_spent, start, end, today) if contains_today else None,
     )
 
@@ -348,9 +363,25 @@ class _Rolled:
     direct: Dict[Optional[int], Decimal]
 
 
+def _spending(view: TransactionView) -> bool:
+    """An expense, or an unrecorded loss (2026-09-18)."""
+    return view.type == "expense" or (view.type == "adjustment" and view.direction == "out")
+
+
+def _earning(view: TransactionView) -> bool:
+    """Income, or an unrecorded gain."""
+    return view.type == "income" or (view.type == "adjustment" and view.direction == "in")
+
+
 def _roll_up(views: Iterable[TransactionView], parents: Mapping[int, Optional[int]]) -> _Rolled:
     rolled = _Rolled({}, {}, {}, {}, {})
     for view in views:
+        if view.type == "adjustment":
+            # Its one split has no category by design (ACC-29): the whole amount is its own row.
+            rolled.tops[UNRECORDED] = rolled.tops.get(UNRECORDED, ZERO) + view.amount
+            rolled.top_txns.setdefault(UNRECORDED, set()).add(view.id)
+            rolled.direct[UNRECORDED] = rolled.direct.get(UNRECORDED, ZERO) + view.amount
+            continue
         for split in view.splits:
             category = split.category_id if split.category_id in parents else None
             parent = parents.get(category) if category is not None else None

@@ -36,7 +36,7 @@ export function Login() {
         registrationOpen ? (
           <>
             Have an invitation code?{' '}
-            <Link to="/register" className="font-semibold text-accent">
+            <Link to="/register" className="font-semibold text-accent-ink">
               Create an account
             </Link>
           </>
@@ -55,7 +55,7 @@ export function Login() {
       </form>
       <p className="mt-6 text-center text-footnote text-ink-2">
         {resetEnabled ? (
-          <Link to="/forgot" className="font-semibold text-accent">Forgot your password?</Link>
+          <Link to="/forgot" className="font-semibold text-accent-ink">Forgot your password?</Link>
         ) : (
           'Forgot your password? Ask whoever runs this app. Your data isn’t locked to your password, so nothing is lost.'
         )}

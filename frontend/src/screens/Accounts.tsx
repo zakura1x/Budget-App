@@ -86,7 +86,7 @@ function AccountTile({ account, onOpen }: { account: Account; onOpen: (a: Accoun
       type="button"
       onClick={() => onOpen(account)}
       aria-label={`${account.name}, ${label ? `${label.toLowerCase()} ` : ''}${formatPHP(figure)}`}
-      className={`flex min-h-28 flex-col items-start gap-2 rounded-card bg-surface p-3 text-left shadow-card transition active:scale-[0.97] ${
+      className={`flex min-h-28 flex-col items-start gap-2 rounded-card bg-surface p-3 text-left press ${
         account.archived ? 'opacity-60' : ''
       }`}
     >
@@ -114,7 +114,7 @@ function GroupHeader({
     <button type="button" onClick={onToggle} aria-expanded={open}
       className="flex min-h-tap w-full items-center gap-2 px-1 pb-1 pt-4 text-left">
       <span className="text-headline">{title}</span>
-      <span className="rounded-full bg-surface-2 px-2 text-caption font-semibold text-ink-2">{count}</span>
+      <span className="num rounded-md bg-surface px-1.5 text-caption font-bold text-ink shadow-edge">{count}</span>
       <span className="ml-auto text-footnote text-ink-2">
         {label} <span className="num font-semibold text-ink">{formatPHP(amount)}</span>
       </span>
@@ -198,7 +198,7 @@ export function Accounts() {
         title="Accounts"
         action={
           <button type="button" onClick={() => setAdding(true)} aria-label="Add account"
-            className="flex h-tap w-tap items-center justify-center rounded-full bg-accent text-on-accent shadow-raised transition active:scale-95">
+            className="flex h-tap w-tap items-center justify-center rounded-full bg-accent text-on-accent press">
             <PlusIcon size={22} />
           </button>
         }
@@ -207,10 +207,10 @@ export function Accounts() {
       {data ? (
         <section className="rounded-card bg-accent p-5 text-on-accent shadow-raised" aria-label={net ? 'Net worth' : 'Cash on hand'}>
           <div className="flex items-center justify-between gap-3">
-            <p className="text-footnote font-medium opacity-80">{net ? 'Net worth' : 'Cash on hand'}</p>
+            <p className="label">{net ? 'Net worth' : 'Cash on hand'}</p>
             <button type="button" onClick={() => setHeadline(net ? 'cash' : 'net')}
               aria-label={net ? 'Show cash on hand' : 'Show net worth'}
-              className="flex min-h-tap items-center gap-1.5 rounded-full bg-on-accent/15 px-3 text-caption font-semibold transition active:scale-95">
+              className="press flex min-h-tap items-center gap-1.5 rounded-full bg-surface px-3 text-caption font-bold text-ink">
               <TransferIcon size={14} />
               {net ? 'Cash on hand' : 'Net worth'}
             </button>
@@ -218,7 +218,7 @@ export function Accounts() {
           {net ? (
             <>
               <p className="num text-display">{formatPHP(data.net_worth.total)}</p>
-              <div className="mt-4 grid grid-cols-2 gap-3 border-t border-on-accent/20 pt-3">
+              <div className="mt-4 grid grid-cols-2 gap-3 border-t-2 border-on-accent/30 pt-3">
                 <div>
                   <p className="text-caption opacity-75">Assets</p>
                   <p className="num text-headline">{formatPHP(data.net_worth.assets)}</p>
@@ -236,7 +236,7 @@ export function Accounts() {
           ) : (
             <>
               <p className="num text-display">{formatPHP(data.cash_on_hand.total)}</p>
-              <div className="mt-4 grid grid-cols-2 gap-3 border-t border-on-accent/20 pt-3">
+              <div className="mt-4 grid grid-cols-2 gap-3 border-t-2 border-on-accent/30 pt-3">
                 <div>
                   <p className="text-caption opacity-75">In accounts</p>
                   <p className="num text-headline">{formatPHP(inAccounts)}</p>
@@ -257,7 +257,7 @@ export function Accounts() {
                 {setAsideTotal > 0 && ` · ${formatPHP(fromCentavos(setAsideTotal))} set aside for goals`}
               </p>
               <button type="button" onClick={() => navigate('/projection')}
-                className="mt-3 flex min-h-tap w-full items-center justify-between rounded-2xl bg-on-accent/15 px-4 text-footnote font-semibold transition active:scale-[0.99]">
+                className="press mt-3 flex min-h-tap w-full items-center justify-between rounded-xl bg-surface px-4 text-footnote font-bold text-ink">
                 <span>Months ahead — cash on hand by month</span>
                 <ChevronRightIcon size={16} />
               </button>
@@ -269,7 +269,7 @@ export function Accounts() {
       )}
 
       {error && (
-        <p className="mt-4 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+        <p className="mt-4 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
           {error} <button type="button" className="font-semibold underline" onClick={() => void load()}>Try again</button>
         </p>
       )}
@@ -320,7 +320,7 @@ export function Accounts() {
               className="flex min-w-0 flex-1 items-center gap-2 text-left">
               <span className="text-headline">Savings goals</span>
               {goals.length > 0 && (
-                <span className="rounded-full bg-surface-2 px-2 text-caption font-semibold text-ink-2">{goals.length}</span>
+                <span className="num rounded-md bg-surface px-1.5 text-caption font-bold text-ink shadow-edge">{goals.length}</span>
               )}
               {goals.length > 0 && (
                 <span className="ml-auto text-footnote text-ink-2">
@@ -332,8 +332,8 @@ export function Accounts() {
           </div>
           {!folded.has('goals') && (goals.length === 0 ? (
             <button type="button" onClick={() => setEditingGoal({ open: true, goal: null })}
-              className="block w-full rounded-card bg-surface p-4 text-left shadow-card transition active:scale-[0.99]">
-              <span className="block text-body font-semibold text-accent">+ Add a savings goal</span>
+              className="block w-full rounded-card bg-surface p-4 text-left press">
+              <span className="block text-body font-semibold text-accent-ink">+ Add a savings goal</span>
               <span className="mt-0.5 block text-footnote text-ink-3">
                 An emergency fund, a trip, a laptop - its progress is the balance of the account it sits in.
               </span>
@@ -347,7 +347,7 @@ export function Accounts() {
                   onAdd={() => setGoalMoney({ goal, mode: 'add' })} onUse={() => setGoalMoney({ goal, mode: 'use' })} />
               ))}
               <button type="button" onClick={() => setEditingGoal({ open: true, goal: null })}
-                className="min-h-tap w-full rounded-full text-footnote font-semibold text-accent active:bg-accent-soft">
+                className="min-h-tap w-full rounded-full text-footnote font-semibold text-accent-ink active:bg-accent-soft">
                 + Add a goal
               </button>
             </div>

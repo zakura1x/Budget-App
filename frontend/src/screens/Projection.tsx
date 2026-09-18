@@ -35,7 +35,7 @@ function monthLabel(month: ProjectedMonth, basis: Data['basis']): string {
 function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Data['basis']; onOpen: () => void }) {
   const low = negative(month.low_point);
   return (
-    <button type="button" onClick={onOpen} className="block w-full rounded-card bg-surface p-4 text-left shadow-card transition active:bg-surface-2">
+    <button type="button" onClick={onOpen} className="block w-full rounded-card bg-surface p-4 text-left press">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-footnote font-semibold text-ink-2">
           {monthLabel(month, basis)}
@@ -48,7 +48,7 @@ function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Dat
         cash on hand at the end{month.bills !== '0.00' && ` · after ${formatPHP(month.bills)} of card bills`}
         {(month.bills_set_aside ?? '0.00') !== '0.00' && ` · ${formatPHP(month.bills_set_aside)} of bills due already set aside`}
       </p>
-      <div className="mt-3 grid grid-cols-3 divide-x divide-line text-center">
+      <div className="mt-3 grid grid-cols-3 divide-x divide-stroke/80 text-center">
         <div>
           <p className="text-caption text-ink-3">Coming in</p>
           <p className="num text-footnote font-semibold text-ok">+{formatPHP(month.income)}</p>
@@ -76,7 +76,7 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
     <Sheet open={month !== null} onClose={onClose} title={month ? monthLabel(month, basis) : undefined}>
       {month && (
         <div className="space-y-4 pb-2">
-          <div className="num space-y-1 rounded-2xl bg-surface-2 px-4 py-3 text-footnote">
+          <div className="num space-y-1 rounded-card border-2 border-stroke bg-surface-2 px-4 py-3 text-footnote">
             <p className="flex justify-between"><span className="text-ink-2">Starts with</span>{formatPHP(month.opening)}</p>
             <p className="flex justify-between"><span className="text-ink-2">Coming in</span>+{formatPHP(month.income)}</p>
             <p className="flex justify-between"><span className="text-ink-2">Spending</span>−{formatPHP(month.spending)}</p>
@@ -96,10 +96,10 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
             {month.transfers !== '0.00' && (
               <p className="flex justify-between"><span className="text-ink-2">Transfers out of cash on hand</span>{formatPHP(month.transfers)}</p>
             )}
-            <p className="flex justify-between border-t border-line pt-1 font-semibold"><span>Ends with</span>{formatPHP(month.closing)}</p>
+            <p className="flex justify-between border-t border-stroke/40 pt-1 font-semibold"><span>Ends with</span>{formatPHP(month.closing)}</p>
           </div>
           {month.overcommitted && (
-            <p className="rounded-2xl bg-warn/10 px-4 py-3 text-footnote text-warn">
+            <p className="rounded-2xl border-2 border-warn bg-warn/10 px-4 py-3 text-footnote text-warn">
               Fixed charges alone are more than your budget this month — the plan no longer fits it.
             </p>
           )}
@@ -107,7 +107,7 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
           {[...groups.entries()].map(([accountId, items]) => (
             <div key={accountId}>
               <p className="mb-1.5 text-footnote font-semibold text-ink-2">{lookups.accountById.get(accountId)?.name ?? 'Account'}</p>
-              <ul className="divide-y divide-line rounded-2xl bg-surface-2/60 px-3">
+              <ul className="divide-y divide-stroke/80 rounded-card border-2 border-stroke bg-surface-2 px-3">
                 {items.map((item) => (
                   <li key={`${item.rule_id}-${item.on}-${item.name}`} className={`num flex min-h-11 items-center justify-between gap-2 text-footnote ${item.paused ? 'opacity-50' : ''}`}>
                     <span className="min-w-0 truncate">
@@ -139,7 +139,7 @@ function CardAhead({ card }: { card: CardLookahead }) {
   return (
     <Card padded={false} className="overflow-hidden">
       <p className="px-4 pb-1 pt-3 text-headline">{card.name}</p>
-      <ul className="divide-y divide-line">
+      <ul className="divide-y divide-stroke/80">
         {card.statements.map((s, index) => (
           <li key={s.closes} className="px-4 py-2.5">
             <div className="num flex items-baseline justify-between gap-2">
@@ -183,7 +183,7 @@ export function Projection() {
     <>
       <ScreenHeader
         title="Months ahead"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
       />
       <Segmented<'3' | '6' | '12'>
         label="How far"
@@ -195,7 +195,7 @@ export function Projection() {
           { value: '12', label: '12 months' },
         ]}
       />
-      {error && <p className="mt-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="mt-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
       {!data && !error && <div className="skeleton mt-3 h-72 rounded-card" aria-hidden="true" />}
       {data && (
         <>

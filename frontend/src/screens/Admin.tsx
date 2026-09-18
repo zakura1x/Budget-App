@@ -55,8 +55,8 @@ export function Admin() {
 
   return (
     <>
-      <ScreenHeader title="Admin" subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>} />
-      {error && <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      <ScreenHeader title="Admin" subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>} />
+      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
 
       {status && (
         <Card className="num space-y-1 text-footnote text-ink-2">
@@ -65,7 +65,7 @@ export function Admin() {
           <p>{status.unlocked_sessions} unlocked sessions · {status.cached_users} in memory</p>
           <p>{Object.entries(status.rows).filter(([, n]) => n > 0).map(([t, n]) => `${t} ${n}`).join(' · ')}</p>
           {Object.keys(status.key_fingerprints).length > 0 && (
-            <div className="mt-2 space-y-1 border-t border-line pt-2">
+            <div className="mt-2 space-y-1 border-t border-stroke/40 pt-2">
               <p className="text-ink">Key fingerprints</p>
               {Object.entries(status.key_fingerprints).map(([name, value]) => (
                 <p key={name} className="flex justify-between gap-3">
@@ -94,7 +94,7 @@ export function Admin() {
               Made {when(u.created_at)} · last sign-in {when(u.last_login_at)} · key v{u.key_version}
             </p>
             {u.id !== me && (
-              <div className="mt-2 border-t border-line pt-2">
+              <div className="mt-2 border-t border-stroke/40 pt-2">
                 <Toggle checked={u.is_active} disabled={busy} label="Can sign in"
                   onChange={(value) => void act(() => setUserActive(u.id, value))} />
                 <Button variant="ghost" block className="text-danger" disabled={busy}
@@ -113,7 +113,7 @@ export function Admin() {
       {doomed && (
         <Sheet open onClose={() => setDoomed(null)} title={`Delete account #${doomed.id}`}>
           <div className="space-y-4 pb-2">
-            <p className="rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+            <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
               Everything in it, its receipts and its backups on this server are destroyed. It cannot be undone, and there is no copy.
             </p>
             <TextField label={`Type ${doomed.id} to confirm`} inputMode="numeric" value={typed} onChange={(e) => setTyped(e.target.value)} />

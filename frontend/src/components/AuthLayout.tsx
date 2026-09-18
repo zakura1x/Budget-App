@@ -28,7 +28,7 @@ export function AuthLayout({ title, subtitle, children, footer }: {
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p role="alert" className="rounded-xl bg-danger/10 px-3.5 py-2.5 text-footnote font-medium text-danger">
+    <p role="alert" className="rounded-xl border-2 border-danger bg-danger/10 px-3.5 py-2.5 text-footnote font-medium text-danger">
       {message}
     </p>
   );

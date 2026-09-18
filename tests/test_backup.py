@@ -34,6 +34,7 @@ from app.services import (
     tag_service,
     transaction_service,
 )
+from app.services import installment_conversion
 from app.services.backup_service import bundle, references, restore_service
 from app.services.backup_service.bundle import BackupFormatError
 from app.services.backup_service.references import ORDER
@@ -115,6 +116,12 @@ def fill(session, cipher):
     transaction_service.create_transaction(session, cipher, {
         "type": "expense", "amount": "320.00", "account_id": card.id, "category_id": food.id, "txn_date": "2026-09-14"})
     account_service.set_bills(session, cipher, card.id, [{"due": "2026-10-06", "amount": "7320.00"}], today=today)
+    # REC-34. A purchase turned into a plan: the hidden purchase and the plan point at each other.
+    speaker = transaction_service.create_transaction(session, cipher, {
+        "type": "expense", "amount": "3000.00", "account_id": card.id, "txn_date": "2026-09-12",
+        "splits": [{"category_id": gadgets.id, "amount": "2000.00"}, {"category_id": coffee.id, "amount": "1000.00"}],
+    }).transactions[0]
+    installment_conversion.convert(session, cipher, speaker.id, {"payments": 3}, today=today)
 
 
 def decrypted(found, cipher):
@@ -203,12 +210,13 @@ def test_round_trip_into_an_empty_account_is_identical(session, folders):
                                               today=date(2026, 9, 14))
         return [(b.due, b.amount, b.from_purchases, b.from_plans) for b in next(a for a in found if a.name == "Card").credit.bills]
     assert card_bills(bob_cipher) == card_bills(alice_cipher)
-    assert card_bills(bob_cipher)[0][1:] == (Decimal("7320.00"), Decimal("0.00"), Decimal("0.00"))
+    # 7,320 typed + the first payment of the plan made after the list (REC-34) - once, after the restore too.
+    assert card_bills(bob_cipher)[0][1:] == (Decimal("8320.00"), Decimal("0.00"), Decimal("1000.00"))
 
     # And the restored references really point at Bob's rows: each rule posts to his own accounts -
-    # rent on 14 Oct, Netflix on 5 Oct, the phone's second payment on 14 Oct.
+    # rent on 14 Oct, Netflix on 5 Oct, the phone's second payment on 14 Oct, the speaker's first on 6 Oct.
     posted = recurring_service.expand(session, bob_cipher, today=date(2026, 10, 14))
-    assert posted.posted == 3 and posted.needs_attention == ()
+    assert posted.posted == 4 and posted.needs_attention == ()  # + the converted purchase's 6 Oct payment
     accounts = {a.name: a.id for a in account_service.list_accounts(session, bob_cipher)}
     rules = {r.name: r for r in recurring_service.list_rules(session, bob_cipher, today=date(2026, 10, 14))}
     views = transaction_service.views(session, bob_cipher)

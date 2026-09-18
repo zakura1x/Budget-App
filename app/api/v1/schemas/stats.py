@@ -57,6 +57,7 @@ class CategoryShareOut(BaseModel):
     previous_amount: Money
     direct: Money
     children: List["CategoryShareOut"] = []
+    unrecorded: bool = False  # ACC-29 - the balance adjustments' own row
 
 
 class ComparisonOut(BaseModel):

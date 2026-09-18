@@ -78,16 +78,16 @@ export function CardBills({ account }: { account: Account }) {
             <div key={row.key} className="flex items-center gap-2">
               <input type="date" value={row.due} aria-label="Due date"
                 onChange={(e) => e.target.value && setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, due: e.target.value } : r)))}
-                className="min-h-tap min-w-0 flex-1 rounded-xl border border-line bg-surface px-2.5 text-footnote" />
+                className="min-h-tap min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2.5 text-footnote" />
               <input value={row.amount} inputMode="decimal" placeholder="0.00" aria-label="Amount"
                 onChange={(e) => setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, amount: sanitizeAmount(e.target.value) } : r)))}
-                className="num min-h-tap w-28 rounded-xl border border-line bg-surface px-2.5 text-right text-body" />
+                className="num min-h-tap w-28 rounded-xl border-2 border-stroke bg-surface px-2.5 text-right text-body" />
               <button type="button" aria-label="Remove bill" onClick={() => setRows((rs) => rs.filter((r) => r.key !== row.key))}
                 className="flex h-tap w-8 items-center justify-center text-ink-3">×</button>
             </div>
           ))}
         </div>
-        <button type="button" onClick={addRow} className="min-h-tap text-footnote font-semibold text-accent">+ Add next month’s bill</button>
+        <button type="button" onClick={addRow} className="min-h-tap text-footnote font-semibold text-accent-ink">+ Add next month’s bill</button>
         {error && <p className="text-footnote text-danger">{error}</p>}
         <div className="grid grid-cols-2 gap-2">
           <Button variant="ghost" onClick={() => setEditing(false)} disabled={busy}>Cancel</Button>
@@ -119,11 +119,11 @@ export function CardBills({ account }: { account: Account }) {
     <Card padded={false}>
       <div className="flex items-center justify-between px-4 pb-1 pt-3">
         <h3 className="text-headline">Bills</h3>
-        <button type="button" onClick={start} className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent active:bg-accent-soft">
+        <button type="button" onClick={start} className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent-ink active:bg-accent-soft">
           Edit
         </button>
       </div>
-      <div className="divide-y divide-line">
+      <div className="divide-y divide-stroke/80">
         {credit.bills.map((bill) => {
           const paid = bill.left === '0.00';
           const part = !paid && bill.paid !== '0.00';
@@ -134,7 +134,7 @@ export function CardBills({ account }: { account: Account }) {
                 <span className={`block text-footnote ${bill.overdue ? 'font-semibold text-danger' : 'text-ink-3'}`}>
                   {paid ? '✓ Paid' : bill.overdue ? 'Overdue' : part ? `${formatPHP(bill.paid)} paid` : 'Unpaid'}
                   {(bill.from_purchases ?? '0.00') !== '0.00' && (
-                    <span className="text-accent">
+                    <span className="text-accent-ink">
                       {' · '}
                       {bill.typed === '0.00' && bill.from_plans === '0.00'
                         ? 'new purchases'
@@ -142,7 +142,7 @@ export function CardBills({ account }: { account: Account }) {
                     </span>
                   )}
                   {bill.from_plans !== '0.00' && (
-                    <span className="text-accent">
+                    <span className="text-accent-ink">
                       {' · '}
                       {bill.typed === '0.00' && (bill.from_purchases ?? '0.00') === '0.00'
                         ? 'from plans'
@@ -159,7 +159,7 @@ export function CardBills({ account }: { account: Account }) {
           );
         })}
       </div>
-      <div className="space-y-1 border-t border-line px-4 py-3">
+      <div className="space-y-1 border-t border-stroke/40 px-4 py-3">
         <div className="flex justify-between text-footnote">
           <span className="text-ink-2">Due now — counted in cash on hand</span>
           <span className="num font-semibold">{formatPHP(credit.due_now ?? '0.00')}</span>

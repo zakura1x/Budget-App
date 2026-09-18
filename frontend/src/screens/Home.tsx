@@ -85,7 +85,7 @@ function AlertBanner({ alerts, status, lookups }: { alerts: Alert[]; status: Bud
   return (
     <div
       role="status"
-      className={`mb-3 rounded-2xl px-4 py-3 text-footnote ${danger ? 'bg-danger/10 text-danger' : 'bg-warn/10 text-warn'}`}
+      className={`mb-3 rounded-2xl px-4 py-3 text-footnote ${danger ? 'border-2 border-danger bg-danger/10 text-danger' : 'border-2 border-warn bg-warn/10 text-warn'}`}
     >
       <p className="font-semibold">{alertText(first, status, lookups)}</p>
       {rest.length > 0 && (
@@ -149,7 +149,7 @@ function BudgetCard({ status }: { status: BudgetStatus }) {
         {status.is_current ? (
           <>
             <span className="text-footnote font-medium text-ink-2">You can spend today</span>
-            <span className="num mt-1 text-display">{formatPHP(a.daily)}</span>
+            <span className="num mt-1 text-figure">{formatPHP(a.daily)}</span>
             <span className={`mt-1 text-footnote ${over || leftNegative ? 'text-danger' : 'text-ink-2'}`}>
               {over
                 ? `${formatPHP(a.over_by)} over this period`
@@ -162,19 +162,19 @@ function BudgetCard({ status }: { status: BudgetStatus }) {
           // A period from before the budget existed: say so, rather than "₱0.00 of ₱0.00".
           <>
             <span className="text-footnote font-medium text-ink-2">No budget this period</span>
-            <span className="num mt-1 text-display">{formatPHP(a.spent)}</span>
+            <span className="num mt-1 text-figure">{formatPHP(a.spent)}</span>
             <span className="mt-1 text-footnote text-ink-2">spent</span>
           </>
         ) : (
           <>
             <span className="text-footnote font-medium text-ink-2">Spent</span>
-            <span className="num mt-1 text-display">{formatPHP(a.spent)}</span>
+            <span className="num mt-1 text-figure">{formatPHP(a.spent)}</span>
             <span className="mt-1 text-footnote text-ink-2">of {formatPHP(a.available)}</span>
           </>
         )}
       </Ring>
 
-      <div className="mt-5 grid w-full grid-cols-2 divide-x divide-line text-center">
+      <div className="mt-5 grid w-full grid-cols-2 divide-x divide-stroke/80 text-center">
         <div>
           <p className="text-caption text-ink-3">Spent</p>
           <p className="num text-headline">{formatPHP(a.spent)}</p>
@@ -241,7 +241,7 @@ export function Home() {
         ? status.is_current && <AlertBanner alerts={status.alerts} status={status} lookups={lookups} />
         : <AlertBanner alerts={alerts} status={null} lookups={lookups} />}
       {(error || budgetError) && (
-        <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error ?? budgetError}</p>
+        <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error ?? budgetError}</p>
       )}
 
       {status ? (
@@ -270,13 +270,13 @@ export function Home() {
         <SectionTitle>Recent</SectionTitle>
         {items.length > 0 && (
           <button type="button" onClick={() => navigate('/transactions')}
-            className="min-h-tap px-1 text-footnote font-semibold text-accent">
+            className="min-h-tap px-1 text-footnote font-semibold text-accent-ink">
             See all
           </button>
         )}
       </div>
       {recent.length > 0 ? (
-        <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+        <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
           {recent.map((row) => (
             <button key={row.id} type="button" onClick={() => row.id > 0 && openSheet(row)}
               className="block w-full transition active:bg-surface-2">
@@ -285,7 +285,7 @@ export function Home() {
           ))}
         </div>
       ) : (
-        <p className="rounded-2xl border border-dashed border-line px-4 py-3 text-footnote text-ink-2">
+        <p className="rounded-2xl border-2 border-dashed border-stroke/70 px-4 py-3 text-footnote text-ink-2">
           Nothing yet. Tap + and type an amount — that is the whole entry.
         </p>
       )}

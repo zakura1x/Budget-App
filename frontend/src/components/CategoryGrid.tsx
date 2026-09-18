@@ -31,6 +31,7 @@ function CategoryRing({ progress, colour, icon }: { progress: number; colour: st
   return (
     <span className="relative flex items-center justify-center" style={{ width: SIZE, height: SIZE }}>
       <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="absolute inset-0 -rotate-90" aria-hidden="true">
+        <circle cx={SIZE / 2} cy={SIZE / 2} r={radius} fill="none" strokeWidth={THICKNESS + 3} className="stroke-stroke" />
         <circle cx={SIZE / 2} cy={SIZE / 2} r={radius} fill="none" strokeWidth={THICKNESS} className="stroke-surface-2" />
         <circle
           cx={SIZE / 2}
@@ -38,7 +39,6 @@ function CategoryRing({ progress, colour, icon }: { progress: number; colour: st
           r={radius}
           fill="none"
           strokeWidth={THICKNESS}
-          strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - clamped)}
           style={{ stroke: colour }}
@@ -46,8 +46,8 @@ function CategoryRing({ progress, colour, icon }: { progress: number; colour: st
         />
       </svg>
       <span
-        className="flex items-center justify-center rounded-full"
-        style={{ width: SIZE - 14, height: SIZE - 14, backgroundColor: `${colour}1F`, color: colour }}
+        className="flex items-center justify-center rounded-full text-black"
+        style={{ width: SIZE - 16, height: SIZE - 16, backgroundColor: colour }}
       >
         <Glyph name={icon} size={20} />
       </span>
@@ -85,12 +85,12 @@ export function CategoryGrid({
         <h2 className="text-headline">
           Expense <span className="num text-ink-2">{formatPHP(overview.totals.spent)}</span>
         </h2>
-        <button type="button" onClick={() => navigate('/stats')} className="min-h-tap px-1 text-footnote font-semibold text-accent">
+        <button type="button" onClick={() => navigate('/stats')} className="min-h-tap px-1 text-footnote font-semibold text-accent-ink">
           Stats
         </button>
       </div>
       {spent.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-line px-4 py-3 text-footnote text-ink-2">
+        <p className="rounded-2xl border-2 border-dashed border-stroke/70 px-4 py-3 text-footnote text-ink-2">
           Nothing spent in this period yet.
         </p>
       ) : (

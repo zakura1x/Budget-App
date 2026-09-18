@@ -153,3 +153,14 @@ def test_the_new_preferences(api):
     # A new budget starts from those defaults.
     budget = api.post("/budgets?today=2026-09-14", {"amount": "5000.00"}).json()
     assert budget["period"] == "weekly" and budget["week_start_day"] == 7
+
+
+def test_the_palette_is_a_preference_of_its_own(api):
+    """UX-05, 2026-09-18: four palettes, each light and dark - so the palette never touches the theme."""
+    api.register()
+    assert api.get("/settings/preferences").json()["palette"] == "classic"
+    changed = api.patch("/settings/preferences", {"palette": "lime", "theme": "dark"}).json()
+    assert (changed["palette"], changed["theme"]) == ("lime", "dark")
+    assert api.patch("/settings/preferences", {"palette": "candy"}).json()["theme"] == "dark"
+    assert api.patch("/settings/preferences", {"palette": "neon"}).status_code == 422
+    assert api.get("/settings/preferences").json()["palette"] == "candy"

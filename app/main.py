@@ -20,6 +20,7 @@ RateLimit -> Logging -> Auth.
 """
 
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -128,6 +129,10 @@ class _AssetStaticFiles(StaticFiles):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
+
+# The bundled font (the redesign of 2026-09-18). Python 3.11 on Windows has no
+# type for .woff2 and would serve it as text/plain.
+mimetypes.add_type("font/woff2", ".woff2")
 
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount(f"{settings.BASE_URL_CLEAN}/static", _AssetStaticFiles(directory=str(STATIC_DIR)), name="static")

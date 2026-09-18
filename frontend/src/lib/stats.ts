@@ -18,6 +18,8 @@ export interface CategoryShare {
   /** On the parent itself, not one of its sub-categories. */
   direct: string;
   children: CategoryShare[];
+  /** ACC-29 - the balance adjustments' own row (category_id is null). Optional: an older server sends none. */
+  unrecorded?: boolean;
 }
 
 export interface Overview {

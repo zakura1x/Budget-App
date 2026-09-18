@@ -115,7 +115,9 @@ style issue.
     `zbdgt_theme` cookie holds the word light or dark so a lock screen opened
     after the app was closed keeps the chosen theme (UX-05). It is written by
     `pwa.applyTheme`, cleared on sign-out, and the shell echoes only those two
-    words into `<html>`. Do not grow it into a second preference.
+    words into `<html>`. Do not grow it into a second preference - the colour
+    palette (2026-09-18) is deliberately NOT in it, so sign-in and a reopened
+    lock screen show the classic palette.
 
 ## Architecture
 
@@ -233,17 +235,28 @@ screens. They are not permitted to change the foundations:
   `frontend/src/components/ui/` are hand-rolled on purpose; extend them or add
   a sibling. `recharts` is the only chart library.
 - **Colours come from `theme.css` tokens only** — no hex literals, no `dark:`
-  variants (light/dark is a variable swap), and `ok`/`warn`/`danger` mean money
-  state and nothing else.
+  variants (light/dark and the four palettes are a variable swap), and
+  `ok`/`warn`/`danger` mean money state and nothing else - the same in every
+  palette. Accent used as TEXT is `text-accent-ink` (a pink or lime fill is
+  not readable as letters); outlines are `stroke`, never `line`.
 - **Type, spacing and radii come from `tailwind.config.js`** — use `text-body`,
-  `p-tap`, `rounded-card`; don't introduce `text-[15px]` or a new font.
+  `p-tap`, `rounded-card`; don't introduce `text-[15px]` or another font. The
+  two faces are the system sans and JetBrains Mono (self-hosted in
+  `src/styles/fonts/`, used by `.num` and `.label`).
 - **Mobile-first, 390px baseline.** Unprefixed utilities are the phone layout;
   `sm:`/`md:` only widen it inside `max-w-app`.
 - Any visual change means `npm run build` and committing
   `app/web/static/dist/` (invariant 9).
 
-The look follows `sample_ui/` (adopted 2026-09-15): lavender ground, white
-rounded tiles, indigo `accent`, a floating pill tab bar. Tabs are Home ·
+The look is NEO-BRUTALIST (2026-09-18, samples in `sample_ui/Neo-Brutalism`):
+every tile is an outline plus a hard offset shadow (`shadow-card`; `shadow-edge`
+is the outline alone; `.press` is a control that sinks onto its shadow), 8px
+corners (the radius scale is replaced, so `rounded-2xl` is 8px too), no
+decoration. Four palettes - classic (default), candy, lime, mono - each light
+and dark, chosen by `data-palette` (the `palette` preference, `pwa.applyPalette`)
+and `data-theme`; `PalettePicker` previews a palette by putting the attribute
+on a swatch. Category and account colours are bright fills that carry a BLACK
+glyph (`GlyphTile`). The floating pill tab bar stays. Tabs are Home ·
 Accounts · [+] · Calendar · More; Stats is reached through `CalendarSwitch`
 and keeps its own `/stats` route. Every account is a small tile; a tile
 opens `/accounts/:id` (`AccountDetail`) - the account's trail of money in and
@@ -254,9 +267,10 @@ label from the Add Account list (`ACCOUNT_KINDS` in `lib/accounts.ts`) and
 must never drive a rule. `isOwed()` - credit and borrowed - is the one
 frontend test for "show this balance as owed". `highlight` (yellow) marks where you are -
 today, a chosen period - and never an amount, so it cannot read as `warn`.
-The accent change also lives outside theme.css in three places: the
-theme-color metas (both index.html files), the manifest in `app/web/router.py`,
-and `scripts/generate_icons.py` (icons are committed PNGs).
+Colours also live outside theme.css in three places: the theme-color metas
+(both index.html files - the classic ground), the manifest in
+`app/web/router.py`, and `scripts/generate_icons.py` (icons are committed
+PNGs and keep the indigo brand colour, user 2026-09-18).
 
 ## Tests
 
@@ -314,7 +328,10 @@ counts purchases, not payments. Two rules to keep:
   `account_service.update_account` after a `BALANCE_DIFFERS` answer, together
   with its `BALANCE_ADJUST` audit entry in the same commit. Never let
   `POST /transactions` create one, and never make one editable. It moves
-  balances only: no budget, allowance, day total, stat or card limit counts it.
+  balances only: no budget, allowance, day total or card limit counts it. Stats
+  DOES since 2026-09-18 (user): a loss is spending and a gain is income, as their
+  own By Category row (`CategoryShare.unrecorded`). An investment's value is
+  typed through the same question (ACC-12 changed the same day).
 - Bills typed from a card's own app (ACC-35, payload `bills`/`bills_from`) are
   written ONLY by `account_service.set_bills`. With bills, a card adds
   `-due_now` to cash on hand (`AccountView.cash_amount`, which
@@ -354,6 +371,15 @@ are MONEY - do not mix them up. `update_rule` pulls `posted_through` back when
 a start moves earlier. A repeating charge's next occurrence can be paid early
 (REC-33, `pay_now`): it posts with that occurrence's `recurring_on`, which is
 what stops the catch-up charging it again - never post it without one.
+
+A purchase can BECOME an installment plan (REC-34, `installment_conversion`,
+2026-09-18) on a card or a loan: from the add sheet or an expense already
+recorded. The purchase is hidden (soft-deleted; `converted_to` on it,
+`from_transaction` on the rule) - never counted beside its payments - and
+`revert` removes the plan and its posted charges and `undelete`s it. A split
+purchase keeps its proportions (`category_shares`, applied in
+`recurring_service._price_splits`); a bill list that covered the purchase
+covers the plan (`Charge.origin`). All of it is references in backup_service.
 
 An installment is OWED in full from the day it is taken (REC-14):
 `AccountView.plans_unbilled` holds the unbilled remainder on every account
@@ -403,8 +429,9 @@ the contributions.
 
 **Calendar, stats and tags** (Phase 6): `stats_service.overview` and
 `calendar_service.month` read `transaction_service.views()` - both legs of
-every transfer - and count ONLY expense and income splits; adjustments are
-reported as their own totals. One `GET /stats/overview` serves the whole Stats
+every transfer. The calendar counts ONLY expense and income splits; Stats also
+counts balance adjustments (an unrecorded loss as spending, a gain as income,
+each its own By Category row) and still reports their totals on their own. One `GET /stats/overview` serves the whole Stats
 tab. Charts take colours from `hooks/useThemeColours.ts` (recharts needs SVG
 attributes, not classes); a category's own stored colour is the slice colour.
 Tag ids live in `tag_ids` inside the payload: `transaction_service._tags`

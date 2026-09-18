@@ -15,17 +15,23 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.recurring import (
     ExpansionOut,
+    InstallmentPreviewIn,
+    InstallmentPreviewOut,
+    InstallmentTermsIn,
     OccurrenceOut,
     PauseIn,
     PayNowIn,
     PlanPaymentIn,
+    PlannedPaymentOut,
+    PurchaseWithPlanIn,
     RuleIn,
     RuleOut,
     SkipIn,
 )
 from app.core.deps import UnlockedContext, get_unlocked_context
 from app.db.session import get_db
-from app.services import recurring_service
+from app.api.v1.schemas.transactions import TransactionOut
+from app.services import installment_conversion, recurring_service
 
 router = APIRouter(prefix="/recurring", tags=["recurring"])
 
@@ -77,6 +83,67 @@ def expand(
     db: Session = Depends(get_db),
 ) -> ExpansionOut:
     return ExpansionOut.model_validate(recurring_service.expand(db, ctx.cipher, today=_today(today)))
+
+
+# ------------------------------------------------ REC-34: a purchase paid in installments
+# Declared before /{rule_id} so "installments" is never read as a rule id.
+
+
+@router.post("/installments/preview", response_model=InstallmentPreviewOut)
+def preview_installments(
+    body: InstallmentPreviewIn,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> InstallmentPreviewOut:
+    """The plan a purchase would become - first payment and every payment. Writes nothing."""
+    found = installment_conversion.preview(
+        db, ctx.cipher, account_id=body.account_id, amount=body.amount, on=body.card_posted_on or body.txn_date,
+        payments=body.payments, start=body.start, interest=body.interest, today=_today(today),
+    )
+    return InstallmentPreviewOut(
+        start=found.start, payments=[PlannedPaymentOut(on=on, amount=amount) for on, amount in found.payments],
+        due_now=found.due_now, on_closed_statement=found.on_closed_statement,
+    )
+
+
+@router.post("/installments", response_model=RuleOut, status_code=status.HTTP_201_CREATED)
+def create_purchase_with_plan(
+    body: PurchaseWithPlanIn,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> RuleOut:
+    """A new purchase on a card or loan, paid in installments from the start."""
+    purchase = body.purchase.model_dump(mode="python", exclude_none=True)
+    terms = body.terms.model_dump(mode="python", exclude_none=True)
+    return RuleOut.model_validate(installment_conversion.create_with_plan(db, ctx.cipher, purchase, terms,
+                                                                          today=_today(today)))
+
+
+@router.post("/installments/from/{transaction_id}", response_model=RuleOut, status_code=status.HTTP_201_CREATED)
+def convert_purchase(
+    transaction_id: int,
+    body: InstallmentTermsIn,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> RuleOut:
+    """A purchase already recorded, turned into an installment plan - the purchase is replaced by it."""
+    terms = body.model_dump(mode="python", exclude_none=True)
+    return RuleOut.model_validate(installment_conversion.convert(db, ctx.cipher, transaction_id, terms,
+                                                                 today=_today(today)))
+
+
+@router.post("/{rule_id}/revert", response_model=TransactionOut)
+def revert_to_purchase(
+    rule_id: int,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> TransactionOut:
+    """REC-34. The plan and its payments go; the purchase it was made from comes back."""
+    return TransactionOut.model_validate(installment_conversion.revert(db, ctx.cipher, rule_id, today=_today(today)))
 
 
 @router.patch("/{rule_id}", response_model=RuleOut)

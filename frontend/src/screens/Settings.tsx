@@ -16,6 +16,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { PalettePicker } from '../components/PalettePicker';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { ChangePasswordSheet, ChangePinSheet, DeleteAccountSheet, RotateKeySheet } from '../components/SecuritySheets';
 import { Card, SectionTitle } from '../components/ui/Card';
@@ -63,18 +64,19 @@ export function Settings() {
     <>
       <ScreenHeader
         title="Settings"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
       />
 
       {!prefs && !error && <div className="skeleton h-64 rounded-card" aria-hidden="true" />}
-      {error && <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
 
       {prefs && (
         <>
           <SectionTitle>Appearance</SectionTitle>
-          <Card>
+          <Card className="space-y-4">
+            <PalettePicker value={prefs.palette ?? 'classic'} onChange={(value) => void change({ palette: value })} />
             <Segmented<Theme>
-              label="Theme"
+              label="Light or dark"
               value={prefs.theme ?? 'system'}
               onChange={(value) => void change({ theme: value })}
               options={[
@@ -93,7 +95,7 @@ export function Settings() {
               label="Carry over to the next period"
               hint="What you don't spend is added to next period — and if you overspend, that comes off it. Off, every period starts fresh."
             />
-            <div className="border-t border-line pt-4">
+            <div className="border-t border-stroke/40 pt-4">
               <p className="mb-2 text-body">Daily allowance</p>
               <Segmented<AllowanceMode>
                 label="Daily allowance"
@@ -110,7 +112,7 @@ export function Settings() {
                   : 'What is left, divided by the days left. Overspend today and tomorrow’s figure drops to make up for it.'}
               </p>
             </div>
-            <div className="space-y-3 border-t border-line pt-4">
+            <div className="space-y-3 border-t border-stroke/40 pt-4">
               <p className="text-body">A new budget starts as</p>
               <Segmented<PeriodKind>
                 label="Budget period"
@@ -126,7 +128,7 @@ export function Settings() {
                 <select
                   value={prefs.month_start_day}
                   onChange={(e) => void change({ month_start_day: Number(e.target.value) })}
-                  className="num min-h-tap rounded-xl border border-line bg-surface px-3 text-body text-ink"
+                  className="num min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-body text-ink"
                 >
                   {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
@@ -138,7 +140,7 @@ export function Settings() {
                   <select
                     value={prefs.week_start_day}
                     onChange={(e) => void change({ week_start_day: Number(e.target.value) })}
-                    className="min-h-tap rounded-xl border border-line bg-surface px-3 text-body text-ink"
+                    className="min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-body text-ink"
                   >
                     {WEEKDAYS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
                   </select>
@@ -163,7 +165,7 @@ export function Settings() {
                 ]}
               />
             </div>
-            <div className="border-t border-line pt-3">
+            <div className="border-t border-stroke/40 pt-3">
               <Toggle
                 checked={prefs.alert_pace_enabled}
                 onChange={(value) => void change({ alert_pace_enabled: value })}

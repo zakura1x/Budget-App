@@ -37,7 +37,7 @@ const refreshEverything = () => useLedgerStore.setState((s) => ({ version: s.ver
 function Chip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={selected}
-      className={`min-h-tap shrink-0 rounded-xl px-3 text-footnote font-medium transition ${selected ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2'}`}>
+      className={`min-h-tap shrink-0 rounded-xl px-3 text-footnote font-medium transition ${selected ? 'bg-accent text-on-accent shadow-edge' : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2'}`}>
       {children}
     </button>
   );
@@ -88,7 +88,7 @@ export function GoalSheet({ goal, open, onClose, onSaved }: {
         <label className="block text-footnote font-semibold text-ink-2">
           By (optional)
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink" />
+            className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
         </label>
         <div>
           <p className="mb-2 text-footnote font-semibold text-ink-2">Saved in</p>
@@ -211,7 +211,7 @@ export function GoalCard({ goal, accountName, onEdit, onAdd, onUse, compact = fa
         <p className={`num mt-1 ${compact ? 'text-body font-semibold' : 'text-title'}`}>
           {formatPHP(goal.saved)} <span className="text-footnote font-normal text-ink-2">of {formatPHP(goal.target)}</span>
         </p>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-2 shadow-edge" aria-hidden="true">
           <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(Number(goal.ratio), 1) * 100}%` }} />
         </div>
         <p className="mt-1.5 text-footnote text-ink-3">

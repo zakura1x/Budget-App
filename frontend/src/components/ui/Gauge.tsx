@@ -2,7 +2,8 @@
  * A half-circle gauge - the Budget screen's headline (2026-09-15).
  *
  * Same rule as the Ring: `progress` is the share USED (over 1 = overspent),
- * and the arc is money state - ok, warn, danger - and nothing else.
+ * and the arc is money state - ok, warn, danger - and nothing else. The track
+ * is drawn outlined, with square ends (the neo-brutalist look, 2026-09-18).
  */
 import type { ReactNode } from 'react';
 import { toneFor, type Tone } from './Ring';
@@ -13,22 +14,22 @@ export function Gauge({
   progress, tone, label, width = 260, thickness = 20, children,
 }: { progress: number; tone?: Tone; label: string; width?: number; thickness?: number; children?: ReactNode }) {
   const clamped = Math.min(Math.max(progress, 0), 1);
-  const radius = (width - thickness) / 2;
-  const height = radius + thickness;
+  const radius = (width - thickness) / 2 - 2; // room for the outline
+  const height = radius + thickness + 4;
   const cx = width / 2;
-  const cy = radius + thickness / 2;
+  const cy = radius + thickness / 2 + 2;
   const arc = `M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`;
   const length = Math.PI * radius;
 
   return (
     <div className="relative mx-auto" style={{ width, height }} role="img" aria-label={label}>
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-        <path d={arc} fill="none" strokeWidth={thickness} strokeLinecap="round" className="stroke-surface-2" />
+        <path d={arc} fill="none" strokeWidth={thickness + 4} className="stroke-stroke" />
+        <path d={arc} fill="none" strokeWidth={thickness} className="stroke-surface-2" />
         <path
           d={arc}
           fill="none"
           strokeWidth={thickness}
-          strokeLinecap="round"
           strokeDasharray={length}
           strokeDashoffset={length * (1 - clamped)}
           className={`${STROKE[tone ?? toneFor(progress)]} transition-[stroke-dashoffset] duration-700 ease-ios`}

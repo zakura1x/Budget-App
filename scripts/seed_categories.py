@@ -23,30 +23,30 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-# (name, icon, colour, [children])
+# (name, icon, colour, [children]) - colours from the neo-brutalist picker set (StylePicker, 2026-09-18)
 EXPENSE = [
-    ("Food & Drink", "restaurant", "#E8734A", ["Groceries", "Eating out", "Coffee", "Delivery"]),
-    ("Transport", "car", "#4A90D9", ["Fuel", "Ride-hailing", "Fares", "Parking", "Maintenance"]),
-    ("Bills & Utilities", "bolt", "#F2B544", ["Electricity", "Water", "Internet", "Mobile"]),
-    ("Home", "home", "#8B6FD4", ["Rent", "Furnishings", "Repairs", "Help"]),
-    ("Shopping", "bag", "#E05A8A", ["Clothes", "Electronics", "Household"]),
-    ("Health", "heart", "#D64C40", ["Medicine", "Doctor", "Fitness", "Insurance"]),
-    ("Entertainment", "play", "#5BB3A6", ["Streaming", "Games", "Events", "Hobbies"]),
-    ("Education", "book", "#3F8FA3", ["Tuition", "Books", "Courses"]),
-    ("Family & Gifts", "gift", "#C86FB0", ["Gifts", "Donations", "Support"]),
-    ("Financial", "bank", "#6E7B8B", ["Bank fees", "Interest", "Taxes"]),
-    ("Travel", "plane", "#3FA37A", ["Flights", "Stays", "Local transport"]),
-    ("Other", "dots", "#8E8E93", []),
+    ("Food & Drink", "restaurant", "#FF7A59", ["Groceries", "Eating out", "Coffee", "Delivery"]),
+    ("Transport", "car", "#5AB8FF", ["Fuel", "Ride-hailing", "Fares", "Parking", "Maintenance"]),
+    ("Bills & Utilities", "bolt", "#FFC53D", ["Electricity", "Water", "Internet", "Mobile"]),
+    ("Home", "home", "#B98CFF", ["Rent", "Furnishings", "Repairs", "Help"]),
+    ("Shopping", "bag", "#FF6B9A", ["Clothes", "Electronics", "Household"]),
+    ("Health", "heart", "#FF5C5C", ["Medicine", "Doctor", "Fitness", "Insurance"]),
+    ("Entertainment", "play", "#4FD1C5", ["Streaming", "Games", "Events", "Hobbies"]),
+    ("Education", "book", "#8C9EFF", ["Tuition", "Books", "Courses"]),
+    ("Family & Gifts", "gift", "#FF8AD8", ["Gifts", "Donations", "Support"]),
+    ("Financial", "bank", "#AEB6C2", ["Bank fees", "Interest", "Taxes"]),
+    ("Travel", "plane", "#5FD68A", ["Flights", "Stays", "Local transport"]),
+    ("Other", "dots", "#AEB6C2", []),
 ]
 
 INCOME = [
-    ("Salary", "wallet", "#2C9669", ["Regular pay", "13th month", "Overtime"]),
-    ("Business", "briefcase", "#3F8FA3", []),
-    ("Freelance", "laptop", "#4A90D9", []),
-    ("Investments", "chart", "#8B6FD4", ["Dividends", "Interest"]),
-    ("Gifts received", "gift", "#C86FB0", []),
-    ("Refunds", "undo", "#6E7B8B", []),
-    ("Other income", "dots", "#8E8E93", []),
+    ("Salary", "wallet", "#C6F04D", ["Regular pay", "13th month", "Overtime"]),
+    ("Business", "briefcase", "#8C9EFF", []),
+    ("Freelance", "laptop", "#5AB8FF", []),
+    ("Investments", "chart", "#B98CFF", ["Dividends", "Interest"]),
+    ("Gifts received", "gift", "#FF8AD8", []),
+    ("Refunds", "undo", "#AEB6C2", []),
+    ("Other income", "dots", "#AEB6C2", []),
 ]
 
 

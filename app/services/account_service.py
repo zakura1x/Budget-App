@@ -17,9 +17,11 @@ What lives here and could not live in SQL:
   * CASH ON HAND (ACC-17) - the app's headline number, and deliberately not
     net worth. The sum of the accounts you switched on (ACC-18); nothing you
     own, and never an installment's unpaid remainder.
-  * REVALUATION IS NOT INCOME (ACC-12). Typing a new value on an investment
-    account appends a dated valuation (ACC-13); it moves the account's value
-    and is invisible to income and spending stats.
+  * AN INVESTMENT'S VALUE IS TYPED LIKE ANY BALANCE (ACC-12, changed
+    2026-09-18 - user: "the system did not ask for the unrecorded gain/loss").
+    A new value asks the same question (ACC-28): an unrecorded gain or loss,
+    which Stats shows as its own row, or a corrected starting value. The dated
+    valuations typed before that stay the account's base (ACC-13).
   * A BALANCE YOU TYPE (ACC-27/28). A balance is never stored, so setting one
     has to be recorded as SOMETHING: a balance adjustment (a transaction, and
     an audit entry) or a corrected opening balance. Nothing is saved until the
@@ -276,6 +278,7 @@ class Charge(NamedTuple):
     recorded: Optional[datetime] = None
     purchase: bool = False
     source: Optional[int] = None
+    origin: Optional[int] = None  # REC-34 - the purchase a plan was made from; covered if it was
 
 
 @dataclass(frozen=True)
@@ -532,6 +535,13 @@ def update_account(
         opening = money(record.data.get("opening_balance", ZERO))
         # The typed balance decides; an opening balance sent alongside it does not.
         data["opening_balance"] = str(opening + (after - before) if action == "fix_opening" else opening)
+        if action == "fix_opening" and data.get("valuations"):
+            # ACC-13. An investment valued before stands on its LAST value, not its
+            # opening one, so that is the figure a correction moves - no record kept.
+            data["opening_balance"] = str(opening)
+            history = [dict(item) for item in data["valuations"]]
+            history[-1]["value"] = str(money(history[-1]["value"]) + (after - before))
+            data["valuations"] = history
 
     updated = repo.update(account_id, data)
     audit_service.record(
@@ -808,7 +818,11 @@ def _view(
         # can never double-count a contribution.
         base = valuations[-1] if valuations else None
         current_value = base.value if base else opening
-        balance = current_value + total(p.amount for p in postings if base is None or p.on > base.on)
+        # An unrecorded gain or loss typed on the valuation's own day came after
+        # it - valuations are no longer typed (2026-09-18) - so it still counts.
+        balance = current_value + total(
+            p.amount for p in postings
+            if base is None or p.on > base.on or (p.on == base.on and p.kind == "adjustment"))
 
     view = AccountView(
         id=account_id,
@@ -986,6 +1000,10 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
     def listed_already(charge: Charge) -> bool:
         """The card's app had it when the list was typed. A list saved on 2026-09-17 kept only its moment."""
         if covered is not None:
+            # REC-34. A plan made from a purchase the list already held is held too:
+            # the bank's figures had that money, whichever way it is billed now.
+            if charge.origin is not None and charge.origin in covered[True]:
+                return True
             return charge.source is not None and charge.source in covered[charge.purchase]
         return saved_at is not None and charge.recorded is not None and charge.recorded <= saved_at
 
@@ -1076,7 +1094,19 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
 
     when = today or date.today()
     plans = {rule.id: rule.kind for rule in recurring_service.list_rules(db, cipher, today=when)}
-    created = {record.id: record.row_created for record in RecurringRuleRepository(db, cipher).list()}
+    from app.db.repositories.transaction_repository import TransactionRepository
+
+    created: Dict[int, Any] = {}
+    origins: Dict[int, int] = {}
+    hidden = TransactionRepository(db, cipher)
+    for record in RecurringRuleRepository(db, cipher).list():
+        created[record.id] = record.row_created
+        if record.data.get("from_transaction"):
+            # REC-34. A plan made from a purchase is as old as that purchase.
+            origins[record.id] = int(record.data["from_transaction"])
+            original = hidden.get(origins[record.id], include_deleted=True)
+            if original is not None:
+                created[record.id] = original.row_created
     # Each charge carries the row it comes from, so _bills can tell what a saved list already holds.
     charges: Dict[int, List[Charge]] = {}
     for view in transaction_service.views(db, cipher):
@@ -1086,7 +1116,7 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
             plan = plans.get(view.recurring_id) == "installment"
             charges.setdefault(view.account_id, []).append(
                 Charge(view.recurring_on or view.card_posted_on or view.txn_date, view.amount, True, plan,
-                       created.get(view.recurring_id), False, view.recurring_id))
+                       created.get(view.recurring_id), False, view.recurring_id, origins.get(view.recurring_id)))
         elif view.type == "expense":
             charges.setdefault(view.account_id, []).append(
                 Charge(view.card_posted_on or view.txn_date, view.amount, True, False, view.created_at, True, view.id))
@@ -1095,7 +1125,7 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
         if item.type == "expense" and not item.occurrence.paused:
             charges.setdefault(item.account_id, []).append(
                 Charge(item.on, item.amount, item.kind == "installment", item.kind == "installment",
-                       created.get(item.rule_id), False, item.rule_id))
+                       created.get(item.rule_id), False, item.rule_id, origins.get(item.rule_id)))
     return charges
 
 
@@ -1195,8 +1225,6 @@ def _balance_change(
     """
     if payload.get("balance") is None:
         return None
-    if existing.get("type") == "investment":
-        raise BusinessRuleException("An investment account's value is recorded as a valuation (ACC-13)")
 
     after = _amount(payload["balance"], "balance")
     before = _view(account_id, existing, _group_postings(postings).get(account_id, ()), today).balance

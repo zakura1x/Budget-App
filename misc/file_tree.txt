@@ -167,6 +167,7 @@ Budget App/
 │   │   │                                #   interest terms (ACC-37), usual cashback (ACC-38)
 │   │   ├── category_service.py
 │   │   ├── transaction_service.py       # the write path; the cashback pair (TXN-22)
+│   │   ├── installment_conversion.py    # REC-34 a purchase paid in installments, and back
 │   │   ├── interest_service.py          # ACC-37 catch-up: one income entry per day
 │   │   │                                 # of savings interest, marker in the same commit
 │   │   ├── recurring_service.py         # the ONE engine: standard |
@@ -259,6 +260,7 @@ Budget App/
 │       │   ├── ReorderList.tsx          # drag to reorder; captures the pointer only once lifted
 │       │   ├── Icons.tsx                # inline SVG - nothing for the CSP to allow
 │       │   ├── AuthLayout.tsx           # the frame for signed-out screens
+│       │   ├── PalettePicker.tsx        # UX-05 palette choice, each tile drawn in its palette
 │       │   ├── PasswordStrength.tsx     # live checklist against the server's policy
 │       │   ├── PinPad.tsx               # dots + round numpad, auto-submit, shake
 │       │   ├── Splash.tsx               # loading skeleton
@@ -300,8 +302,9 @@ Budget App/
 │       │   └── AboutEncryption.tsx      # what is protected, what is not
 │       │
 │       └── styles/
-│           ├── index.css
-│           └── theme.css                # light/dark tokens
+│           ├── index.css                # @font-face, .num / .label / .press
+│           ├── theme.css                # four palettes x light/dark tokens (2026-09-18)
+│           └── fonts/                   # JetBrains Mono woff2 + OFL.txt, self-hosted
 │
 ├── scripts/
 │   ├── make_release.py                  # release/zbdgt-<commit>.zip from the last commit -

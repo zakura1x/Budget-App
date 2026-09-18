@@ -18,7 +18,7 @@ export interface NumPadProps {
   onLongBackspace?: () => void;
   decimal?: boolean;
   disabled?: boolean;
-  /** Round, borderless keys - the lock-screen look. */
+  /** Round keys - the lock-screen look. */
   variant?: 'amount' | 'pin';
 }
 
@@ -26,8 +26,8 @@ export function NumPad({ onKey, onLongBackspace, decimal = true, disabled = fals
   let pressTimer: number | undefined;
   const keyClass =
     variant === 'pin'
-      ? 'num mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-surface-2 text-[1.75rem] font-medium text-ink transition active:scale-95 active:bg-line'
-      : 'num flex h-14 items-center justify-center rounded-2xl bg-surface-2 text-[1.625rem] font-medium text-ink transition active:scale-95 active:bg-line';
+      ? 'press num mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-surface text-[1.75rem] font-semibold text-ink'
+      : 'press num flex h-14 items-center justify-center rounded-xl bg-surface text-[1.625rem] font-semibold text-ink';
 
   return (
     <div className={`grid select-none grid-cols-3 ${variant === 'pin' ? 'gap-x-6 gap-y-4' : 'gap-2'}`} role="group" aria-label="Number pad">
@@ -46,7 +46,7 @@ export function NumPad({ onKey, onLongBackspace, decimal = true, disabled = fals
             }}
             onPointerUp={() => window.clearTimeout(pressTimer)}
             onPointerLeave={() => window.clearTimeout(pressTimer)}
-            className={`${keyClass} disabled:opacity-40 ${key === 'back' && variant === 'pin' ? '!bg-transparent' : ''}`}
+            className={`${keyClass} disabled:opacity-40 ${key === 'back' && variant === 'pin' ? '!bg-transparent !shadow-none' : ''}`}
           >
             {key === 'back' ? <BackspaceIcon size={26} /> : key}
           </button>

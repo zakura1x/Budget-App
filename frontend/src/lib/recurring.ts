@@ -7,7 +7,7 @@
  * call on every open - it posts what is due and nothing twice.
  */
 import { api, ApiError } from './api';
-import { localToday } from './transactions';
+import { localToday, type Transaction, type TransactionDraft } from './transactions';
 
 export type RuleKind = 'standard' | 'subscription' | 'installment';
 export type RuleType = 'expense' | 'income' | 'transfer';
@@ -89,6 +89,9 @@ export interface Rule {
   problem: string | null;
   reminder_days: number | null;
   installment: InstallmentStatus | null;
+  /** REC-34 - the purchase this plan replaced (hidden until converted back). Optional: an older server sends none. */
+  from_transaction?: number | null;
+  receipt_id?: number | null;
 }
 
 export interface RuleDraft {
@@ -297,3 +300,38 @@ export function ordinal(n: number): string {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th';
   return `${n}${suffix}`;
 }
+
+
+// ------------------------------------------------ REC-34: a purchase paid in installments
+
+/** How a purchase is spread. `start` left out = the bill the purchase belongs to (a loan: a month later). */
+export interface InstallmentTerms {
+  payments: number;
+  start?: string;
+  interest?: string;
+}
+
+export interface InstallmentPreview {
+  start: string;
+  payments: { on: string; amount: string }[];
+  /** Payments dated today or earlier - posted as soon as the plan is saved. */
+  due_now: number;
+  on_closed_statement: boolean;
+}
+
+export const previewInstallments = (
+  body: InstallmentTerms & { account_id: number; amount: string; txn_date: string; card_posted_on?: string | null },
+  signal?: AbortSignal,
+) => api<InstallmentPreview>(`/recurring/installments/preview?${today()}`, { method: 'POST', body, signal });
+
+/** A purchase already recorded, turned into a plan - the purchase is replaced by it. */
+export const convertPurchase = (transactionId: number, terms: InstallmentTerms) =>
+  api<Rule>(`/recurring/installments/from/${transactionId}?${today()}`, { method: 'POST', body: terms });
+
+/** The add sheet: a new purchase, paid in installments from the start. */
+export const createPurchaseWithPlan = (purchase: TransactionDraft, terms: InstallmentTerms) =>
+  api<Rule>(`/recurring/installments?${today()}`, { method: 'POST', body: { purchase, terms } });
+
+/** The plan and its payments go; the purchase it was made from comes back. */
+export const revertInstallment = (ruleId: number) =>
+  api<Transaction>(`/recurring/${ruleId}/revert?${today()}`, { method: 'POST' });

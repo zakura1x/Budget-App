@@ -62,7 +62,7 @@ export function InterestFields({ value, onChange, saved, categories }: InterestF
     edit({ bands: bands.map((band, i) => (i === index ? { ...band, ...changes } : band)) });
 
   return (
-    <div className="space-y-3 rounded-2xl bg-surface-2 p-4">
+    <div className="space-y-3 rounded-card border-2 border-stroke bg-surface-2 p-4">
       <Toggle
         checked={on}
         onChange={(next) => (next ? turnOn() : onChange(null))}
@@ -158,7 +158,7 @@ export function InterestFields({ value, onChange, saved, categories }: InterestF
               id="interest-category"
               value={value.category_id || ''}
               onChange={(e) => edit({ category_id: Number(e.target.value) })}
-              className="min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body"
+              className="min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body"
             >
               <option value="">Choose a category…</option>
               {categories.map((c) => (

@@ -122,7 +122,7 @@ export function Categories() {
     <>
       <ScreenHeader
         title="Categories"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
         action={
           <Button size="md" onClick={() => openNew(null)} aria-label="Add category">
             <PlusIcon size={20} />
@@ -142,7 +142,7 @@ export function Categories() {
       />
 
       {error && (
-        <p className="mt-4 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+        <p className="mt-4 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
           {error}{' '}
           <button type="button" className="font-semibold underline" onClick={() => void load()}>
             Try again
@@ -174,7 +174,7 @@ export function Categories() {
               <>
                 <Row category={parent} grip={grip} onEdit={openEdit} onAddChild={(c) => openNew(c.id)} />
                 {parent.children.length > 0 && (
-                  <div className="border-t border-line">
+                  <div className="border-t border-stroke/40">
                     <ReorderList
                       label={`sub-categories of ${parent.name}`}
                       items={parent.children}

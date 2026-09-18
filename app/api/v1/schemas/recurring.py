@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.schemas.budgets import Ratio
 from app.api.v1.schemas.common import Money
+from app.api.v1.schemas.transactions import TransactionIn
 
 Kind = Literal["standard", "subscription", "installment"]
 # A projected item can also be a typed card bill entering cash on hand (ACC-35):
@@ -147,6 +148,8 @@ class RuleOut(BaseModel):
     problem: Optional[str] = None
     reminder_days: Optional[int] = None
     installment: Optional[InstallmentOut] = None
+    from_transaction: Optional[int] = None  # REC-34 - the purchase this plan replaced
+    receipt_id: Optional[int] = None
 
 
 class ExpansionOut(BaseModel):
@@ -264,3 +267,40 @@ class CardLookaheadOut(BaseModel):
     name: str
     spending_limit: Optional[Money] = None
     statements: List[CardStatementOut]
+
+
+# ------------------------------------------------ REC-34: a purchase paid in installments
+
+
+class InstallmentTermsIn(BaseModel):
+    """How a purchase is spread: how many monthly payments, from when, and any interest or fee."""
+
+    payments: int = Field(ge=1, le=360)
+    start: Optional[date] = None  # the first payment; left out = the bill the purchase belongs to
+    interest: Optional[Money] = None
+
+
+class InstallmentPreviewIn(InstallmentTermsIn):
+    account_id: int
+    amount: Money
+    txn_date: date
+    card_posted_on: Optional[date] = None
+
+
+class PlannedPaymentOut(BaseModel):
+    on: date
+    amount: Money
+
+
+class InstallmentPreviewOut(BaseModel):
+    start: date
+    payments: List[PlannedPaymentOut]
+    due_now: int  # posted as soon as the plan is saved
+    on_closed_statement: bool
+
+
+class PurchaseWithPlanIn(BaseModel):
+    """The add sheet: a new purchase, paid in installments from the start."""
+
+    purchase: TransactionIn
+    terms: InstallmentTermsIn

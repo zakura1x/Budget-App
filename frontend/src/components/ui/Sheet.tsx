@@ -1,5 +1,5 @@
 /**
- * Bottom sheet - the iOS pattern the add-transaction flow is built on.
+ * Bottom sheet - the pattern the add-transaction flow is built on.
  *
  * Slides up from the bottom, dims the page, closes on backdrop tap, Escape,
  * or a downward drag on the handle. Locks page scroll while open, moves focus
@@ -73,7 +73,7 @@ export function Sheet({ open, onClose, title, children }: SheetProps) {
         tabIndex={-1}
         onTransitionEnd={() => !open && setMounted(false)}
         className={[
-          'absolute inset-x-0 bottom-0 mx-auto max-w-app rounded-t-sheet bg-surface shadow-sheet outline-none',
+          'absolute inset-x-0 bottom-0 mx-auto max-w-app rounded-t-sheet border-x-2 border-t-2 border-stroke bg-surface outline-none',
           'pb-safe transition-transform duration-300 ease-ios',
           open ? 'translate-y-0' : 'translate-y-full',
         ].join(' ')}
@@ -86,10 +86,10 @@ export function Sheet({ open, onClose, title, children }: SheetProps) {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <span className="h-1.5 w-10 rounded-full bg-line" />
+          <span className="h-1.5 w-12 rounded-full bg-stroke" />
         </div>
-        {title && <h2 className="px-5 pb-2 text-headline">{title}</h2>}
-        <div className="max-h-[85dvh] overflow-y-auto px-5 pb-4">{children}</div>
+        {title && <h2 className="px-5 pb-3 text-title font-black tracking-tight">{title}</h2>}
+        <div className="max-h-[85dvh] overflow-y-auto px-5 pb-4 pt-1">{children}</div>
       </div>
     </div>
   );

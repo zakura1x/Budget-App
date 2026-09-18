@@ -114,7 +114,7 @@ async def manifest():
             "scope": f"{base}/",
             "display": "standalone",
             "orientation": "portrait",
-            "background_color": "#f2f2fa",
+            "background_color": "#f6f1e4",  # the classic palette's ground (2026-09-18)
             "theme_color": "#4f54aa",
             "icons": [
                 {"src": f"{icons}/icon-192.png", "sizes": "192x192", "type": "image/png"},

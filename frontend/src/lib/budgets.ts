@@ -111,12 +111,16 @@ export interface BudgetDraft {
 
 export type Theme = 'system' | 'light' | 'dark';
 
+/** UX-05 (2026-09-18): the colour palette - every one has a light and a dark. */
+export type Palette = 'classic' | 'candy' | 'lime' | 'mono';
+
 export interface Preferences {
   carry_over: boolean;
   daily_allowance_mode: AllowanceMode;
   alert_warn_threshold_pct: number;
   alert_pace_enabled: boolean;
   theme: Theme;
+  palette: Palette;
   budget_period: PeriodKind;
   month_start_day: number;
   /** 1 Monday .. 7 Sunday */

@@ -42,7 +42,7 @@ export function More() {
       <ScreenHeader title="More" />
 
       <section className="flex items-center gap-4 rounded-card bg-accent p-5 text-on-accent shadow-raised" aria-label="Signed in">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-on-accent/20 text-title" aria-hidden="true">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-surface text-title font-black text-ink shadow-edge" aria-hidden="true">
           {name.slice(0, 1).toUpperCase()}
         </span>
         <span className="min-w-0 flex-1">
@@ -50,7 +50,7 @@ export function More() {
           {session?.user.email && <span className="block truncate text-footnote opacity-80">{session.user.email}</span>}
         </span>
         <button type="button" onClick={() => void lock()} aria-label="Lock now"
-          className="flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-on-accent/15 transition active:scale-95">
+          className="press flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-surface text-ink">
           <LockIcon size={20} />
         </button>
       </section>

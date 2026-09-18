@@ -50,7 +50,7 @@ export function ChangePasswordSheet({ open, onClose }: { open: boolean; onClose:
       <div className="space-y-4 pb-2">
         {done ? (
           <>
-            <p className="rounded-2xl bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {done}</p>
+            <p className="rounded-2xl border-2 border-ok bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {done}</p>
             <Button block onClick={onClose}>Done</Button>
           </>
         ) : (
@@ -136,7 +136,7 @@ export function ChangePinSheet({ open, onClose }: { open: boolean; onClose: () =
         )}
         {step === 'done' && (
           <>
-            <p className="rounded-2xl bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ PIN saved.</p>
+            <p className="rounded-2xl border-2 border-ok bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ PIN saved.</p>
             <Button block onClick={onClose}>Done</Button>
           </>
         )}
@@ -182,7 +182,7 @@ export function RotateKeySheet({ open, onClose }: { open: boolean; onClose: () =
       <div className="space-y-4 pb-2">
         {done ? (
           <>
-            <p className="rounded-2xl bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {done}</p>
+            <p className="rounded-2xl border-2 border-ok bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {done}</p>
             <Button block onClick={onClose}>Done</Button>
           </>
         ) : (
@@ -191,7 +191,7 @@ export function RotateKeySheet({ open, onClose }: { open: boolean; onClose: () =
               Makes a new key and re-encrypts every account, transaction, receipt and note under it. Anyone holding your
               old key is locked out.
             </p>
-            <p className="rounded-2xl bg-warn/10 px-4 py-3 text-footnote text-ink">
+            <p className="rounded-2xl border-2 border-warn bg-warn/10 px-4 py-3 text-footnote text-ink">
               It cannot reach a copy someone already exported or downloaded. It takes a few seconds, and it all happens
               at once or not at all.
             </p>
@@ -240,7 +240,7 @@ export function DeleteAccountSheet({ open, onClose }: { open: boolean; onClose: 
   return (
     <Sheet open={open} onClose={onClose} title="Delete my account">
       <div className="space-y-4 pb-2">
-        <div className="space-y-2 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+        <div className="space-y-2 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
           <p className="font-semibold">This cannot be undone.</p>
           <p>
             Every account, transaction, receipt, budget and backup kept on this server is destroyed, with your key.

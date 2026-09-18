@@ -57,7 +57,8 @@ VOLATILE = {("attachments", "file_key_version")}  # differs by key version, not 
 # Left out of a MERGE key only: bookkeeping ids of rows inserted after this table
 # (a card's bill list names what it covers, ACC-35), which cannot be mapped back
 # yet when the row is compared - so the same card would never be recognised.
-MERGE_IGNORED = {("accounts", "bills_cover_transactions"), ("accounts", "bills_cover_rules")}
+MERGE_IGNORED = {("accounts", "bills_cover_transactions"), ("accounts", "bills_cover_rules"),
+                 ("recurring_rules", "from_transaction")}  # REC-34 - the same: transactions come later
 
 
 @dataclass(frozen=True)

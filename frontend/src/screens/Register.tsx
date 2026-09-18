@@ -48,7 +48,7 @@ export function Register() {
   if (config && !config.registration_open) {
     return (
       <AuthLayout title="Sign-up is closed" subtitle="This server is not taking new accounts right now.">
-        <Link to="/login" className="font-semibold text-accent">Back to sign in</Link>
+        <Link to="/login" className="font-semibold text-accent-ink">Back to sign in</Link>
       </AuthLayout>
     );
   }
@@ -60,7 +60,7 @@ export function Register() {
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-accent">Sign in</Link>
+          <Link to="/login" className="font-semibold text-accent-ink">Sign in</Link>
         </>
       }
     >

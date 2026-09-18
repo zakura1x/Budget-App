@@ -88,7 +88,7 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
       <div className="flex items-center justify-between px-4 pb-1 pt-3">
         <h3 className="text-headline">{account.credit ? 'Plans on this card' : 'Plans on this account'}</h3>
         <button type="button" onClick={addPlan}
-          className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent active:bg-accent-soft">
+          className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent-ink active:bg-accent-soft">
           + Add
         </button>
       </div>
@@ -98,7 +98,7 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
           owes counts all of it from today.
         </p>
       ) : (
-        <div className="divide-y divide-line">
+        <div className="divide-y divide-stroke/80">
           {openPlans.map((rule) => {
             const plan = rule.installment!;
             // REC-32. A card's plan is paid through the card's bill, so its figure
@@ -123,7 +123,7 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
                   </span>
                 </button>
                 <button type="button" onClick={() => pay(rule)} aria-label={`Pay ${rule.name}`}
-                  className="min-h-tap shrink-0 rounded-full bg-accent-soft px-3 text-footnote font-semibold text-accent active:scale-95">
+                  className="min-h-tap shrink-0 press rounded-full bg-accent-soft px-3 text-footnote font-semibold text-accent-ink">
                   Pay
                 </button>
               </div>
@@ -147,7 +147,7 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
                   paid early. A card's charges are paid through the card's bill instead. */}
               {!account.credit && !rule.paused && rule.next_on && (
                 <button type="button" onClick={() => setPayingNow(rule)} aria-label={`Pay ${rule.name} now`}
-                  className="min-h-tap shrink-0 rounded-full bg-accent-soft px-3 text-footnote font-semibold text-accent active:scale-95">
+                  className="min-h-tap shrink-0 press rounded-full bg-accent-soft px-3 text-footnote font-semibold text-accent-ink">
                   Pay
                 </button>
               )}
@@ -163,7 +163,7 @@ export function AccountPlans({ account, rules: given, alwaysShow = false, onPay,
       {!onPay && <PlanPaymentSheet rule={paying} accounts={lookups.accounts} onClose={() => setPaying(null)} />}
       <PayNowSheet rule={payingNow} accountName={account.name} onClose={() => setPayingNow(null)} />
       {!account.credit && openPlans.length > 0 && (
-        <p className="border-t border-line px-4 py-3 text-footnote text-ink-2">
+        <p className="border-t border-stroke/40 px-4 py-3 text-footnote text-ink-2">
           Pay a plan here and it counts against it — pay more than is due and you choose whether the extra lowers the
           monthly payment or finishes it sooner. What is left is counted in what you owe, and in net worth.
         </p>

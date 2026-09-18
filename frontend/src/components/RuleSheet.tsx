@@ -22,6 +22,7 @@ import { centavos, formatPHP, toDecimalString } from '../lib/money';
 import {
   createRule,
   deleteRule,
+  revertInstallment,
   pauseRule,
   payOff,
   previewRule,
@@ -37,6 +38,7 @@ import {
 import { localToday } from '../lib/transactions';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useLedgerStore } from '../stores/ledgerStore';
+import { ReceiptControl } from './ReceiptControl';
 import { Button } from './ui/Button';
 import { Segmented } from './ui/Segmented';
 import { Sheet } from './ui/Sheet';
@@ -66,7 +68,7 @@ function Chip({ selected, onClick, children }: { selected: boolean; onClick: () 
       onClick={onClick}
       aria-pressed={selected}
       className={`min-h-tap shrink-0 rounded-xl px-3 text-footnote font-medium transition ${
-        selected ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2 active:bg-line'
+        selected ? 'bg-accent text-on-accent shadow-edge' : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2'
       }`}
     >
       {children}
@@ -257,7 +259,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
     <Sheet open={open} onClose={onClose} title={TITLES[kind][rule ? 1 : 0]}>
       <div className="space-y-4 pb-2">
         {plan && (
-          <div className="rounded-2xl bg-surface-2 px-4 py-3">
+          <div className="rounded-card border-2 border-stroke bg-surface-2 px-4 py-3">
             <p className="num text-headline">{formatPHP(plan.remaining)} left</p>
             <p className="text-footnote text-ink-2">
               {plan.payments_posted} of {plan.payments} paid
@@ -271,7 +273,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
             )}
           </div>
         )}
-        {rule?.problem && <p className="rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{rule.problem}.</p>}
+        {rule?.problem && <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{rule.problem}.</p>}
 
         {kind === 'standard' && !rule && (
           <Segmented<RuleType>
@@ -309,14 +311,14 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
           <label className="block text-footnote font-semibold text-ink-2">
             New amount from
             <input type="date" value={amountFrom} min={rule.start} onChange={(e) => e.target.value && setAmountFrom(e.target.value)}
-              className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink" />
+              className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
             <span className="mt-1 block font-normal text-ink-3">Charges already posted keep their amount.</span>
           </label>
         )}
 
         <div>
           <p className="mb-2 text-footnote font-semibold text-ink-2">{type === 'transfer' ? 'From' : type === 'income' ? 'Into' : 'Paid from'}</p>
-          <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5">
+          <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
             {accounts.map((a) => (
               <Chip key={a.id} selected={accountId === a.id} onClick={() => setAccountId(a.id)}>{a.name}</Chip>
             ))}
@@ -325,7 +327,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
         {type === 'transfer' ? (
           <div>
             <p className="mb-2 text-footnote font-semibold text-ink-2">To</p>
-            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5">
+            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
               {accounts.filter((a) => a.id !== accountId).map((a) => (
                 <Chip key={a.id} selected={counterId === a.id} onClick={() => setCounterId(a.id)}>{a.name}</Chip>
               ))}
@@ -355,7 +357,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
           </div>
         )}
 
-        <div className="space-y-3 rounded-2xl bg-surface-2/60 p-3">
+        <div className="space-y-3 rounded-card border-2 border-stroke bg-surface-2 p-3">
           <Segmented<Frequency>
             label="How often"
             value={frequency}
@@ -384,7 +386,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
           <label className="block text-footnote font-semibold text-ink-2">
             {kind === 'installment' ? 'First payment' : 'Starts'}
             <input type="date" value={start} disabled={locked} onChange={(e) => e.target.value && setStart(e.target.value)}
-              className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink disabled:opacity-60" />
+              className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink disabled:opacity-60" />
           </label>
           {startsInPast && (
             <label className="flex items-center gap-2 text-footnote text-ink-2">
@@ -410,7 +412,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
               )}
               {endMode === 'on' && (
                 <input type="date" value={endOn} onChange={(e) => setEndOn(e.target.value)} aria-label="Last date"
-                  className="block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body text-ink" />
+                  className="block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body text-ink" />
               )}
             </>
           )}
@@ -423,7 +425,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
         {preview && preview.length > 0 && (
           <div>
             <p className="mb-1.5 text-footnote font-semibold text-ink-2">Next {preview.length}</p>
-            <ul className="divide-y divide-line rounded-2xl bg-surface-2/60 px-3">
+            <ul className="divide-y divide-stroke/80 rounded-card border-2 border-stroke bg-surface-2 px-3">
               {preview.map((o) => (
                 <li key={o.on} className="num flex min-h-10 items-center justify-between text-footnote">
                   <span className="text-ink-2">
@@ -440,7 +442,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
         {error && <p className="text-footnote text-danger">{error}</p>}
 
         {confirmingPayoff && plan ? (
-          <div className="space-y-3 rounded-2xl bg-surface-2 p-4">
+          <div className="space-y-3 rounded-card border-2 border-stroke bg-surface-2 p-4">
             <p className="text-body">
               Record <span className="num font-semibold">{formatPHP(plan.remaining)}</span> paid today and close the plan?
             </p>
@@ -470,6 +472,20 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
                 <Button variant="ghost" className="text-danger" disabled={busy} onClick={() => void run(() => deleteRule(rule.id))}>
                   Delete
                 </Button>
+              </div>
+            )}
+            {rule?.from_transaction && (
+              // REC-34. Made from a purchase: it can go back to being that one purchase.
+              <div className="space-y-2">
+                {rule.receipt_id && (
+                  <ReceiptControl transactionId={rule.from_transaction} attachmentId={rule.receipt_id} readOnly />
+                )}
+                <Button variant="secondary" block disabled={busy} onClick={() => void run(() => revertInstallment(rule.id))}>
+                  Convert back to one purchase
+                </Button>
+                <p className="text-center text-footnote text-ink-3">
+                  Removes this plan and the payments it recorded, and brings the purchase back as it was.
+                </p>
               </div>
             )}
           </>

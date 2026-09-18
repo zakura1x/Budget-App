@@ -161,11 +161,13 @@ def test_an_unknown_action_is_refused(session, owner, setup):
         set_balance(session, owner, setup.wallet, "1600.00", action="ignore")
 
 
-def test_an_investment_value_is_not_set_this_way(session, owner):
+def test_an_investment_value_is_set_this_way_too(session, owner):
+    """Changed 2026-09-18 (user): an investment's value asks like any balance - here an unrecorded loss."""
     fund = {"name": "Fund", "type": "investment", "opening_balance": "100000.00"}
     created = account_service.create_account(session, owner, fund)
-    with pytest.raises(BusinessRuleException):
-        set_balance(session, owner, created.id, "90000.00", action="adjust", base=fund)
+    set_balance(session, owner, created.id, "90000.00", action="adjust", base=fund)
+    [entry] = adjustments(session, owner)
+    assert (entry.direction, str(entry.amount)) == ("out", "10000.00")
 
 
 # ----------------------------------------------------- living with one

@@ -54,7 +54,7 @@ function Choice({ title, hint, onClick, disabled }: { title: string; hint: strin
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="w-full rounded-2xl bg-surface-2 px-4 py-3 text-left transition active:bg-line disabled:opacity-40"
+      className="w-full rounded-card border-2 border-stroke bg-surface-2 px-4 py-3 text-left transition active:bg-line disabled:opacity-40"
     >
       <span className="block text-body font-semibold text-ink">{title}</span>
       <span className="mt-0.5 block text-footnote text-ink-2">{hint}</span>
@@ -172,7 +172,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
           disabled={busy}
         />
         {changeFor === plan.rule_id && (
-          <div className="space-y-3 rounded-2xl border border-line p-3">
+          <div className="space-y-3 rounded-xl border-2 border-stroke p-3">
             <TextField
               label="The payment as the bank billed it"
               value={changeAmount}
@@ -208,11 +208,11 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-2xl bg-surface-2 px-3 py-3">
+              <div className="rounded-card border-2 border-stroke bg-surface-2 px-3 py-3">
                 <p className="text-caption text-ink-3">The app’s figure</p>
                 <p className="num mt-0.5 text-headline">{formatPHP(statement.amount)}</p>
               </div>
-              <div className="rounded-2xl bg-surface-2 px-3 py-3">
+              <div className="rounded-card border-2 border-stroke bg-surface-2 px-3 py-3">
                 <p className="text-caption text-ink-3">The bank’s figure</p>
                 <p className="num mt-0.5 text-headline">{statement.bank_total ? formatPHP(statement.bank_total) : '—'}</p>
               </div>
@@ -237,7 +237,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
             />
 
             {difference !== null && isZero(difference) && (
-              <p className="rounded-2xl bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ Matches the bank.</p>
+              <p className="rounded-2xl border-2 border-ok bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ Matches the bank.</p>
             )}
 
             {(higher || lower) && (
@@ -263,7 +263,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                           disabled={busy}
                         />
                         {interestFor === plan.rule_id && (
-                          <div className="space-y-3 rounded-2xl border border-line p-3">
+                          <div className="space-y-3 rounded-xl border-2 border-stroke p-3">
                             <TextField
                               label="Interest on each payment"
                               value={interestAmount}
@@ -294,7 +294,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                       disabled={busy}
                     />
                     {charging && (
-                      <div className="space-y-3 rounded-2xl border border-line p-3">
+                      <div className="space-y-3 rounded-xl border-2 border-stroke p-3">
                         <div className="flex flex-wrap gap-2" role="group" aria-label="Category">
                           {categories.map((c) => (
                             <button
@@ -303,7 +303,7 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
                               aria-pressed={categoryId === c.id}
                               onClick={() => setCategoryId(c.id)}
                               className={`min-h-tap rounded-xl px-3 text-footnote font-medium transition ${
-                                categoryId === c.id ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2'
+                                categoryId === c.id ? 'bg-accent text-on-accent shadow-edge' : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2'
                               }`}
                             >
                               {c.name}

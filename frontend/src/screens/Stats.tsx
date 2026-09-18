@@ -36,6 +36,8 @@ import { useLedgerStore } from '../stores/ledgerStore';
 type Mode = 'budget' | 'month' | 'year' | 'custom';
 
 const NEUTRAL = '#8E8E93';
+/** recharts draws SVG text with attributes, so the mono face is named here, as tailwind.config.js does. */
+const MONO = '"JetBrains Mono", ui-monospace, monospace';
 const TONE = { ok: 'text-ok', warn: 'text-warn', danger: 'text-danger' } as const;
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd');
@@ -85,7 +87,7 @@ function Summary({ overview }: { overview: Overview }) {
           <span className="num">{formatPHP(byNow ?? previous.spent)}</span>)
         </p>
       )}
-      <div className="mt-4 grid grid-cols-3 divide-x divide-line text-center">
+      <div className="mt-4 grid grid-cols-3 divide-x divide-stroke/80 text-center">
         <div>
           <p className="text-caption text-ink-3">Earned</p>
           <p className="num text-body font-semibold text-ok">{formatPHP(totals.earned)}</p>
@@ -101,7 +103,7 @@ function Summary({ overview }: { overview: Overview }) {
       </div>
       {(totals.adjustment_losses !== '0.00' || totals.adjustment_gains !== '0.00') && (
         <p className="mt-3 rounded-xl bg-surface-2 px-3 py-2 text-footnote text-ink-2">
-          Balance adjustments, not counted above:{' '}
+          Includes balance adjustments — your budget does not count them:{' '}
           <span className="num">
             {[
               totals.adjustment_losses !== '0.00' && `${formatPHP(totals.adjustment_losses)} unrecorded loss`,
@@ -165,16 +167,16 @@ function ForecastCard({ overview, colours }: { overview: Overview; colours: Them
         <div className="mt-3 h-40">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-              <XAxis dataKey="label" tick={{ fill: colours['ink-3'], fontSize: 11 }} tickLine={false}
+              <XAxis dataKey="label" tick={{ fill: colours['ink-2'], fontSize: 10, fontFamily: MONO }} tickLine={false}
                 axisLine={{ stroke: colours.line }} interval="preserveStartEnd" minTickGap={24} />
               <YAxis hide domain={[0, 'auto']} />
               {available && (
                 <ReferenceLine y={draw(available)} stroke={colours['ink-3']} strokeDasharray="4 4"
-                  label={{ value: 'Budget', position: 'insideTopLeft', fill: colours['ink-3'], fontSize: 11 }} />
+                  label={{ value: 'Budget', position: 'insideTopLeft', fill: colours['ink-2'], fontSize: 10, fontFamily: MONO }} />
               )}
-              <Line type="monotone" dataKey="actual" stroke={colours.ink} strokeWidth={2.5} dot={false} connectNulls={false}
+              <Line type="linear" dataKey="actual" stroke={colours.ink} strokeWidth={3} dot={false} connectNulls={false}
                 isAnimationActive={false} />
-              <Line type="monotone" dataKey="projected" stroke={tone ? colours[tone] : colours['ink-2']} strokeWidth={2}
+              <Line type="linear" dataKey="projected" stroke={tone ? colours[tone] : colours['ink-2']} strokeWidth={2}
                 strokeDasharray="5 5" dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
@@ -207,6 +209,14 @@ function CategoryCard({ overview, lookups, colours }: { overview: Overview; look
   const parent = drill !== null ? list.find((c) => c.category_id === drill) : undefined;
 
   const slice = (share: CategoryShare, self = false): Slice => {
+    if (share.unrecorded) {
+      // ACC-29. Balance adjustments: one row, no category and nothing under it (2026-09-18).
+      return {
+        key: 'unrecorded', id: null, name: kind === 'expense' ? 'Unrecorded loss' : 'Unrecorded gain',
+        icon: 'dots', colour: NEUTRAL, amount: share.amount, previous: kind === 'expense' ? share.previous_amount : null,
+        count: share.transaction_count, drillable: false,
+      };
+    }
     const category = share.category_id !== null ? lookups.categoryById.get(share.category_id) : undefined;
     return {
       key: `${share.category_id}-${self}`,
@@ -242,7 +252,7 @@ function CategoryCard({ overview, lookups, colours }: { overview: Overview; look
           ]}
         />
         {parent && (
-          <button type="button" onClick={() => setDrill(null)} className="mt-3 min-h-tap text-footnote font-semibold text-accent">
+          <button type="button" onClick={() => setDrill(null)} className="mt-3 min-h-tap text-footnote font-semibold text-accent-ink">
             ‹ All categories
           </button>
         )}
@@ -254,8 +264,8 @@ function CategoryCard({ overview, lookups, colours }: { overview: Overview; look
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={slices.map((s) => ({ name: s.name, value: centavos(s.amount) }))} dataKey="value"
-                    innerRadius="64%" outerRadius="100%" paddingAngle={slices.length > 1 ? 1.5 : 0}
-                    stroke={colours.surface} strokeWidth={2} startAngle={90} endAngle={-270} isAnimationActive={false}>
+                    innerRadius="58%" outerRadius="98%" paddingAngle={0}
+                    stroke={colours.stroke} strokeWidth={2} startAngle={90} endAngle={-270} isAnimationActive={false}>
                     {slices.map((s) => (
                       <Cell key={s.key} fill={s.colour} className={s.drillable ? 'cursor-pointer' : ''}
                         onClick={() => s.drillable && setDrill(s.id)} />
@@ -268,7 +278,7 @@ function CategoryCard({ overview, lookups, colours }: { overview: Overview; look
                 <span className="num text-headline">{formatPHP(fromCentavos(sum))}</span>
               </div>
             </div>
-            <ul className="mt-3 divide-y divide-line">
+            <ul className="mt-3 divide-y divide-stroke/80">
               {slices.map((s) => {
                 const pct = sum > 0 ? Math.round((centavos(s.amount) / sum) * 100) : 0;
                 const Row = s.drillable ? 'button' : 'div';
@@ -336,16 +346,16 @@ function TrendCard({ overview, colours }: { overview: Overview; colours: ThemeCo
         <div className="mt-2 h-44">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-              <XAxis dataKey="label" tick={{ fill: colours['ink-3'], fontSize: 11 }} tickLine={false}
+              <XAxis dataKey="label" tick={{ fill: colours['ink-2'], fontSize: 10, fontFamily: MONO }} tickLine={false}
                 axisLine={{ stroke: colours.line }} interval="preserveStartEnd" minTickGap={20} />
               <YAxis hide domain={[0, 'auto']} />
               <Tooltip
                 formatter={(value) => peso(Number(value))}
-                contentStyle={{ background: colours.surface, border: `1px solid ${colours.line}`, borderRadius: 12, fontSize: 13 }}
+                contentStyle={{ background: colours.surface, border: `2px solid ${colours.stroke}`, borderRadius: 8, fontSize: 12, fontFamily: MONO, boxShadow: `4px 4px 0 ${colours.stroke}` }}
                 labelStyle={{ color: colours['ink-2'] }}
               />
-              <Line type="monotone" dataKey="value" name={series === 'spent' ? 'Spent' : 'Earned'}
-                stroke={series === 'spent' ? colours.ink : colours.ok} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="value" name={series === 'spent' ? 'Spent' : 'Earned'}
+                stroke={series === 'spent' ? colours.ink : colours.ok} strokeWidth={3} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -365,7 +375,7 @@ function Ranked({ title, note, rows }: {
   return (
     <>
       <SectionTitle>{title}</SectionTitle>
-      <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+      <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
         {rows.map((row) => (
           <div key={row.key} className="flex min-h-14 items-center gap-3 px-4 py-2">
             {row.lead}
@@ -427,11 +437,11 @@ export function Stats() {
           mode !== 'custom' && (
             <div className="flex gap-1">
               <button type="button" aria-label="Earlier" onClick={() => step(-1)}
-                className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 shadow-card active:bg-surface-2">
+                className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 press">
                 ‹
               </button>
               <button type="button" aria-label="Later" onClick={() => step(1)}
-                className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 shadow-card active:bg-surface-2">
+                className="flex h-tap w-tap items-center justify-center rounded-xl bg-surface text-headline text-ink-2 press">
                 ›
               </button>
             </div>
@@ -461,14 +471,14 @@ export function Stats() {
               {edge}
               <input type="date" value={custom[edge]}
                 onChange={(e) => setCustom((c) => ({ ...c, [edge]: e.target.value }))}
-                className="mt-1.5 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-body font-normal text-ink" />
+                className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
             </label>
           ))}
         </div>
       )}
 
       <div className="mt-3">
-        {error && <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+        {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
         {!overview && !error && <div className="skeleton h-72 rounded-card" aria-hidden="true" />}
         {overview && (
           <>

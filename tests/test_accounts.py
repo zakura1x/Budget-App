@@ -361,6 +361,51 @@ def test_only_an_investment_account_can_be_revalued(session, owner):
         account_service.add_valuation(session, owner, wallet.id, "10.00")
 
 
+def test_typing_an_investments_value_asks_and_records_an_unrecorded_gain(session, owner):
+    """ACC-12/28, changed 2026-09-18 (user): a new value asks, like every other account."""
+    from app.core.exceptions import BalanceDiffersException
+    from app.services import transaction_service
+
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    edit = {"name": "Exness", "type": "investment", "balance": "104250.00"}
+    with pytest.raises(BalanceDiffersException):
+        account_service.update_account(session, owner, fund.id, edit, today=date(2026, 9, 18))
+
+    account_service.update_account(session, owner, fund.id, {**edit, "balance_action": "adjust"},
+                                   postings=transaction_service.postings(session, owner), today=date(2026, 9, 18))
+    views = transaction_service.views(session, owner)
+    assert [(v.type, v.direction, str(v.amount)) for v in views] == [("adjustment", "in", "4250.00")]
+    view = account_service.get_account(session, owner, fund.id, postings=transaction_service.postings(session, owner))
+    assert (view.balance, view.opening_balance) == (Decimal("104250.00"), Decimal("100000.00"))
+
+
+def test_an_unrecorded_loss_on_the_valuations_own_day_still_counts(session, owner):
+    from app.services import transaction_service
+
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    account_service.add_valuation(session, owner, fund.id, "105000.00", on=date(2026, 9, 18))
+    account_service.update_account(session, owner, fund.id,
+                                   {"name": "Exness", "type": "investment", "balance": "103000.00", "balance_action": "adjust"},
+                                   postings=transaction_service.postings(session, owner), today=date(2026, 9, 18))
+    view = account_service.get_account(session, owner, fund.id, postings=transaction_service.postings(session, owner))
+    assert view.balance == Decimal("103000.00")
+
+
+def test_correcting_a_valued_investment_moves_its_last_value_and_records_nothing(session, owner):
+    from app.services import transaction_service
+
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    account_service.add_valuation(session, owner, fund.id, "105000.00", on=date(2026, 9, 1))
+    account_service.update_account(session, owner, fund.id,
+                                   {"name": "Exness", "type": "investment", "balance": "106000.00",
+                                    "balance_action": "fix_opening"},
+                                   postings=transaction_service.postings(session, owner), today=date(2026, 9, 18))
+    view = account_service.get_account(session, owner, fund.id, postings=transaction_service.postings(session, owner))
+    assert (view.balance, view.opening_balance) == (Decimal("106000.00"), Decimal("100000.00"))
+    assert [str(v.value) for v in view.valuations] == ["106000.00"]
+    assert transaction_service.views(session, owner) == []
+
+
 def test_a_valuation_cannot_be_set_through_the_normal_update(session, owner):
     fund = make(session, owner, type="investment", name="Fund", opening_balance="100000.00")
     account_service.update_account(

@@ -41,6 +41,7 @@ def default_preferences() -> dict:
     """A new user's preferences, from the defaults in .env. No currency."""
     return {
         "theme": "system",
+        "palette": "classic",
         "budget_period": settings.DEFAULT_BUDGET_PERIOD,
         "month_start_day": settings.DEFAULT_MONTH_START_DAY,
         "week_start_day": settings.DEFAULT_WEEK_START_DAY,

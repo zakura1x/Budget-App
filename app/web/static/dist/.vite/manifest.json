@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "file": "assets/index-DcLis62-.js",
+    "file": "assets/index-BwNVAH8L.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -14,11 +14,15 @@
       "src/screens/Stats.tsx"
     ],
     "css": [
-      "assets/index-D41hWOr-.css"
+      "assets/index-C3L_JXbG.css"
+    ],
+    "assets": [
+      "assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
+      "assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2"
     ]
   },
   "src/screens/AboutEncryption.tsx": {
-    "file": "assets/AboutEncryption-BwhnnaNB.js",
+    "file": "assets/AboutEncryption-C7yG4_EY.js",
     "name": "AboutEncryption",
     "src": "src/screens/AboutEncryption.tsx",
     "isDynamicEntry": true,
@@ -27,7 +31,7 @@
     ]
   },
   "src/screens/Admin.tsx": {
-    "file": "assets/Admin-BWeXekIP.js",
+    "file": "assets/Admin-DMEv_VDZ.js",
     "name": "Admin",
     "src": "src/screens/Admin.tsx",
     "isDynamicEntry": true,
@@ -36,7 +40,7 @@
     ]
   },
   "src/screens/Backup.tsx": {
-    "file": "assets/Backup-L29w-wxp.js",
+    "file": "assets/Backup-BLtChR5B.js",
     "name": "Backup",
     "src": "src/screens/Backup.tsx",
     "isDynamicEntry": true,
@@ -45,7 +49,7 @@
     ]
   },
   "src/screens/Goals.tsx": {
-    "file": "assets/Goals-u3IeCttg.js",
+    "file": "assets/Goals-DkC2E1K9.js",
     "name": "Goals",
     "src": "src/screens/Goals.tsx",
     "isDynamicEntry": true,
@@ -54,7 +58,7 @@
     ]
   },
   "src/screens/Projection.tsx": {
-    "file": "assets/Projection-CXYdutZt.js",
+    "file": "assets/Projection-Dii-H3uF.js",
     "name": "Projection",
     "src": "src/screens/Projection.tsx",
     "isDynamicEntry": true,
@@ -63,7 +67,7 @@
     ]
   },
   "src/screens/Recurring.tsx": {
-    "file": "assets/Recurring-DXl4gK99.js",
+    "file": "assets/Recurring-DfK4fsTB.js",
     "name": "Recurring",
     "src": "src/screens/Recurring.tsx",
     "isDynamicEntry": true,
@@ -72,12 +76,20 @@
     ]
   },
   "src/screens/Stats.tsx": {
-    "file": "assets/Stats-Bnx-Y53B.js",
+    "file": "assets/Stats-DzqyqR16.js",
     "name": "Stats",
     "src": "src/screens/Stats.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html"
     ]
+  },
+  "src/styles/fonts/jetbrains-mono-latin-ext-wght-normal.woff2": {
+    "file": "assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2",
+    "src": "src/styles/fonts/jetbrains-mono-latin-ext-wght-normal.woff2"
+  },
+  "src/styles/fonts/jetbrains-mono-latin-wght-normal.woff2": {
+    "file": "assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
+    "src": "src/styles/fonts/jetbrains-mono-latin-wght-normal.woff2"
   }
 }

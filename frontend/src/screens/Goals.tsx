@@ -40,10 +40,10 @@ export function Goals() {
     <>
       <ScreenHeader
         title="Savings goals"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
         action={<Button onClick={() => setEditing({ open: true, goal: null })} aria-label="Add goal"><PlusIcon size={20} />Add</Button>}
       />
-      {error && <p className="mb-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
       {goals === null && !error && <div className="skeleton h-40 rounded-card" aria-hidden="true" />}
       {goals && goals.length === 0 && (
         <Card className="text-center">

@@ -29,6 +29,13 @@ THE PAYLOAD:
 
      "interest_changes": [{"from": "2026-11-20", "per_payment": "500.00"}]
 
+  An installment made FROM A PURCHASE (REC-34, installment_conversion) also
+  carries `from_transaction` - the purchase it replaced, hidden until the
+  plan is converted back - and, when that purchase was split across
+  categories, `category_shares` ([{"category_id", "amount"}], the purchase's
+  own split amounts): each payment's price part is split in the same
+  proportions, the last share absorbing the rounding.
+
   the installment's own dated history (REC-20, REC-29): from that payment on,
   each carries that much interest.
 
@@ -77,6 +84,7 @@ from app.core.utils.money import CENTS, ZERO, money, total
 from app.db.repositories.account_repository import AccountRepository
 from app.db.repositories.category_repository import CategoryRepository
 from app.db.repositories.recurring_repository import RecurringRuleRepository, SubscriptionRepository
+from app.db.repositories.transaction_repository import TransactionRepository
 from app.services import audit_service, tag_service, transaction_service
 from app.services.transaction_service import TransactionView
 
@@ -172,6 +180,8 @@ class RuleView:
     problem: Optional[str] = None  # why expansion is holding it back
     reminder_days: Optional[int] = None  # subscriptions only (SUB-06)
     installment: Optional[InstallmentStatus] = None
+    from_transaction: Optional[int] = None  # REC-34 - the purchase this plan replaced
+    receipt_id: Optional[int] = None  # that purchase's receipt, shown on the plan
 
 
 @dataclass(frozen=True)
@@ -411,7 +421,7 @@ def occurrences(rule_id: int, data: Mapping[str, Any], start: date, end: date) -
             continue
         if installment:
             _, price_part, interest_part = plan[number - 1]
-            splits: Tuple[Tuple[Optional[int], Decimal], ...] = ((data.get("category_id"), price_part),)
+            splits: Tuple[Tuple[Optional[int], Decimal], ...] = _price_splits(data, price_part)
             if interest_part > ZERO:
                 splits += ((data.get("interest_category_id"), interest_part),)
             result.append(Occurrence(rule_id, day, number, price_part + interest_part, splits,
@@ -421,6 +431,26 @@ def occurrences(rule_id: int, data: Mapping[str, Any], start: date, end: date) -
             result.append(Occurrence(rule_id, day, number, amount, ((_category(data, transfer), amount),),
                                      final=end_after is not None and number == int(end_after)))
     return result
+
+
+def _price_splits(data: Mapping[str, Any], price_part: Decimal) -> Tuple[Tuple[Optional[int], Decimal], ...]:
+    """
+    REC-34. A payment's price part in the plan's category - or, for a plan made
+    from a purchase split across categories, in the purchase's own proportions,
+    the last share taking whatever rounding is left so the part stays exact.
+    """
+    shares = [(int(s["category_id"]), money(s["amount"])) for s in data.get("category_shares") or []]
+    whole = total(amount for _, amount in shares)
+    if len(shares) < 2 or whole <= ZERO:
+        return ((data.get("category_id"), price_part),)
+    result: List[Tuple[Optional[int], Decimal]] = []
+    left = price_part
+    for index, (category_id, amount) in enumerate(shares):
+        part = left if index == len(shares) - 1 else (price_part * amount / whole).quantize(CENTS, rounding=ROUND_HALF_UP)
+        part = min(part, left)
+        left -= part
+        result.append((category_id, part))
+    return tuple(result)
 
 
 def preview(payload: Mapping[str, Any], *, today: date, count: int = 5) -> List[Occurrence]:
@@ -1050,6 +1080,7 @@ class _Context:
     posted: Dict[int, List[TransactionView]]  # every transaction carrying a rule's id
     posted_days: Dict[int, Set[date]]  # the occurrence dates already posted
     reminders: Dict[int, int]
+    receipts: Dict[int, int] = field(default_factory=dict)  # REC-34 - a converted purchase's receipt
 
     @classmethod
     def load(cls, db: Session, cipher: UserCipher) -> "_Context":
@@ -1065,7 +1096,16 @@ class _Context:
             int(sub.data["recurring_rule_id"]): int(sub.data.get("reminder_days", REMINDER_DAYS_DEFAULT))
             for sub in SubscriptionRepository(db, cipher).list()
         }
-        return cls(RecurringRuleRepository(db, cipher).list(), posted, days, reminders)
+        rules = RecurringRuleRepository(db, cipher).list()
+        receipts: Dict[int, int] = {}
+        hidden = TransactionRepository(db, cipher)
+        for rule in rules:
+            if rule.data.get("from_transaction"):
+                # The purchase is hidden while the plan stands; its receipt is the plan's.
+                original = hidden.get(int(rule.data["from_transaction"]), include_deleted=True)
+                if original is not None and original.data.get("attachment_id"):
+                    receipts[rule.id] = int(original.data["attachment_id"])
+        return cls(rules, posted, days, reminders, receipts)
 
 
 def _expand(db: Session, cipher: UserCipher, records: Sequence[Any], today: date) -> Expansion:
@@ -1138,6 +1178,9 @@ def _problem(
         category = categories.get(data.get("category_id"))
         if category is None or category.get("kind") != data.get("type"):
             return "Its category no longer exists"
+        for share in data.get("category_shares") or []:
+            if categories.get(share.get("category_id")) is None:
+                return "One of its categories no longer exists"
         if data.get("kind") == "installment" and money(data.get("interest") or ZERO) > ZERO:
             if categories.get(data.get("interest_category_id")) is None:
                 return "Its interest category no longer exists"
@@ -1187,6 +1230,8 @@ def _view(rule_id: int, data: Mapping[str, Any], context: _Context, today: date)
         next_amount=nxt.amount if nxt and not (installment and installment.closed) else None,
         reminder_days=context.reminders.get(rule_id) if data.get("kind") == "subscription" else None,
         installment=installment,
+        from_transaction=data.get("from_transaction"),
+        receipt_id=context.receipts.get(rule_id),
     )
 
 
@@ -1309,6 +1354,23 @@ def _clean(
             if interest_category is not None:
                 _check_interest_category(interest_category, category_id, categories)
         data["interest_category_id"] = interest_category
+
+        shares = payload.get("category_shares", data.get("category_shares"))
+        if existing and payload.get("category_id") not in (None, existing.get("category_id")):
+            shares = None  # a plan moved to one category is in that category only
+        if shares:
+            if data["kind"] != "installment" or not isinstance(shares, list) or len(shares) < 2:
+                raise ValidationException("Only an installment splits its payments across categories")
+            cleaned_shares = []
+            for share in shares:
+                share_category = categories.get(share.get("category_id")) if isinstance(share, Mapping) else None
+                if share_category is None or share_category.get("kind") != "expense":
+                    raise ValidationException("Each part of the plan needs an expense category")
+                cleaned_shares.append({"category_id": share["category_id"],
+                                       "amount": str(_positive(share.get("amount"), "amount"))})
+            data["category_shares"] = cleaned_shares
+        else:
+            data.pop("category_shares", None)
 
         merchant = payload.get("merchant", data.get("merchant"))
         data["merchant"] = _text(merchant, MERCHANT_MAX)

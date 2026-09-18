@@ -59,6 +59,14 @@ class TransactionRepository(EncryptedRepository):
             self._queue("remove", row_id)
         return deleted
 
+    def undelete(self, row_id: int) -> bool:
+        restored = super().undelete(row_id)
+        if restored:
+            record = self.get(row_id)
+            if record is not None:
+                self._queue("put", record)
+        return restored
+
     def _queue(self, op: str, value: Any) -> None:
         self.session.info.setdefault(_PENDING, []).append((self.cipher.user_id, op, value))
 

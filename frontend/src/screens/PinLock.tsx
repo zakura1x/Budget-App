@@ -55,7 +55,7 @@ export function PinLock() {
   return (
     <div className="mx-auto flex min-h-dvh max-w-app flex-col items-center px-safe pb-safe pt-safe">
       <div className="flex w-full flex-1 flex-col items-center justify-center py-8">
-        <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent">
+        <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent-ink">
           <ShieldIcon size={28} />
         </span>
         <h1 className="text-title">Budget is locked</h1>

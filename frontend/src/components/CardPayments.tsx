@@ -48,7 +48,7 @@ export function CardPayments({ account }: { account: Account }) {
 
   return (
     <div className="mt-3 space-y-3">
-      {error && <p className="rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
 
       <CardBills account={account} />
 

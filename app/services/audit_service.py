@@ -54,6 +54,8 @@ PLAN_PAYMENT = "PLAN_PAYMENT"  # REC-32 - money paid on a plan, and what any ext
 GOAL_SET_ASIDE = "GOAL_SET_ASIDE"  # GOA-08 - part of an account earmarked for a goal; nothing moves
 GOAL_USE = "GOAL_USE"  # GOA-08 - what a goal held, released
 PAY_NOW = "PAY_NOW"  # REC-33 - a repeating charge's next occurrence recorded early
+INSTALLMENT_CONVERT = "INSTALLMENT_CONVERT"  # REC-34 - a purchase turned into an installment plan
+INSTALLMENT_REVERT = "INSTALLMENT_REVERT"  # REC-34 - that plan turned back into the one purchase
 CONFIRM_TERMS = "CONFIRM_TERMS"  # REC-29 - interest from the first statement
 # Phase 8a - data in and out.
 BACKUP = "BACKUP"  # DAT-06 - "Back up now"; automatic ones are logged, not audited

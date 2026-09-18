@@ -2035,6 +2035,28 @@ Found while building Phase 10 (2026-09-15):
     the whole app down (a malformed one still throws), and the card no longer
     reads a missing shortfall as one. Verified by stripping those fields from
     the live /goals response in the browser.
+  - PURCHASE PAID IN INSTALLMENTS 2026-09-18 (REC-34, user; plan agreed first, every
+    recommendation accepted). installment_conversion.py (preview, convert,
+    create_with_plan, revert); EncryptedRepository.undelete (+ the working set);
+    recurring_service: category_shares / _price_splits, from_transaction and
+    receipt_id on RuleView; account_service: a converted plan is as old as its
+    purchase and covered when it was (Charge.origin); references + MERGE_IGNORED;
+    audit INSTALLMENT_CONVERT / _REVERT. UI: InstallmentFields (months, first
+    payment, interest, preview), Installments in the add sheet and on an expense,
+    Convert back to one purchase + read-only receipt on the plan sheet.
+    tests/test_installment_conversion.py (13) + the backup fill; verified in the
+    browser (convert 12,000 -> 3 x 4,000 from 15 Oct, owed unchanged, then back).
+  - UNRECORDED IN STATS, INVESTMENTS ASK 2026-09-18 (user). Decided with the user:
+    unrecorded loss/gain are their own By Category rows and COUNT in Stats'
+    totals (budget, allowance, calendar and card limits still do not); an
+    investment's value asks the ACC-28 question like any balance. stats_service:
+    _spending/_earning, UNRECORDED roll-up key, CategoryShare.unrecorded;
+    merchants/tags stay purchases. account_service: investments allowed in
+    _balance_change, fix_opening moves the last valuation, a same-day adjustment
+    counts on top of a valuation. AccountSheet: Value today field, Record value
+    box removed. Also fixed: the account page now reloads its trail after an
+    edit (an adjustment did not show until reload), and an investment's line
+    says up/down since. Verified in the browser; 723 passed.
   - PLANS NOT COUNTED TWICE ON TYPED BILLS 2026-09-17 (user: SPayLater edited to
     8,280.76 still showed 8,296). The Aerox TG installment (15.33, created 16 Sep)
     was added on top of a list typed on 17 Sep that already held it. A saved list
@@ -2158,6 +2180,22 @@ Found while building Phase 10 (2026-09-15):
     and a RATE carries four ("3.2500") - percentOf crashed the add sheet until
     it parsed the rate on its own terms. Same shape as the places=0 crash the
     day before: never hand a non-money string to a money helper.
+  - NEO-BRUTALIST REDESIGN 2026-09-18 (user, samples in sample_ui/Neo-Brutalism):
+    the whole app in one pass, replacing the lavender look of 2026-09-15.
+    User's choices: the "mix" (thick outlines and hard offset shadows, calm
+    layout, mono labels); themes are COLOUR PALETTES only - classic, candy,
+    lime, mono - each light AND dark; money colours (ok/warn/danger) the same
+    in every palette; a self-hosted monospace face (JetBrains Mono, OFL) for
+    amounts and labels; 8px corners; no decoration; the pill tab bar kept; a
+    new bright category-colour set (old colours still render); icons and
+    manifest brand colour unchanged. The palette is a preference (palette:
+    classic|candy|lime|mono) and is NOT put in the zbdgt_theme cookie -
+    invariant 10 unchanged - so sign-in and a reopened lock screen show
+    classic. Tokens: stroke, shadow, accent-ink (accent as text) in
+    theme.css; shadow-card/edge/pressed and the .press / .label / .num
+    utilities; the radius scale is replaced so every rounded-2xl is 8px.
+    .woff2 registered with mimetypes (Python 3.11 on Windows had no type).
+    Verified at 390px in every palette, light and dark.
 
 To revisit after Phase 1's benchmark:
   - If cold load > 1500ms, adopt bucket columns (ARCHITECTURE.md §5.7) and

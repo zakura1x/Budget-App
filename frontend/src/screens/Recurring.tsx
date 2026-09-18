@@ -69,7 +69,7 @@ function PlanCard({ rule, lookups, onOpen }: { rule: Rule; lookups: Lookups; onO
   const paid = whole > 0 ? Math.min(centavos(plan.paid) / whole, 1) : 0;
   const account = lookups.accountById.get(rule.account_id);
   return (
-    <button type="button" onClick={onOpen} className="block w-full rounded-card bg-surface p-4 text-left shadow-card transition active:bg-surface-2">
+    <button type="button" onClick={onOpen} className="block w-full rounded-card bg-surface p-4 text-left press">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0">
           <span className="block truncate text-headline">{rule.name}</span>
@@ -78,13 +78,13 @@ function PlanCard({ rule, lookups, onOpen }: { rule: Rule; lookups: Lookups; onO
           </span>
         </span>
         {plan.closed ? (
-          <span className="shrink-0 rounded-lg bg-surface-2 px-2 py-1 text-caption font-semibold text-ink-2">Paid off</span>
+          <span className="shrink-0 rounded-md bg-surface-2 px-2 py-1 font-mono text-caption font-bold uppercase text-ink-2 shadow-edge">Paid off</span>
         ) : plan.terms === 'provisional' ? (
-          <span className="shrink-0 rounded-lg bg-surface-2 px-2 py-1 text-caption font-semibold text-ink-2">Terms not confirmed</span>
+          <span className="shrink-0 rounded-md bg-surface-2 px-2 py-1 font-mono text-caption font-bold uppercase text-ink-2 shadow-edge">Terms not confirmed</span>
         ) : null}
       </div>
       <p className="num mt-3 text-title">{formatPHP(plan.remaining)} <span className="text-footnote font-normal text-ink-2">left</span></p>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-2 shadow-edge" aria-hidden="true">
         <div className="h-full rounded-full bg-accent" style={{ width: `${paid * 100}%` }} />
       </div>
       <p className="mt-1.5 text-footnote text-ink-3">
@@ -136,7 +136,7 @@ export function Recurring() {
     <>
       <ScreenHeader
         title="Recurring"
-        subtitle={<button type="button" className="text-accent" onClick={() => navigate('/more')}>‹ More</button>}
+        subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
         action={
           <Button onClick={() => open(null)} aria-label="Add">
             <PlusIcon size={20} />
@@ -157,7 +157,7 @@ export function Recurring() {
       />
 
       {error && (
-        <p className="mt-3 rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">
+        <p className="mt-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
           {error}{' '}
           <button type="button" className="font-semibold underline" onClick={() => void load()}>Try again</button>
         </p>
@@ -172,7 +172,7 @@ export function Recurring() {
             <p className="text-footnote text-ink-2">{Math.round(Number(subs.budget_share) * 100)}% of this month’s budget</p>
           )}
           {subs.items.filter((i) => i.remind).map((i) => (
-            <p key={i.rule.id} className="mt-2 rounded-xl bg-warn/10 px-3 py-2 text-footnote font-semibold text-warn">
+            <p key={i.rule.id} className="mt-2 rounded-card border-2 border-warn bg-warn/10 px-3 py-2 text-footnote font-semibold text-warn">
               {i.rule.name} charges {i.due_in_days === 0 ? 'today' : `in ${i.due_in_days} day${i.due_in_days === 1 ? '' : 's'}`}
             </p>
           ))}
@@ -208,7 +208,7 @@ export function Recurring() {
         </div>
       ) : (
         shown.length > 0 && (
-          <div className="mt-3 divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+          <div className="mt-3 divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
             {shown.map((rule) => {
               const monthly = tab === 'subscription' ? subs?.items.find((i) => i.rule.id === rule.id)?.monthly : undefined;
               return (
@@ -223,7 +223,7 @@ export function Recurring() {
       {tab === 'subscription' && subs && subs.upcoming.length > 0 && (
         <>
           <SectionTitle>Next 30 days</SectionTitle>
-          <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+          <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
             {subs.upcoming.map((u) => (
               <div key={`${u.rule_id}-${u.on}`} className="num flex min-h-12 items-center justify-between px-4 text-body">
                 <span><span className="text-ink-2">{short(u.on)}</span> · {u.name}</span>
@@ -237,7 +237,7 @@ export function Recurring() {
       {tab === 'subscription' && detected.length > 0 && (
         <>
           <SectionTitle>Looks like a subscription</SectionTitle>
-          <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+          <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
             {detected.map((c) => (
               <div key={`${c.merchant}-${c.amount}-${c.account_id}`} className="flex min-h-14 items-center gap-3 px-4 py-2">
                 <span className="min-w-0 flex-1">

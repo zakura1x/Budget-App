@@ -27,7 +27,6 @@ import {
   isOwed,
   kindLabelOf,
   type AccountKind,
-  addValuation,
   balanceQuestion,
   createAccount,
   setArchived,
@@ -82,6 +81,7 @@ function balanceWords(type: AccountType): { label: string; hint: string } {
   if (type === 'credit') return { label: 'Amount owed', hint: 'What the card owes right now. Changing it asks how to record the difference.' };
   if (type === 'borrowed') return { label: 'Amount you still owe', hint: 'What is left to pay back. Changing it asks how to record the difference.' };
   if (type === 'lent') return { label: 'Still owed to you', hint: 'What has not come back yet. Changing it asks how to record the difference.' };
+  if (type === 'investment') return { label: 'Value today', hint: 'What it is worth right now. Changing it asks how to record the difference — a gain or loss shows in Stats.' };
   return { label: 'Current balance', hint: 'What is really in it right now. Changing it asks how to record the difference.' };
 }
 
@@ -134,7 +134,6 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   const [limit, setLimit] = useState('');
   const [ownLimit, setOwnLimit] = useState('');
   const [lag, setLag] = useState('3');
-  const [value, setValue] = useState('');
   const [question, setQuestion] = useState<BalanceQuestion | null>(null);
   /** A new account: has a kind been picked from the list yet? */
   const [picked, setPicked] = useState(false);
@@ -186,7 +185,6 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     if (!open) return;
     setError(null);
     setBusy(false);
-    setValue('');
     setQuestion(null);
     setBalanceNote('');
     setPicked(false);
@@ -283,7 +281,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
             }
           : {}),
       };
-      if (!account || type === 'investment') {
+      if (!account) {
         const typed = toDecimalString(opening.trim() || '0');
         // A loan's opening is typed as what you owe, and stored as the minus it is (ACC-31).
         draft.opening_balance = type === 'borrowed' && !/^-?0+(\.0+)?$/.test(typed) ? negate(typed) : typed;
@@ -335,20 +333,6 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     }
   };
 
-  const recordValue = async () => {
-    if (!account || !value.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await addValuation(account.id, toDecimalString(value.trim()));
-      setValue('');
-      onSaved();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
-    }
-    setBusy(false);
-  };
-
   if (question) {
     // ACC-28. The balance is worked out from transactions, so the change has to be one of these.
     const loss = question.difference.startsWith('-');
@@ -356,7 +340,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     return (
       <Sheet open={open} onClose={onClose} title="Record the difference?">
         <div className="space-y-4 pb-2">
-          <div className="rounded-2xl bg-surface-2 p-4 text-center">
+          <div className="rounded-card border-2 border-stroke bg-surface-2 p-4 text-center">
             <p className="text-footnote text-ink-2">
               {name.trim()}
               {isOwed(type) ? ' · amount owed' : ''}
@@ -376,7 +360,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
             value={balanceNote}
             onChange={(e) => setBalanceNote(e.target.value)}
             maxLength={280}
-            placeholder={type === 'cash' ? 'Counted the wallet' : 'Matched the bank app'}
+            placeholder={type === 'cash' ? 'Counted the wallet' : type === 'investment' ? 'Market moved' : 'Matched the bank app'}
           />
 
           {error && <p className="text-footnote text-danger">{error}</p>}
@@ -391,7 +375,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
           </div>
           <div>
             <Button variant="secondary" block onClick={() => void save('fix_opening')} disabled={busy}>
-              Fix the opening balance instead
+              {type === 'investment' ? 'Fix the starting value instead' : 'Fix the opening balance instead'}
             </Button>
             <p className="mt-1.5 text-center text-footnote text-ink-3">
               For a mistake made when you set the account up. Every past balance shifts, and no record is kept.
@@ -412,8 +396,8 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
         <div className="space-y-4 pb-2">
           {ACCOUNT_KINDS.map(({ group, items }) => (
             <section key={group}>
-              <h3 className="px-1 pb-1.5 text-footnote font-semibold text-accent">{group}</h3>
-              <div className="divide-y divide-line overflow-hidden rounded-card bg-surface-2/60">
+              <h3 className="px-1 pb-1.5 text-footnote font-semibold text-accent-ink">{group}</h3>
+              <div className="divide-y divide-stroke/80 overflow-hidden rounded-card border-2 border-stroke bg-surface-2">
                 {items.map((kind) => (
                   <button key={kind.subtype} type="button" onClick={() => chooseKind(kind)}
                     className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition active:bg-line">
@@ -443,14 +427,14 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
             </p>
           </div>
         ) : (
-          <div className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
+          <div className="flex items-center gap-3 rounded-card border-2 border-stroke bg-surface-2 p-3">
             <GlyphTile icon={icon} colour={colour} size={36} />
             <span className="min-w-0 flex-1">
               <span className="block text-body font-medium">{kindLabel?.label ?? kindLabelOf(type, subtype)}</span>
               <span className="block truncate text-footnote text-ink-3">{kindLabel?.hint ?? TYPE_HINT[type]}</span>
             </span>
             <button type="button" onClick={() => setPicked(false)}
-              className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent active:bg-line">
+              className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent-ink active:bg-line">
               Change
             </button>
           </div>
@@ -477,7 +461,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
               asks how to record the difference.
             </p>
           </div>
-        ) : editing && type !== 'investment' ? (
+        ) : editing ? (
           <MoneyField
             label={balanceWords(type).label}
             value={current}
@@ -498,7 +482,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
         )}
 
         {type === 'credit' && (
-          <div className="space-y-4 rounded-2xl bg-surface-2 p-4">
+          <div className="space-y-4 rounded-card border-2 border-stroke bg-surface-2 p-4">
             <p className="text-footnote text-ink-2">
               Your card’s cycle runs on its own dates — they have nothing to do with your budget month.
             </p>
@@ -551,22 +535,10 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
           </div>
         )}
 
-        {type === 'investment' && editing && (
-          <div className="space-y-3 rounded-2xl bg-surface-2 p-4">
-            <p className="text-footnote text-ink-2">
-              Type what it is worth today. Each value is kept with its date, and none of it counts as income.
-              Money you transfer in or out after that day is added to it, so a contribution is never lost.
-            </p>
-            <MoneyField
-              label="Value today"
-              value={value}
-              onChange={setValue}
-              placeholder={account?.current_value ?? '0.00'}
-            />
-            <Button variant="secondary" block onClick={() => void recordValue()} disabled={busy || !value.trim()}>
-              Record value
-            </Button>
-            {account && account.valuations.length > 0 && (
+        {type === 'investment' && editing && account && account.valuations.length > 0 && (
+          <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 p-4">
+            <p className="text-footnote text-ink-2">Values typed before — money moved in or out since is added to the last one.</p>
+            {(
               <ul className="space-y-1 text-footnote text-ink-2">
                 {[...account.valuations].reverse().slice(0, 4).map((entry) => (
                   <li key={`${entry.on}-${entry.value}`} className="flex justify-between">
@@ -585,7 +557,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
         )}
 
         {GIVES_CASHBACK.includes(type) && incomeCategories.length > 0 && (
-          <div className="space-y-2 rounded-2xl bg-surface-2 p-4">
+          <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 p-4">
             <p className="text-footnote font-semibold text-ink-2">Usual cashback</p>
             <div className="flex items-end gap-2">
               <TextField
@@ -601,7 +573,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
                 value={cashbackCategory ?? ''}
                 onChange={(e) => setCashbackCategory(Number(e.target.value) || null)}
                 aria-label="Cashback category"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 text-body"
+                className="min-h-12 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-3 text-body"
               >
                 <option value="">Lands in…</option>
                 {incomeCategories.map((c) => (

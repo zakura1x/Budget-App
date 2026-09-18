@@ -111,6 +111,21 @@ class EncryptedRepository:
             self._changed()
         return result.rowcount == 1
 
+    def undelete(self, row_id: int) -> bool:
+        """
+        Bring a soft-deleted row back, payload untouched. Used where a row is
+        hidden on purpose and later restored (a purchase converted into an
+        installment plan and converted back, REC-34). The caller commits.
+        """
+        result = self.session.execute(
+            update(self.model)
+            .where(self.model.id == row_id, self.model.user_id == self.cipher.user_id)
+            .values(is_deleted=False, row_updated=utcnow())
+        )
+        if result.rowcount == 1:
+            self._changed()
+        return result.rowcount == 1
+
     def _changed(self) -> None:
         self.session.info.setdefault(CHANGED_USERS, set()).add(self.cipher.user_id)
 

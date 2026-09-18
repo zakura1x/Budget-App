@@ -23,8 +23,12 @@ EDITABLE = (
     "carry_over", "daily_allowance_mode", "alert_warn_threshold_pct", "alert_pace_enabled",
     # Phase 8b
     "theme", "budget_period", "month_start_day", "week_start_day", "auto_lock_minutes",
+    # the neo-brutalist redesign, 2026-09-18
+    "palette",
 )
 THEMES = ("system", "light", "dark")
+# UX-05: the colour palette, independent of light/dark (every palette has both).
+PALETTES = ("classic", "candy", "lime", "mono")
 PERIODS = ("weekly", "monthly", "custom")
 
 
@@ -56,6 +60,10 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         if changes["theme"] not in THEMES:
             raise ValidationException(f"theme must be one of: {', '.join(THEMES)}")
         cleaned["theme"] = changes["theme"]
+    if "palette" in changes:
+        if changes["palette"] not in PALETTES:
+            raise ValidationException(f"palette must be one of: {', '.join(PALETTES)}")
+        cleaned["palette"] = changes["palette"]
     if "budget_period" in changes:
         if changes["budget_period"] not in PERIODS:
             raise ValidationException(f"budget_period must be one of: {', '.join(PERIODS)}")

@@ -89,12 +89,12 @@ export function BudgetAppImportSheet({ file, onClose }: { file: { name: string; 
       <div className="space-y-4 pb-2">
         <p className="truncate text-footnote text-ink-2">{file.name}</p>
         {busy && !preview && !result && <div className="skeleton h-40 rounded-card" aria-hidden="true" />}
-        {error && <p className="rounded-2xl bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
-        {result && <p className="rounded-2xl bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {result}</p>}
+        {error && <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+        {result && <p className="rounded-2xl border-2 border-ok bg-ok/10 px-4 py-3 text-footnote font-semibold text-ok">✓ {result}</p>}
 
         {preview && (
           <>
-            <div className="rounded-2xl bg-surface-2/60 p-4 text-footnote text-ink-2">
+            <div className="rounded-card border-2 border-stroke bg-surface-2 p-4 text-footnote text-ink-2">
               <p className="text-body font-semibold text-ink">
                 {preview.ready} of {preview.transactions} transactions to import
               </p>
@@ -121,7 +121,7 @@ export function BudgetAppImportSheet({ file, onClose }: { file: { name: string; 
                 The history is imported as it is; each account’s starting balance is set so today matches what you type.
               </p>
             </div>
-            <div className="divide-y divide-line overflow-hidden rounded-card bg-surface-2/40">
+            <div className="divide-y divide-stroke/80 overflow-hidden rounded-card border-2 border-stroke bg-surface-2">
               {preview.accounts.map((account) => (
                 <label key={account.key} className="flex items-center gap-3 px-4 py-2.5">
                   <span className="min-w-0 flex-1">
@@ -141,7 +141,7 @@ export function BudgetAppImportSheet({ file, onClose }: { file: { name: string; 
                       inputMode="decimal"
                       placeholder="0.00"
                       aria-label={`${account.name}: ${label(account).toLowerCase()}`}
-                      className="num min-h-tap w-full rounded-xl border border-line bg-surface px-2.5 text-right text-body"
+                      className="num min-h-tap w-full rounded-xl border-2 border-stroke bg-surface px-2.5 text-right text-body"
                     />
                   </span>
                 </label>

@@ -104,7 +104,7 @@ export function AccountPayments({ account, rules: givenRules, projection: givenP
         <h3 className="text-headline">You pay it each month</h3>
         {payments.length > 0 && (
           <button type="button" onClick={addPayment}
-            className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent active:bg-accent-soft">
+            className="min-h-tap rounded-full px-3 text-footnote font-semibold text-accent-ink active:bg-accent-soft">
             + Add
           </button>
         )}
@@ -119,7 +119,7 @@ export function AccountPayments({ account, rules: givenRules, projection: givenP
         </>
       ) : (
         <>
-          <div className="-mx-4 divide-y divide-line">
+          <div className="-mx-4 divide-y divide-stroke/80">
             {payments.map((rule) => (
               <button key={rule.id} type="button" onClick={() => openRuleSheet({ kind: rule.kind, rule, prefill: null })}
                 className={`flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition active:bg-surface-2 ${rule.paused ? 'opacity-60' : ''}`}>
@@ -136,7 +136,7 @@ export function AccountPayments({ account, rules: givenRules, projection: givenP
             ))}
           </div>
           {path && (
-            <div className="space-y-1.5 border-t border-line pt-2">
+            <div className="space-y-1.5 border-t border-stroke/40 pt-2">
               <p className={`text-footnote font-semibold ${path.paidOff ? 'text-ok' : 'text-warn'}`}>
                 {path.paidOff
                   ? `✓ Paid off by ${path.paidOff} at this pace`

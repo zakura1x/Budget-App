@@ -19,12 +19,12 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
   const described = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
   return (
     <div className={className}>
-      <label htmlFor={inputId} className="mb-1.5 block text-footnote font-semibold text-ink-2">
+      <label htmlFor={inputId} className="label mb-1.5 block text-ink-2">
         {label}
       </label>
       <div
-        className={`flex items-center rounded-xl border bg-surface transition focus-within:border-accent ${
-          error ? 'border-danger' : 'border-line'
+        className={`flex items-center rounded-xl border-2 bg-surface transition focus-within:shadow-[var(--lift)_var(--lift)_0_0_rgb(var(--c-shadow))] ${
+          error ? 'border-danger' : 'border-stroke'
         }`}
       >
         {leading}

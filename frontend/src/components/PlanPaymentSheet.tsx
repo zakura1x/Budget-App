@@ -98,14 +98,14 @@ export function PlanPaymentSheet({ rule, accounts, onClose }: PlanPaymentSheetPr
                 extra <span className="num font-semibold">{formatPHP(question.extra)}</span> do?
               </p>
               <button type="button" disabled={busy} onClick={() => void send('lower')}
-                className="block w-full rounded-2xl bg-surface-2 p-4 text-left transition active:scale-[0.99] disabled:opacity-50">
+                className="press block w-full rounded-card bg-surface p-4 text-left disabled:opacity-50">
                 <span className="block text-body font-semibold">Lower the monthly payment</span>
                 <span className="num mt-0.5 block text-footnote text-ink-2">
                   {formatPHP(question.lower.payment)} × {question.lower.payments} · done {month(question.lower.payoff_on)}
                 </span>
               </button>
               <button type="button" disabled={busy} onClick={() => void send('shorten')}
-                className="block w-full rounded-2xl bg-surface-2 p-4 text-left transition active:scale-[0.99] disabled:opacity-50">
+                className="press block w-full rounded-card bg-surface p-4 text-left disabled:opacity-50">
                 <span className="block text-body font-semibold">
                   Keep {formatPHP(question.shorten.payment)} a month, finish sooner
                 </span>
@@ -130,7 +130,7 @@ export function PlanPaymentSheet({ rule, accounts, onClose }: PlanPaymentSheetPr
                   {payers.map((a) => (
                     <button key={a.id} type="button" onClick={() => setFromId(a.id)} aria-pressed={fromId === a.id}
                       className={`min-h-tap rounded-full px-4 text-footnote font-semibold transition ${
-                        fromId === a.id ? 'bg-accent text-on-accent' : 'bg-surface-2 text-ink-2'
+                        fromId === a.id ? 'bg-accent text-on-accent shadow-edge' : 'bg-surface text-ink-2 shadow-edge active:bg-surface-2'
                       }`}>
                       {a.name}
                     </button>
