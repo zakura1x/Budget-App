@@ -18,6 +18,7 @@ import {
   type Category,
   type CategoryKind,
 } from '../lib/categories';
+import { afterWrite } from '../lib/invalidate';
 import { ColourPicker, DEFAULT_COLOUR, GlyphTile, IconPicker } from './StylePicker';
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
@@ -71,6 +72,9 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
       const draft = { name: name.trim(), kind, parent_id: parent, icon, colour };
       if (category) await updateCategory(category.id, draft);
       else await createCategory(draft);
+      // A name, a colour or an icon is printed on every transaction row, on Home's
+      // grid and on a Stats slice - none of which live on this screen (CAT-01/04).
+      afterWrite('categories');
       onSaved();
       onClose();
     } catch (e) {
@@ -85,6 +89,9 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
     setError(null);
     try {
       await deleteCategory(category.id, moveTo ?? undefined);
+      // Deleting reassigns what was filed under it, so the rows themselves moved
+      // and every figure filed by category changed with them (CAT-06).
+      afterWrite('categories', 'transactions', 'budget', 'stats');
       onSaved();
       onClose();
     } catch (e) {

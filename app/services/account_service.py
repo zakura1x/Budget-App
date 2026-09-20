@@ -63,6 +63,7 @@ from app.core.utils.interest import (
 )
 from app.core.utils.money import ZERO, money, total
 from app.db.repositories.account_repository import AccountRepository
+from app.db.types import utcnow
 from app.services import audit_service
 
 # ---------------------------------------------------------------- the rules
@@ -148,6 +149,12 @@ class Posting:
     amount: Decimal
     kind: Optional[str] = None  # None where a posting is built by hand, as in tests
     statement_on: Optional[date] = None
+    # When the row was entered (UTC, naive, like row_created). Only an
+    # investment reads it, to order a posting against a value typed that day.
+    created: Optional[datetime] = None
+    # The transaction row (for a transfer, this leg). A card's bills name the
+    # payments a saved list already reflects (ACC-35) and link each payment line.
+    id: Optional[int] = None
 
     @property
     def statement_day(self) -> date:
@@ -162,6 +169,27 @@ class Valuation:
     on: date
     value: Decimal
     note: Optional[str] = None
+    at: Optional[datetime] = None  # when it was typed (UTC); None on values typed before 2026-09-19
+
+    def covers(self, posting: "Posting") -> bool:
+        """
+        ACC-08/12. Is this posting already inside the typed figure? Anything
+        dated before the value's day is; anything after is not. On the day
+        itself it depends on which came first (fixed 2026-09-19, user: a
+        transfer into Exness on the day its value was typed never showed).
+        An unrecorded gain or loss is typed against the value, so never is.
+        """
+        if posting.on != self.on:
+            return posting.on < self.on
+        if posting.kind == "adjustment":
+            return False
+        if posting.created is None:
+            return True
+        if self.at is not None:
+            return posting.created <= self.at
+        # A value from before `at` was kept: a posting entered on a later
+        # (UTC) day was entered after the whole of the value's day.
+        return posting.created.date() <= self.on
 
 
 @dataclass(frozen=True)
@@ -250,6 +278,32 @@ class Bill:
     typed_left: Decimal = ZERO  # unpaid of the typed part - payments settle the typed part first
     from_purchases: Decimal = ZERO  # purchases recorded AFTER the list was saved, on this bill's statement
     purchases_left: Decimal = ZERO  # unpaid of those - settled after the typed part, before the plans
+    # Repeating charges (not installments) on this bill that are not charged yet:
+    # on the bill, but not in what the card owes today.
+    not_charged: Decimal = ZERO
+    lines: Tuple["BillLine", ...] = ()  # what the bill is made of, and what paid it
+
+
+@dataclass(frozen=True)
+class BillLine:
+    """
+    ACC-35. One line of a bill, so tapping a bill shows what it is made of
+    (2026-09-19, user). `kind`:
+
+    - "typed": the card app's own figure, which nobody itemises;
+    - "purchase" / "plan": added on top of it;
+    - "inside_typed": a purchase or plan payment the typed figure already holds -
+      shown so it can be seen, never added;
+    - "payment": money into the card that settled this bill, oldest bill first.
+    """
+
+    kind: str
+    amount: Decimal
+    on: Optional[date] = None
+    name: Optional[str] = None
+    transaction_id: Optional[int] = None
+    rule_id: Optional[int] = None
+    category_id: Optional[int] = None
 
 
 # One recurring charge on a card: the day it posts (or will), its amount, and whether its schedule ends.
@@ -279,6 +333,8 @@ class Charge(NamedTuple):
     purchase: bool = False
     source: Optional[int] = None
     origin: Optional[int] = None  # REC-34 - the purchase a plan was made from; covered if it was
+    name: Optional[str] = None  # what a bill line shows: the plan's name, or the purchase's merchant or note
+    category_id: Optional[int] = None  # a purchase with one category - the line can show it
 
 
 @dataclass(frozen=True)
@@ -313,6 +369,12 @@ class CreditView:
     # which is what the card's own app calls your balance. The reminder and the
     # statement check keep using `owed` - a plan not yet billed is not due yet.
     owed_with_plans: Decimal = ZERO
+    # ACC-35 (2026-09-19, user: the bills did not add up to what the card owes).
+    # owed_with_plans - bills_left + bills_not_charged: what the card owes that no
+    # typed bill lists yet - usually payments the card's app shows only later.
+    # None without bills. Derived, never stored; negative when the bills hold more.
+    not_on_bill: Optional[Decimal] = None
+    bills_not_charged: Decimal = ZERO  # repeating charges on the bills, not charged yet
 
 
 @dataclass(frozen=True)
@@ -612,11 +674,13 @@ def set_bills(
         # a clock can tie and a restore renumbers and re-times every row, while
         # these ids are references backup_service rewrites like any other.
         day = today or date.today()
-        data["bills_cover_transactions"], data["bills_cover_rules"] = _covered_rows(db, cipher, account_id, day)
+        (data["bills_cover_transactions"], data["bills_cover_rules"],
+         data["bills_cover_payments"]) = _covered_rows(db, cipher, account_id, day)
     else:
         data.pop("bills", None)
         data.pop("bills_from", None)
-    for stale in ("bills_saved_at",) + (() if cleaned else ("bills_cover_transactions", "bills_cover_rules")):
+    covers = ("bills_cover_transactions", "bills_cover_rules", "bills_cover_payments")
+    for stale in ("bills_saved_at",) + (() if cleaned else covers):
         data.pop(stale, None)
     repo.update(account_id, data)
     audit_service.record(
@@ -626,19 +690,29 @@ def set_bills(
     db.commit()
 
 
-def _covered_rows(db: Session, cipher: UserCipher, account_id: int, day: date) -> Tuple[List[int], List[int]]:
+def _covered_rows(db: Session, cipher: UserCipher, account_id: int, day: date) -> Tuple[List[int], List[int], List[int]]:
     """
     ACC-35. The purchases on this card dated on or after `day` (earlier ones are
-    left out by date anyway) and every plan on it - what a list typed from the
-    card's app on `day` already includes.
+    left out by date anyway), every plan on it, and the payments into it dated
+    `day` - what a list typed from the card's app on `day` already includes.
+
+    The payments (fixed 2026-09-19): one made earlier that day had already taken
+    its bill off the app's Unpaid tab, so settling bills with it again made them
+    too low. Earlier payments are left out by date; later ones still count.
     """
     from app.db.repositories.recurring_repository import RecurringRuleRepository
     from app.db.repositories.transaction_repository import TransactionRepository
 
-    purchases = []
+    purchases, payments = [], []
     for record in TransactionRepository(db, cipher).cached():
         data = record.data
-        if data.get("account_id") != account_id or data.get("type") != "expense" or data.get("recurring_id"):
+        if data.get("account_id") != account_id:
+            continue
+        if data.get("type") == "income" or (data.get("type") == "transfer" and data.get("direction") == "in"):
+            if str(data.get("txn_date")) == day.isoformat():
+                payments.append(record.id)
+            continue
+        if data.get("type") != "expense" or data.get("recurring_id"):
             continue
         try:
             on = date.fromisoformat(str(data.get("card_posted_on") or data.get("txn_date")))
@@ -647,7 +721,7 @@ def _covered_rows(db: Session, cipher: UserCipher, account_id: int, day: date) -
         if on >= day:
             purchases.append(record.id)
     rules = [record.id for record in RecurringRuleRepository(db, cipher).list() if record.data.get("account_id") == account_id]
-    return sorted(purchases), sorted(rules)
+    return sorted(purchases), sorted(rules), sorted(payments)
 
 
 def set_archived(db: Session, cipher: UserCipher, account_id: int, archived: bool) -> AccountView:
@@ -698,7 +772,8 @@ def add_valuation(
 
     amount = _amount(value, "value")
     when = on or date.today()
-    entry = {"on": when.isoformat(), "value": str(amount)}
+    # `at` orders the value against postings dated the same day (Valuation.covers).
+    entry = {"on": when.isoformat(), "value": str(amount), "at": utcnow().isoformat()}
     if note:
         entry["note"] = str(note)[:NOTE_MAX]
 
@@ -818,11 +893,7 @@ def _view(
         # can never double-count a contribution.
         base = valuations[-1] if valuations else None
         current_value = base.value if base else opening
-        # An unrecorded gain or loss typed on the valuation's own day came after
-        # it - valuations are no longer typed (2026-09-18) - so it still counts.
-        balance = current_value + total(
-            p.amount for p in postings
-            if base is None or p.on > base.on or (p.on == base.on and p.kind == "adjustment"))
+        balance = current_value + total(p.amount for p in postings if base is None or not base.covers(p))
 
     view = AccountView(
         id=account_id,
@@ -921,6 +992,12 @@ def _credit_view(
         if nearest is not None:
             payment_due = nearest.due if nearest.overdue else (upcoming.due if upcoming else nearest.due)
         amount_due = due_now
+    bills_left = total(b.left for b in bills).quantize(ZERO)
+    not_charged = total(b.not_charged for b in bills).quantize(ZERO)
+    # What the card owes that no bill lists (2026-09-19, user: Bills did not add
+    # up to the tile). The repeating charges on the bills are not owed yet, so
+    # they are taken off the bills before comparing.
+    not_on_bill = (owed + unpaid - (bills_left - not_charged)).quantize(ZERO) if bills else None
 
     due_in_days = (payment_due - when).days
     return CreditView(
@@ -947,8 +1024,10 @@ def _credit_view(
         period_days_elapsed=(when - period.start).days + 1,
         posting_lag_days=_posting_lag(data),
         bills=bills,
-        bills_left=total(b.left for b in bills).quantize(ZERO),
+        bills_left=bills_left,
         due_now=due_now,
+        not_on_bill=not_on_bill,
+        bills_not_charged=not_charged,
     )
 
 
@@ -1011,20 +1090,10 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
     last_typed = max(typed)
     planned: Dict[date, Decimal] = {}
     purchased: Dict[date, Decimal] = {}
-    for charge in charges:
-        if listed_already(charge):
-            # The card's app had it when the list was typed: a purchase already
-            # made, or every payment of a plan that already existed - its bills
-            # include them (fixed 2026-09-17, user: SPayLater's 8,280.76 showed as
-            # 8,296.09, an installment's 15.33 counted twice).
-            continue
-        if charge.purchase:
-            if since is not None and charge.on < since:
-                continue
-            due = statement_period(charge.on, closing_day, due_day).due
-            if since is None or due >= since:
-                purchased[due] = purchased.get(due, ZERO) + charge.amount
-            continue
+    not_charged: Dict[date, Decimal] = {}
+    added: Dict[date, List[BillLine]] = {}
+    inside: Dict[date, List[BillLine]] = {}
+    for charge in sorted(charges, key=lambda c: c.on):
         # An installment payment is already a bill line, dated the day it is
         # billed, so it joins the first bill falling due on or after that day
         # (fixed 2026-09-16, user: a payment dated 15 Oct was showing on the
@@ -1034,31 +1103,72 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
         # which falls due the month after.
         due = (_bill_on_or_after(charge.on, typed, last_typed) if charge.installment
                else statement_period(charge.on, closing_day, due_day).due)
+        if listed_already(charge) or (charge.purchase and since is not None and charge.on < since):
+            # The card's app had it when the list was typed: a purchase already
+            # made, or every payment of a plan that already existed - its bills
+            # include them (fixed 2026-09-17, user: SPayLater's 8,280.76 showed as
+            # 8,296.09, an installment's 15.33 counted twice). Shown on the typed
+            # bill it is part of (2026-09-19), never added to it.
+            if due in typed:
+                inside.setdefault(due, []).append(_bill_line("inside_typed", charge))
+            continue
+        if charge.purchase:
+            if since is None or due >= since:
+                purchased[due] = purchased.get(due, ZERO) + charge.amount
+                added.setdefault(due, []).append(_bill_line("purchase", charge))
+            continue
         if (since is not None and due < since) or (not charge.ends and due > last_typed):
             continue
         planned[due] = planned.get(due, ZERO) + charge.amount
+        added.setdefault(due, []).append(_bill_line("plan", charge))
+        if not charge.installment and charge.on > today:
+            not_charged[due] = not_charged.get(due, ZERO) + charge.amount
 
-    pot = total(
-        p.amount for p in postings
+    # Payments settle bills oldest first, each one split across as many bills as
+    # it covers, so a bill can say which payments paid it. Those a saved list
+    # already reflects (bills_cover_payments, 2026-09-19) are not applied again.
+    reflected = set(data.get("bills_cover_payments") or ())
+    queue = [
+        [p, p.amount] for p in sorted(postings, key=lambda p: (p.on, p.id or 0))
         if p.amount > ZERO and p.kind in (None, "transfer", "income") and (since is None or p.on >= since)
-    )
+        and (p.id is None or p.id not in reflected)
+    ]
     result = []
     for due in sorted(set(typed) | set(planned) | set(purchased)):
         own = typed.get(due, ZERO)
         bought = purchased.get(due, ZERO)
         extra = planned.get(due, ZERO)
         amount = own + bought + extra
-        paid = min(pot, amount)
-        pot -= paid
-        left = amount - paid
+        need = amount
+        paid_by: List[BillLine] = []
+        while need > ZERO and queue:
+            posting, left_of_it = queue[0]
+            take = min(left_of_it, need)
+            paid_by.append(BillLine("payment", take.quantize(ZERO), posting.on,
+                                    "Refund" if posting.kind == "income" else "Payment", posting.id))
+            need -= take
+            queue[0][1] = left_of_it - take
+            if queue[0][1] <= ZERO:
+                queue.pop(0)
+        paid = amount - need
+        left = need
         typed_left = max(own - paid, ZERO)
+        lines = ([BillLine("typed", own.quantize(ZERO))] if own > ZERO else [])             + added.get(due, []) + inside.get(due, []) + paid_by
         result.append(Bill(
             due=due, amount=amount.quantize(ZERO), paid=paid.quantize(ZERO), left=left.quantize(ZERO),
             overdue=today > due and left > ZERO, typed=own.quantize(ZERO), from_plans=extra.quantize(ZERO),
             typed_left=typed_left.quantize(ZERO), from_purchases=bought.quantize(ZERO),
             purchases_left=(max(own + bought - paid, ZERO) - typed_left).quantize(ZERO),
+            not_charged=not_charged.get(due, ZERO).quantize(ZERO), lines=tuple(lines),
         ))
     return tuple(result)
+
+
+def _bill_line(kind: str, charge: Charge) -> BillLine:
+    """A charge as a line of its bill: a purchase links to its transaction, a plan payment to its plan."""
+    return BillLine(kind, charge.amount.quantize(ZERO), charge.on, charge.name,
+                    charge.source if charge.purchase else None,
+                    None if charge.purchase else charge.source, charge.category_id)
 
 
 def _bill_on_or_after(day: date, typed: Mapping[date, Decimal], last_typed: date) -> date:
@@ -1093,7 +1203,8 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
     from app.services import recurring_service, transaction_service
 
     when = today or date.today()
-    plans = {rule.id: rule.kind for rule in recurring_service.list_rules(db, cipher, today=when)}
+    rules = {rule.id: rule for rule in recurring_service.list_rules(db, cipher, today=when)}
+    plans = {rule_id: rule.kind for rule_id, rule in rules.items()}
     from app.db.repositories.transaction_repository import TransactionRepository
 
     created: Dict[int, Any] = {}
@@ -1116,16 +1227,19 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
             plan = plans.get(view.recurring_id) == "installment"
             charges.setdefault(view.account_id, []).append(
                 Charge(view.recurring_on or view.card_posted_on or view.txn_date, view.amount, True, plan,
-                       created.get(view.recurring_id), False, view.recurring_id, origins.get(view.recurring_id)))
+                       created.get(view.recurring_id), False, view.recurring_id, origins.get(view.recurring_id),
+                       rules[view.recurring_id].name if view.recurring_id in rules else None))
         elif view.type == "expense":
             charges.setdefault(view.account_id, []).append(
-                Charge(view.card_posted_on or view.txn_date, view.amount, True, False, view.created_at, True, view.id))
+                Charge(view.card_posted_on or view.txn_date, view.amount, True, False, view.created_at, True, view.id,
+                       name=view.merchant or view.notes,
+                       category_id=view.splits[0].category_id if len(view.splits) == 1 else None))
     start = date.fromordinal(when.toordinal() + 1)
     for item in recurring_service.upcoming(db, cipher, start, date.fromordinal(when.toordinal() + 366 * 3)):
         if item.type == "expense" and not item.occurrence.paused:
             charges.setdefault(item.account_id, []).append(
                 Charge(item.on, item.amount, item.kind == "installment", item.kind == "installment",
-                       created.get(item.rule_id), False, item.rule_id, origins.get(item.rule_id)))
+                       created.get(item.rule_id), False, item.rule_id, origins.get(item.rule_id), item.name))
     return charges
 
 
@@ -1257,6 +1371,7 @@ def _valuations(raw: Any) -> Tuple[Valuation, ...]:
                     on=date.fromisoformat(str(item.get("on"))),
                     value=money(item.get("value", ZERO)),
                     note=item.get("note"),
+                    at=datetime.fromisoformat(str(item["at"])) if item.get("at") else None,
                 )
             )
         except (ValueError, TypeError):

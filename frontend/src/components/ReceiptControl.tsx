@@ -8,8 +8,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
+import { afterWrite } from '../lib/invalidate';
 import { ACCEPTED, attachReceipt, getReceipt, removeReceipt } from '../lib/attachments';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 
 export function ReceiptControl({ transactionId, attachmentId, readOnly = false }: {
@@ -30,7 +30,9 @@ export function ReceiptControl({ transactionId, attachmentId, readOnly = false }
     if (url) URL.revokeObjectURL(url);
   }, [url]);
 
-  const refresh = () => useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+  // TXN-15 - `attachment_id` lives on the transaction itself, so the rows held in
+  // memory have to be reloaded, not just the screens drawn from them.
+  const refresh = () => afterWrite('transactions');
 
   const show = async () => {
     if (!current) return;

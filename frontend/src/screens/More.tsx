@@ -4,9 +4,10 @@
  * still prove the whole pipe works: they call /health through api.ts, past the
  * CSP, through the Vite proxy in dev and same-origin in production.
  */
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { getHealth, type HealthStatus } from '../lib/api';
+import { getHealth } from '../lib/api';
+import { keys, STALE } from '../lib/queryKeys';
 import { CalendarIcon, GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, WalletIcon } from '../components/Icons';
 import { useAuthStore } from '../stores/authStore';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -19,16 +20,11 @@ function YesNo({ ok, loading }: { ok?: boolean; loading: boolean }) {
 }
 
 export function More() {
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    getHealth(controller.signal)
-      .then(setHealth)
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
-  }, []);
+  const { data: health, error } = useQuery({
+    queryKey: keys.health(),
+    queryFn: ({ signal }) => getHealth(signal),
+    staleTime: STALE.health,
+  });
 
   const loading = !health && !error;
   const navigate = useNavigate();
@@ -114,7 +110,7 @@ export function More() {
           trailing={<YesNo loading={loading} ok={health?.checks.encryption.master_key_loaded} />}
         />
       </ListGroup>
-      {error && <p className="px-1 pt-2 text-footnote text-danger">Could not reach the server: {error}</p>}
+      {error && <p className="px-1 pt-2 text-footnote text-danger">Could not reach the server: {error.message}</p>}
       {health && (
         <p className="px-1 pt-2 text-footnote text-ink-3">
           {health.app} v{health.version}

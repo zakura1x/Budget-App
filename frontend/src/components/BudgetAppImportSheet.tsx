@@ -18,8 +18,8 @@ import {
   type BudgetAppAccount,
   type BudgetAppPreview,
 } from '../lib/backups';
+import { afterWrite, EVERYTHING } from '../lib/invalidate';
 import { formatPHP, toDecimalString } from '../lib/money';
-import { useBudgetStore } from '../stores/budgetStore';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
@@ -75,9 +75,9 @@ export function BudgetAppImportSheet({ file, onClose }: { file: { name: string; 
           `${done.categories_created} categories added${done.skipped_duplicates ? ` · ${done.skipped_duplicates} already here, skipped` : ''}.`,
       );
       setPreview(null);
-      useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-      void useLedgerStore.getState().load({});
-      void useBudgetStore.getState().load(null);
+      // DAT-21 - accounts, categories and transactions all arrive at once.
+      useLedgerStore.setState({ filters: {} });
+      afterWrite(...EVERYTHING);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'The import did not run.');
     }

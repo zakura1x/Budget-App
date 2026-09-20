@@ -15,15 +15,21 @@ import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { BottomTabBar } from './components/BottomTabBar';
 import { Offline } from './components/Offline';
+import { RefreshLine } from './components/RefreshLine';
 import { RuleSheetHost } from './components/RuleSheetHost';
 import { useOnline } from './hooks/useOnline';
 import { usePreferencesStore } from './stores/preferencesStore';
 import { Splash } from './components/Splash';
+import { TransactionPreview } from './components/TransactionPreview';
 import { TransactionSheet } from './components/TransactionSheet';
 import { useAutoLock } from './hooks/useAutoLock';
 import { useCatchUp } from './hooks/useCatchUp';
+import { clearScrollMemory, useScrollMemory } from './hooks/useScrollMemory';
 import { LOCKED_EVENT, SIGNED_OUT_EVENT } from './lib/api';
 import { BASE_URL } from './lib/config';
+import { warmLazyScreens, warmOnUnlock } from './lib/prefetch';
+import { queryClient } from './lib/queryClient';
+import * as lazyScreens from './screens/lazy';
 import { AccountDetail } from './screens/AccountDetail';
 import { Accounts } from './screens/Accounts';
 import { Budget } from './screens/Budget';
@@ -48,13 +54,13 @@ import { useUiStore } from './stores/uiStore';
 // Loaded when first opened (Phase 10): Stats carries recharts, the largest
 // dependency, and the rest are visited rarely. Everything on the way to Home
 // and the add sheet stays in the main bundle.
-const AboutEncryption = lazy(() => import('./screens/AboutEncryption').then((m) => ({ default: m.AboutEncryption })));
-const Admin = lazy(() => import('./screens/Admin').then((m) => ({ default: m.Admin })));
-const Backup = lazy(() => import('./screens/Backup').then((m) => ({ default: m.Backup })));
-const Goals = lazy(() => import('./screens/Goals').then((m) => ({ default: m.Goals })));
-const Projection = lazy(() => import('./screens/Projection').then((m) => ({ default: m.Projection })));
-const Recurring = lazy(() => import('./screens/Recurring').then((m) => ({ default: m.Recurring })));
-const Stats = lazy(() => import('./screens/Stats').then((m) => ({ default: m.Stats })));
+const AboutEncryption = lazy(() => lazyScreens.loadAboutEncryption().then((m) => ({ default: m.AboutEncryption })));
+const Admin = lazy(() => lazyScreens.loadAdmin().then((m) => ({ default: m.Admin })));
+const Backup = lazy(() => lazyScreens.loadBackup().then((m) => ({ default: m.Backup })));
+const Goals = lazy(() => lazyScreens.loadGoals().then((m) => ({ default: m.Goals })));
+const Projection = lazy(() => lazyScreens.loadProjection().then((m) => ({ default: m.Projection })));
+const Recurring = lazy(() => lazyScreens.loadRecurring().then((m) => ({ default: m.Recurring })));
+const Stats = lazy(() => lazyScreens.loadStats().then((m) => ({ default: m.Stats })));
 
 function SignedOutRoutes() {
   return (
@@ -70,8 +76,10 @@ function SignedOutRoutes() {
 
 function AppTabs() {
   const openAddSheet = useUiStore((s) => s.openAddSheet);
+  useScrollMemory(); // come back to a tab where you left it (step 6)
   return (
     <>
+      <RefreshLine />
       <div className="mx-auto min-h-dvh max-w-app px-safe pt-safe">
         {/* bottom padding clears the tab bar, the raised [+] and the home indicator */}
         <main className="pb-[calc(theme(spacing.tabbar)+env(safe-area-inset-bottom)+2rem)]">
@@ -101,6 +109,7 @@ function AppTabs() {
       </div>
       <BottomTabBar onAdd={() => openAddSheet()} />
       <TransactionSheet />
+      <TransactionPreview />
       <RuleSheetHost />
     </>
   );
@@ -145,10 +154,13 @@ export function App() {
 
   // Anything open over the app closes when it locks or signs out - and the
   // decrypted rows the page was holding go with it, as the server's working
-  // set goes with the key.
+  // set goes with the key. That includes the query cache (SEC-29): every
+  // figure any screen fetched is dropped here, not kept for the next unlock.
   useEffect(() => {
     if (status !== 'unlocked') {
       closeAddSheet();
+      queryClient.clear();
+      clearScrollMemory();
       resetLedger();
       resetBudget();
       // Locked (or still loading) is the same person, so the theme stays; signed
@@ -156,6 +168,8 @@ export function App() {
       resetPreferences({ keepTheme: status !== 'anonymous' });
     } else {
       void loadPreferences(); // the theme, the week start, the auto-lock choice
+      warmOnUnlock(); // the answers every screen needs, while Home is still drawing
+      warmLazyScreens(); // and the chunks for Stats and friends, once things are quiet
     }
   }, [status, closeAddSheet, resetLedger, resetBudget, resetPreferences, loadPreferences]);
 

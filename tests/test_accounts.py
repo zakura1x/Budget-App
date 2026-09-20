@@ -9,7 +9,7 @@ remainder the bank has already blocked, and that a name never reaches the
 database in a readable form.
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -21,6 +21,7 @@ from app.core.exceptions import (
     ValidationException,
 )
 from app.db.models import Account
+from app.db.repositories.account_repository import AccountRepository
 from app.services import account_service
 from app.services.account_service import Posting
 
@@ -319,6 +320,38 @@ def test_a_contribution_before_the_valuation_is_already_inside_it(session, owner
                Posting(fund.id, date(2026, 9, 20), Decimal("5000.00"), "transfer")]
 
     assert account_service.get_account(session, owner, fund.id, postings=earlier).balance == Decimal("130000.00")
+
+
+def test_a_transfer_entered_after_the_value_was_typed_that_day_counts(session, owner):
+    """
+    Fixed 2026-09-19 (user: moved money from SeaBank to Exness and the Exness
+    balance did not move). Same day as the value, but entered after it.
+    """
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    view = account_service.add_valuation(session, owner, fund.id, "105000.00", on=date(2026, 9, 19))
+    typed = view.valuations[-1].at
+    before = Posting(fund.id, date(2026, 9, 19), Decimal("3000.00"), "transfer", None, typed - timedelta(minutes=5))
+    after = Posting(fund.id, date(2026, 9, 19), Decimal("20000.00"), "transfer", None, typed + timedelta(minutes=5))
+
+    view = account_service.get_account(session, owner, fund.id, postings=[before, after])
+    assert view.current_value == Decimal("105000.00")
+    assert view.balance == Decimal("125000.00")  # the earlier one is inside the typed value
+
+
+def test_a_value_typed_before_it_had_a_time_counts_same_day_postings_entered_later(session, owner):
+    """A value saved with only its day covers what was entered that day, not after."""
+    fund = make(session, owner, type="investment", name="Exness", opening_balance="100000.00")
+    account_service.add_valuation(session, owner, fund.id, "105000.00", on=date(2026, 9, 17))
+    record = AccountRepository(session, owner).get(fund.id)
+    data = dict(record.data)
+    data["valuations"] = [{"on": "2026-09-17", "value": "105000.00"}]  # as stored before 2026-09-19
+    AccountRepository(session, owner).update(fund.id, data)
+    session.commit()
+
+    same_day = Posting(fund.id, date(2026, 9, 17), Decimal("3000.00"), "transfer", None, datetime(2026, 9, 17, 2, 0))
+    next_day = Posting(fund.id, date(2026, 9, 17), Decimal("20000.00"), "transfer", None, datetime(2026, 9, 18, 2, 0))
+    view = account_service.get_account(session, owner, fund.id, postings=[same_day, next_day])
+    assert view.balance == Decimal("125000.00")
 
 
 def test_money_taken_out_of_a_fund_comes_off_it(session, owner):

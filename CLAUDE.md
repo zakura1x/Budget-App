@@ -57,6 +57,8 @@ cd frontend
 npm run dev        # http://localhost:5173/ZBDGT/ — proxies /ZBDGT/api to :8000
 npm run build      # tsc --noEmit, then Vite -> ../app/web/static/dist/
 npm run typecheck
+npm test           # vitest, src/tests/ — the caching layer only, no DOM
+npm run test:watch
 ```
 
 Scripts that exist today (many more are referenced in `misc/how-to-run.txt` but
@@ -222,6 +224,30 @@ first account exists.
   cookie credentials, an `X-Requested-With` CSRF guard, one shared silent
   refresh on `401`, and `SESSION_LOCKED` / `SESSION_REVOKED` dispatched as
   window events the shell listens for.
+- **Screens read the query cache, not their own fetch.** `@tanstack/react-query`
+  (added 2026-09-20) holds every answer a screen draws from; the keys and stale
+  times are in `frontend/src/lib/queryKeys.ts` and nothing keys a query any
+  other way. Its defaults are overridden on purpose in `lib/queryClient.ts` -
+  `retry: false`, because `api.ts` owns the one silent refresh and the
+  SESSION_LOCKED event. **Never add a persister plugin** (`persistQueryClient`
+  and friends write the cache to localStorage or IndexedDB, which invariant 10
+  forbids), and `queryClient.clear()` stays in the App.tsx lock effect beside
+  `resetLedger()`. Code outside a render uses `ensure*` in `lib/prefetch.ts`.
+  The ledger's rows, the account trails and the budget status stay hand-rolled
+  in their stores - they page by cursor, carry the pending row and merge a
+  write's `Outcome` - but they skip a fetch that is still fresh and share one
+  in-flight request, the same as a query. `npm test` (vitest, `src/tests/`)
+  covers the parts that fail SILENTLY - a guard that skips a fetch it should
+  have made shows a wrong figure, not an error - and `writePaths.test.ts` reads
+  the source to fail any new write that does not announce itself.
+- **A component never invalidates by hand.** After a successful write it calls
+  `afterWrite(...groups)` (`frontend/src/lib/invalidate.ts`, 2026-09-20) and
+  names what the write touched - `afterWrite(...MONEY)` for anything that
+  posted or moved money, `...EVERYTHING` for a restore or an import. That one
+  function reloads `ledgerStore` and `budgetStore` and bumps the version every
+  screen keys its effect on; bumping `version` at a call site, or calling
+  `ledger.load()` there, is how eleven writes used to go missing from Home.
+  The rest of the plan it belongs to is `misc/UX_RESPONSIVENESS_PLAN.md`.
 - `misc/ARCHITECTURE.md` section numbers and `misc/FEATURES.md` feature IDs are
   cited in code comments; keep new comments doing the same.
 
@@ -354,6 +380,12 @@ Months ahead takes new purchases with the typed part - money already spent.
 The bill editor starts from each bill's full `left`, so saving it unchanged
 keeps every total.
 
+Every bill carries its `lines` (typed / purchase / plan / inside_typed / payment),
+built in the same pass that adds it up - never assemble them anywhere else.
+`CreditView.not_on_bill` is what the card owes that no bill lists (shown, never
+placed on a bill), and Months ahead takes each later bill ON ITS DUE DATE, with
+`bills_held` saying what Home holds back at a month's end (2026-09-19).
+
 A plan charge joins a card's bills by WHAT IT IS: an installment payment's date
 is the day it is billed, so it lands on the first bill due on or after it; any
 other recurring charge is a purchase and takes the statement cycle, due the
@@ -399,9 +431,10 @@ full balance. Several goals may share an account.
 
 An INVESTMENT account's balance (ACC-08/12) is the value last typed plus every
 posting dated AFTER that valuation - money moved in or out is not market
-movement, and a transfer into a fund must move it. Postings on or before the
+movement, and a transfer into a fund must move it. Postings before the
 valuation's day are already inside the typed figure, so a new value resets the
-base. `AccountView.current_value` stays the typed figure; only `balance` adds
+base; on the day itself `Valuation.covers` orders them by when each was
+entered (`at` on the value, `row_created` on the posting - fixed 2026-09-19). `AccountView.current_value` stays the typed figure; only `balance` adds
 the contributions.
 
 **Interest and cashback** (2026-09-16, ARCHITECTURE §4.6/§4.7):
@@ -426,6 +459,11 @@ the contributions.
   REFUSE more; rates carry four ("3.2500"). Use `toRateString` to send one,
   `percentOf` to apply one, and the interest helper on the server - never
   `toDecimalString`, `formatPHP` or `splitDecimal` on a rate.
+
+Tapping a transaction opens `TransactionPreview` (TXN-23, `uiStore.preview`),
+read-only, and its Edit button opens `TransactionSheet` - the account page, Home
+and the calendar day list all do this, and the Ledger keeps swipe-to-edit. Only
+the preview and the sheet ever open an entry; a pending row opens neither.
 
 **Calendar, stats and tags** (Phase 6): `stats_service.overview` and
 `calendar_service.month` read `transaction_service.views()` - both legs of

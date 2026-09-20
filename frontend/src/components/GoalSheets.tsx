@@ -12,10 +12,10 @@ import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useLookups } from '../hooks/useLookups';
 import { ApiError } from '../lib/api';
+import { afterWrite } from '../lib/invalidate';
 import { centavos, formatPHP, toDecimalString } from '../lib/money';
 import { addToGoal, createGoal, deleteGoal, releaseFromGoal, updateGoal, type Goal } from '../lib/security';
 import { localToday } from '../lib/transactions';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { MoneyField } from './ui/MoneyField';
@@ -31,8 +31,12 @@ const valid = (value: string) => {
     return false;
   }
 };
-/** Everything that shows a balance or cash on hand reloads on the ledger's version. */
-const refreshEverything = () => useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+/**
+ * GOA-08. A goal writes no transaction - it only sets money aside inside its
+ * account - so the ledger and the allowance are untouched; what moves is every
+ * balance, `available` and cash on hand.
+ */
+const refreshEverything = () => afterWrite('accounts', 'goals');
 
 function Chip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

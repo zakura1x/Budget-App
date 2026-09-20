@@ -9,9 +9,8 @@
  */
 import { useEffect } from 'react';
 import { accrueInterest } from '../lib/accounts';
+import { afterWrite, MONEY } from '../lib/invalidate';
 import { expandRecurring } from '../lib/recurring';
-import { useBudgetStore } from '../stores/budgetStore';
-import { useLedgerStore } from '../stores/ledgerStore';
 
 let running: Promise<void> | null = null;
 
@@ -20,9 +19,7 @@ function catchUp(): Promise<void> {
   running ??= Promise.all([expandRecurring(), accrueInterest()])
     .then((results) => {
       if (results.every((result) => result.posted === 0)) return;
-      useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-      void useLedgerStore.getState().load(); // with whatever filters the screen has
-      void useBudgetStore.getState().load();
+      afterWrite(...MONEY); // the ledger reloads with whatever filters the screen has
     })
     .catch(() => {
       /* a failed catch-up retries on the next open; nothing is half-posted */

@@ -11,7 +11,8 @@
  *                   across all of them (REC-17)
  */
 import { format, parseISO } from 'date-fns';
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PlusIcon } from '../components/Icons';
 import { RuleSheet } from '../components/RuleSheet';
@@ -22,18 +23,16 @@ import { Card, SectionTitle } from '../components/ui/Card';
 import { Segmented } from '../components/ui/Segmented';
 import { useLookups, type Lookups } from '../hooks/useLookups';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
+import { keys, STALE } from '../lib/queryKeys';
 import {
   getDetected,
   getSubscriptions,
   listRules,
   scheduleLabel,
-  type Candidate,
   type Rule,
   type RuleDraft,
   type RuleKind,
-  type SubscriptionOverview,
 } from '../lib/recurring';
-import { useLedgerStore } from '../stores/ledgerStore';
 
 const NEUTRAL = '#8E8E93';
 const short = (iso: string) => format(parseISO(iso), 'd MMM');
@@ -99,32 +98,30 @@ function PlanCard({ rule, lookups, onOpen }: { rule: Rule; lookups: Lookups; onO
 export function Recurring() {
   const navigate = useNavigate();
   const lookups = useLookups();
-  const version = useLedgerStore((s) => s.version);
   const [tab, setTab] = useState<RuleKind>('standard');
-  const [rules, setRules] = useState<Rule[] | null>(null);
-  const [subs, setSubs] = useState<SubscriptionOverview | null>(null);
-  const [detected, setDetected] = useState<Candidate[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ open: boolean; rule: Rule | null; prefill: RuleDraft | null }>({
     open: false, rule: null, prefill: null,
   });
 
-  const load = useCallback((signal?: AbortSignal) => {
-    return Promise.all([listRules(undefined, signal), getSubscriptions(signal), getDetected(signal)])
-      .then(([ruleList, overview, candidates]) => {
-        setRules(ruleList);
-        setSubs(overview);
-        setDetected(candidates);
-        setError(null);
-      })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load, version]);
+  // The rule list is the page; the account pages read the same key, so opening
+  // one after the other costs a single request.
+  const rulesQuery = useQuery({
+    queryKey: keys.rules(),
+    queryFn: ({ signal }) => listRules(undefined, signal),
+    staleTime: STALE.derived,
+  });
+  const { data: subs } = useQuery({
+    queryKey: keys.subscriptions(),
+    queryFn: ({ signal }) => getSubscriptions(signal),
+    staleTime: STALE.derived,
+  });
+  const { data: detected = [] } = useQuery({
+    queryKey: keys.detected(),
+    queryFn: ({ signal }) => getDetected(signal),
+    staleTime: STALE.derived,
+  });
+  const rules = rulesQuery.data;
+  const error = rulesQuery.error;
 
   const shown = (rules ?? []).filter((r) => r.kind === tab);
   const open = (rule: Rule | null, prefill: RuleDraft | null = null) => setSheet({ open: true, rule, prefill });
@@ -158,11 +155,11 @@ export function Recurring() {
 
       {error && (
         <p className="mt-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
-          {error}{' '}
-          <button type="button" className="font-semibold underline" onClick={() => void load()}>Try again</button>
+          {error.message}{' '}
+          <button type="button" className="font-semibold underline" onClick={() => void rulesQuery.refetch()}>Try again</button>
         </p>
       )}
-      {rules === null && !error && <div className="skeleton mt-3 h-40 rounded-card" aria-hidden="true" />}
+      {rules === undefined && !error && <div className="skeleton mt-3 h-40 rounded-card" aria-hidden="true" />}
 
       {tab === 'subscription' && subs && (
         <Card className="mt-3">
@@ -266,7 +263,6 @@ export function Recurring() {
         prefill={sheet.prefill}
         lookups={lookups}
         onClose={() => setSheet((s) => ({ ...s, open: false }))}
-        onSaved={() => void load()}
       />
     </>
   );

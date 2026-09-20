@@ -8,24 +8,49 @@
  *
  * Tap a month for every projected item, by account. Below, each card's next
  * statements with the recurring charges landing on them - shown, never taken
- * from cash on hand a second time.
+ * from cash on hand a second time. A card with typed bills shows those bills,
+ * each opening what it is made of (ACC-35, 2026-09-19).
+ *
+ * A card bill is taken in the month it is DUE (2026-09-19, user: November's
+ * bill was showing in October). Home holds the next bill back earlier, so a
+ * month says how much of its end figure Home will be holding (`bills_held`).
+ *
+ * Totals of the card bills to pay (2026-09-19, user): each month shows every
+ * bill due in it - the ones already set aside included - and the look-ahead
+ * shows what is left of every typed bill, per card and all together. Summed in
+ * centavos from the figures the server sent; nothing new is worked out here.
  *
  * Nothing here is saved or posted; it is recomputed on every view.
  */
+import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { BillSheet } from '../components/BillSheet';
 import { Card, SectionTitle } from '../components/ui/Card';
 import { Segmented } from '../components/ui/Segmented';
 import { Sheet } from '../components/ui/Sheet';
 import { useLookups } from '../hooks/useLookups';
-import { formatPHP } from '../lib/money';
+import type { Bill } from '../lib/accounts';
+import { centavos, formatPHP, fromCentavos } from '../lib/money';
+import { keys, STALE } from '../lib/queryKeys';
 import { getCardLookahead, getProjection, type CardLookahead, type ProjectedMonth, type Projection as Data } from '../lib/recurring';
-import { useLedgerStore } from '../stores/ledgerStore';
 
 const negative = (value: string) => value.startsWith('-');
 const short = (iso: string) => format(parseISO(iso), 'd MMM');
+
+const BILL_KINDS = new Set(['bill', 'bill_plans', 'bill_now']);
+
+/** Every card bill due in the month, whether or not today's cash on hand already holds it. */
+function billsDue(month: ProjectedMonth): string {
+  return fromCentavos(month.items.filter((i) => BILL_KINDS.has(i.kind) && !i.paused).reduce((sum, i) => sum + centavos(i.amount), 0));
+}
+
+/** What is left to pay of every typed bill on these cards. */
+function billsLeft(cards: CardLookahead[]): string {
+  return fromCentavos(cards.flatMap((c) => c.bills ?? []).reduce((sum, b) => sum + centavos(b.left), 0));
+}
 
 function monthLabel(month: ProjectedMonth, basis: Data['basis']): string {
   if (basis === 'calendar') return format(parseISO(month.start), 'MMMM yyyy');
@@ -48,6 +73,17 @@ function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Dat
         cash on hand at the end{month.bills !== '0.00' && ` · after ${formatPHP(month.bills)} of card bills`}
         {(month.bills_set_aside ?? '0.00') !== '0.00' && ` · ${formatPHP(month.bills_set_aside)} of bills due already set aside`}
       </p>
+      {(month.bills_held ?? '0.00') !== '0.00' && (
+        <p className="num text-caption text-ink-3">
+          Home will hold back {formatPHP(month.bills_held)} of it for card bills due next month
+        </p>
+      )}
+      {billsDue(month) !== '0.00' && (
+        <p className="num mt-2 flex justify-between border-t border-stroke/40 pt-2 text-footnote">
+          <span className="text-ink-2">Card bills due this month</span>
+          <span className="font-semibold">{formatPHP(billsDue(month))}</span>
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-3 divide-x divide-stroke/80 text-center">
         <div>
           <p className="text-caption text-ink-3">Coming in</p>
@@ -97,6 +133,15 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
               <p className="flex justify-between"><span className="text-ink-2">Transfers out of cash on hand</span>{formatPHP(month.transfers)}</p>
             )}
             <p className="flex justify-between border-t border-stroke/40 pt-1 font-semibold"><span>Ends with</span>{formatPHP(month.closing)}</p>
+            {billsDue(month) !== '0.00' && (
+              <p className="flex justify-between pt-1"><span className="text-ink-2">Card bills due this month</span>{formatPHP(billsDue(month))}</p>
+            )}
+            {(month.bills_held ?? '0.00') !== '0.00' && (
+              <p className="text-caption text-ink-3">
+                Each card bill is taken here in the month it is due. Home holds the next one back as soon as the one
+                before is due, so at the end of this month it will show {formatPHP(month.bills_held)} less.
+              </p>
+            )}
           </div>
           {month.overcommitted && (
             <p className="rounded-2xl border-2 border-warn bg-warn/10 px-4 py-3 text-footnote text-warn">
@@ -112,7 +157,7 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
                   <li key={`${item.rule_id}-${item.on}-${item.name}`} className={`num flex min-h-11 items-center justify-between gap-2 text-footnote ${item.paused ? 'opacity-50' : ''}`}>
                     <span className="min-w-0 truncate">
                       <span className="text-ink-2">{short(item.on)}</span> · {item.name}
-                      {item.kind === 'bill' && ' · card bill'}
+                      {(item.kind === 'bill' || item.kind === 'bill_plans') && ' · card bill'}
                       {item.kind === 'bill_now' && ' · already set aside'}
                       {item.kind === 'interest' && ' · estimated at today’s balance'}
                       {item.final && ' · last payment'}
@@ -135,7 +180,40 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
   );
 }
 
-function CardAhead({ card }: { card: CardLookahead }) {
+function CardAhead({ card, onOpenBill }: { card: CardLookahead; onOpenBill: (bill: Bill) => void }) {
+  if ((card.bills ?? []).length > 0) {
+    // ACC-35. The bills typed from the card's app - the same figures as its Bills section.
+    return (
+      <Card padded={false} className="overflow-hidden">
+        <p className="flex items-baseline justify-between gap-2 px-4 pb-1 pt-3">
+          <span className="text-headline">{card.name}</span>
+          <span className="num text-footnote text-ink-2">{formatPHP(billsLeft([card]))} to pay</span>
+        </p>
+        <ul className="divide-y divide-stroke/80">
+          {card.bills.map((bill) => {
+            const parts = bill.lines.filter((l) => l.kind === 'purchase' || l.kind === 'plan' || l.kind === 'inside_typed');
+            return (
+              <li key={bill.due}>
+                <button type="button" onClick={() => onOpenBill(bill)} className="block w-full px-4 py-2.5 text-left active:bg-surface-2">
+                  <span className="num flex items-baseline justify-between gap-2">
+                    <span className={`text-footnote ${bill.overdue ? 'font-semibold text-danger' : 'text-ink-2'}`}>
+                      Bill due {short(bill.due)}{bill.overdue && ' · overdue'}
+                    </span>
+                    <span className="text-body font-semibold">{formatPHP(bill.left)} ›</span>
+                  </span>
+                  <span className="num block truncate text-caption text-ink-3">
+                    {parts.length
+                      ? parts.map((l) => `${l.name ?? (l.rule_id !== null ? 'Plan' : 'Purchase')} ${formatPHP(l.amount)}`).join(' · ')
+                      : 'From the card’s app'}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+    );
+  }
   return (
     <Card padded={false} className="overflow-hidden">
       <p className="px-4 pb-1 pt-3 text-headline">{card.name}</p>
@@ -160,24 +238,21 @@ function CardAhead({ card }: { card: CardLookahead }) {
 
 export function Projection() {
   const navigate = useNavigate();
-  const version = useLedgerStore((s) => s.version);
   const [months, setMonths] = useState<'3' | '6' | '12'>('12');
-  const [data, setData] = useState<Data | null>(null);
-  const [cards, setCards] = useState<CardLookahead[]>([]);
   const [chosen, setChosen] = useState<ProjectedMonth | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [bill, setBill] = useState<Bill | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setError(null);
-    Promise.all([getProjection(Number(months) as 3 | 6 | 12, controller.signal), getCardLookahead(controller.signal)])
-      .then(([projection, lookahead]) => {
-        setData(projection);
-        setCards(lookahead);
-      })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
-  }, [months, version]);
+  // A key per span, so switching 3 / 6 / 12 months and back is instant.
+  const { data, error } = useQuery({
+    queryKey: keys.projection(Number(months) as 3 | 6 | 12),
+    queryFn: ({ signal }) => getProjection(Number(months) as 3 | 6 | 12, signal),
+    staleTime: STALE.derived,
+  });
+  const { data: cards = [] } = useQuery({
+    queryKey: keys.cardLookahead(),
+    queryFn: ({ signal }) => getCardLookahead(signal),
+    staleTime: STALE.derived,
+  });
 
   return (
     <>
@@ -195,7 +270,7 @@ export function Projection() {
           { value: '12', label: '12 months' },
         ]}
       />
-      {error && <p className="mt-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="mt-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error.message}</p>}
       {!data && !error && <div className="skeleton mt-3 h-72 rounded-card" aria-hidden="true" />}
       {data && (
         <>
@@ -212,8 +287,14 @@ export function Projection() {
       {cards.length > 0 && (
         <>
           <SectionTitle>Card statements ahead</SectionTitle>
+          {billsLeft(cards) !== '0.00' && (
+            <div className="num mb-3 flex items-baseline justify-between rounded-card border-2 border-stroke bg-surface px-4 py-3 shadow-edge">
+              <span className="text-footnote text-ink-2">All card bills to pay</span>
+              <span className="text-body font-semibold">{formatPHP(billsLeft(cards))}</span>
+            </div>
+          )}
           <div className="space-y-3">
-            {cards.map((card) => <CardAhead key={card.account_id} card={card} />)}
+            {cards.map((card) => <CardAhead key={card.account_id} card={card} onOpenBill={setBill} />)}
           </div>
           <p className="px-1 pt-2 text-footnote text-ink-3">
             Charges already count against cash on hand on the day they post — paying the bill doesn’t count them again.
@@ -221,6 +302,7 @@ export function Projection() {
         </>
       )}
       <MonthSheet month={chosen} basis={data?.basis ?? 'calendar'} onClose={() => setChosen(null)} />
+      <BillSheet bill={bill} onClose={() => setBill(null)} />
     </>
   );
 }

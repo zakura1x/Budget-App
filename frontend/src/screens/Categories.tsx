@@ -13,7 +13,8 @@
  * would change what it is, not where it sits, so it is not a drag — it is an
  * edit.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CategorySheet } from '../components/CategorySheet';
 import { ChevronRightIcon, PlusIcon } from '../components/Icons';
@@ -23,7 +24,9 @@ import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Segmented } from '../components/ui/Segmented';
+import { afterWrite } from '../lib/invalidate';
 import { listCategories, reorderCategories, type Category, type CategoryKind } from '../lib/categories';
+import { keys, STALE } from '../lib/queryKeys';
 
 function Row({
   category,
@@ -77,26 +80,16 @@ function Row({
 export function Categories() {
   const navigate = useNavigate();
   const [kind, setKind] = useState<CategoryKind>('expense');
-  const [tree, setTree] = useState<Category[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [newParent, setNewParent] = useState<number | null>(null);
 
-  const load = useCallback((signal?: AbortSignal) => {
-    return listCategories(signal)
-      .then((result) => {
-        setTree(result);
-        setError(null);
-      })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+  // The same answer `useLookups` holds - every row in the app prints from it.
+  const { data: tree, error, refetch } = useQuery({
+    queryKey: keys.categories(),
+    queryFn: ({ signal }) => listCategories(signal),
+    staleTime: STALE.taxonomy,
+  });
 
   const openNew = (parentId: number | null) => {
     setEditing(null);
@@ -111,9 +104,11 @@ export function Categories() {
   };
 
   const persistOrder = (ids: number[]) => {
+    // CAT-05 - the order is the order Home's grid shows, so this list is not
+    // the only place it changed.
     reorderCategories(ids)
-      .then(() => load())
-      .catch((e: Error) => setError(e.message));
+      .then(() => afterWrite('categories'))
+      .catch(() => void refetch()); // the saved order did not take; show what the server has
   };
 
   const shown = (tree ?? []).filter((c) => c.kind === kind);
@@ -143,8 +138,8 @@ export function Categories() {
 
       {error && (
         <p className="mt-4 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
-          {error}{' '}
-          <button type="button" className="font-semibold underline" onClick={() => void load()}>
+          {error.message}{' '}
+          <button type="button" className="font-semibold underline" onClick={() => void refetch()}>
             Try again
           </button>
         </p>
@@ -202,7 +197,7 @@ export function Categories() {
         kind={editing?.kind ?? kind}
         tree={tree ?? []}
         onClose={() => setSheetOpen(false)}
-        onSaved={() => void load()}
+        onSaved={() => undefined}
       />
     </>
   );

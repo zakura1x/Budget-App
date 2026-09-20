@@ -21,7 +21,8 @@ import {
   startOfMonth,
   startOfWeek,
 } from 'date-fns';
-import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarSwitch } from '../components/CalendarSwitch';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -30,10 +31,10 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Sheet } from '../components/ui/Sheet';
 import { useLookups } from '../hooks/useLookups';
-import { getMonth, type CalendarDay, type CalendarMonth } from '../lib/calendar';
+import { getMonth, type CalendarDay } from '../lib/calendar';
 import { centavos, formatPHP, fromCentavos, splitDecimal } from '../lib/money';
-import { listTransactions, type Page, type Transaction } from '../lib/transactions';
-import { useLedgerStore } from '../stores/ledgerStore';
+import { keys, STALE } from '../lib/queryKeys';
+import { listTransactions, type Transaction } from '../lib/transactions';
 import { usePreferencesStore } from '../stores/preferencesStore';
 import { useUiStore } from '../stores/uiStore';
 
@@ -66,25 +67,22 @@ export function compactAmount(value: string): string {
 
 function DaySheet({ day, onClose }: { day: CalendarDay | null; onClose: () => void }) {
   const lookups = useLookups();
-  const version = useLedgerStore((s) => s.version);
   const openSheet = useUiStore((s) => s.openAddSheet);
-  const [rows, setRows] = useState<Transaction[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const openPreview = useUiStore((s) => s.openPreview);
 
-  useEffect(() => {
-    if (!day) return;
-    setRows(null);
-    setError(null);
-    const controller = new AbortController();
-    listTransactions({ from: day.on, to: day.on }, null, controller.signal)
-      .then((page) => setRows(page.items))
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
-  }, [day, version]);
+  // Reopening a day you already looked at draws from the cache; it no longer
+  // blanks to a skeleton on every write, either (plan §1.5).
+  const { data: rows, error } = useQuery({
+    queryKey: keys.transactionsIn(day?.on ?? '', day?.on ?? ''),
+    queryFn: ({ signal }) => listTransactions({ from: day!.on, to: day!.on }, null, signal).then((page) => page.items),
+    enabled: day !== null,
+  });
 
   const open = (row?: Transaction) => {
     onClose();
-    openSheet(row, row ? undefined : day?.on);
+    // TXN-23. A row opens the preview; the day's own button still starts a new entry.
+    if (row) openPreview(row);
+    else openSheet(undefined, day?.on);
   };
 
   return (
@@ -95,8 +93,8 @@ function DaySheet({ day, onClose }: { day: CalendarDay | null; onClose: () => vo
             {day.spent !== '0.00' ? `${formatPHP(day.spent)} spent` : 'Nothing spent'}
             {day.earned !== '0.00' && ` · ${formatPHP(day.earned)} earned`}
           </p>
-          {error && <p className="text-footnote text-danger">{error}</p>}
-          {rows === null && !error && <div className="skeleton h-28 rounded-card" aria-hidden="true" />}
+          {error && <p className="text-footnote text-danger">{error.message}</p>}
+          {rows === undefined && !error && <div className="skeleton h-28 rounded-card" aria-hidden="true" />}
           {rows && rows.length > 0 && (
             <div className="divide-y divide-stroke/80 overflow-hidden rounded-card border-2 border-stroke bg-surface-2">
               {rows.map((row) => (
@@ -120,20 +118,17 @@ function DaySheet({ day, onClose }: { day: CalendarDay | null; onClose: () => vo
 function MonthList({ month, spent, earned }: { month: Date; spent: string; earned: string }) {
   const lookups = useLookups();
   const navigate = useNavigate();
-  const version = useLedgerStore((s) => s.version);
-  const openSheet = useUiStore((s) => s.openAddSheet);
-  const [page, setPage] = useState<Page | null>(null);
+  const openPreview = useUiStore((s) => s.openPreview);
+  const from = format(month, 'yyyy-MM-dd');
+  const to = format(endOfMonth(month), 'yyyy-MM-dd');
 
-  useEffect(() => {
-    setPage(null);
-    const controller = new AbortController();
-    listTransactions({ from: format(month, 'yyyy-MM-dd'), to: format(endOfMonth(month), 'yyyy-MM-dd') }, null, controller.signal)
-      .then(setPage)
-      .catch(() => {
-        /* the grid above already shows the month's error */
-      });
-    return () => controller.abort();
-  }, [month, version]);
+  // The grid above shows the month's error. Stepping back to a month already
+  // seen is instant: no `setPage(null)` blanking it first (plan §1.5).
+  const { data: page } = useQuery({
+    queryKey: keys.transactionsIn(from, to),
+    queryFn: ({ signal }) => listTransactions({ from, to }, null, signal),
+    staleTime: STALE.derived,
+  });
 
   const balance = fromCentavos(centavos(earned) - centavos(spent));
   const days = new Map((page?.days ?? []).map((d) => [d.on, d]));
@@ -161,7 +156,7 @@ function MonthList({ month, spent, earned }: { month: Date; spent: string; earne
         </div>
       </Card>
 
-      {page === null && <div className="skeleton mt-3 h-40 rounded-card" aria-hidden="true" />}
+      {page === undefined && <div className="skeleton mt-3 h-40 rounded-card" aria-hidden="true" />}
       {page && page.items.length === 0 && (
         <p className="mt-3 rounded-2xl border-2 border-dashed border-stroke/70 px-4 py-3 text-footnote text-ink-2">
           Nothing recorded this month.
@@ -179,7 +174,7 @@ function MonthList({ month, spent, earned }: { month: Date; spent: string; earne
             </div>
             <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
               {group.rows.map((row) => (
-                <button key={row.id} type="button" onClick={() => row.id > 0 && openSheet(row)}
+                <button key={row.id} type="button" onClick={() => row.id > 0 && openPreview(row)}
                   className="block w-full transition active:bg-surface-2">
                   <TransactionRow row={row} lookups={lookups} />
                 </button>
@@ -198,24 +193,20 @@ function MonthList({ month, spent, earned }: { month: Date; spent: string; earne
 }
 
 export function Calendar() {
-  const version = useLedgerStore((s) => s.version);
   // Settings: 1 Monday .. 7 Sunday; date-fns counts 0 Sunday .. 6 Saturday.
   const weekStart = usePreferencesStore((s) => s.prefs?.week_start_day ?? 1);
   const WEEK_STARTS_ON = (weekStart % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
-  const [data, setData] = useState<CalendarMonth | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<CalendarDay | null>(null);
   const swipe = useRef<number | null>(null);
 
-  useEffect(() => {
-    setError(null);
-    const controller = new AbortController();
-    getMonth(month.getFullYear(), month.getMonth() + 1, controller.signal)
-      .then(setData)
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
-  }, [month, version]);
+  // One key per month, so swiping back to a month already seen draws it at
+  // once instead of emptying the grid and asking again.
+  const { data, error } = useQuery({
+    queryKey: keys.calendar(month.getFullYear(), month.getMonth() + 1),
+    queryFn: ({ signal }) => getMonth(month.getFullYear(), month.getMonth() + 1, signal),
+    staleTime: STALE.derived,
+  });
 
   const shown = data && data.year === month.getFullYear() && data.month === month.getMonth() + 1 ? data : null;
   const byDate = new Map((shown?.days ?? []).map((d) => [d.on, d]));
@@ -251,7 +242,7 @@ export function Calendar() {
         }
       />
 
-      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error.message}</p>}
 
       <Card
         className="touch-pan-y px-2.5"

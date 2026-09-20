@@ -141,6 +141,8 @@ function query(filters: Filters, cursor?: string | null, limit = 50): string {
 export const listTransactions = (filters: Filters, cursor?: string | null, signal?: AbortSignal, limit = 50) =>
   api<Page>(`/transactions?${query(filters, cursor, limit)}`, { signal });
 
+export const getTransaction = (id: number, signal?: AbortSignal) => api<Transaction>(`/transactions/${id}`, { signal });
+
 export const createTransaction = (body: TransactionDraft) =>
   api<Outcome>(`/transactions?today=${localToday()}`, { method: 'POST', body });
 

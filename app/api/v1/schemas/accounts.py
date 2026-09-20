@@ -176,6 +176,20 @@ class BillsIn(BaseModel):
     bills: List[BillIn] = Field(default=[], max_length=24)
 
 
+class BillLineOut(BaseModel):
+    """ACC-35 - one line of a bill: typed, purchase, plan, inside_typed (shown, not added) or payment."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str
+    amount: Money
+    on: Optional[date] = None
+    name: Optional[str] = None
+    transaction_id: Optional[int] = None
+    rule_id: Optional[int] = None
+    category_id: Optional[int] = None
+
+
 class BillOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -189,6 +203,8 @@ class BillOut(BaseModel):
     typed_left: Money = Decimal("0.00")
     from_purchases: Money = Decimal("0.00")
     purchases_left: Money = Decimal("0.00")
+    not_charged: Money = Decimal("0.00")  # repeating charges on it, not charged yet
+    lines: List[BillLineOut] = []
 
 
 class CreditOut(BaseModel):
@@ -197,6 +213,8 @@ class CreditOut(BaseModel):
     bills: List[BillOut] = []
     bills_left: Money = Decimal("0.00")
     due_now: Optional[Money] = None
+    not_on_bill: Optional[Money] = None  # what the card owes that no bill lists; null without bills
+    bills_not_charged: Money = Decimal("0.00")
 
     limit: Optional[Money]
     statement_closing_day: int

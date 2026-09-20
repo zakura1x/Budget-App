@@ -54,6 +54,7 @@ REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
         # the category: plans and transactions are inserted after accounts.
         ("bills_cover_transactions[]", "transactions"),
         ("bills_cover_rules[]", "recurring_rules"),
+        ("bills_cover_payments[]", "transactions"),
     ),
     "categories": (("parent_id", "categories"),),
     "tags": (),

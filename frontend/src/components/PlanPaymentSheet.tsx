@@ -18,6 +18,7 @@ import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { type Account } from '../lib/accounts';
+import { afterWrite, MONEY } from '../lib/invalidate';
 import { formatPHP, toDecimalString } from '../lib/money';
 import {
   payPlan,
@@ -27,7 +28,6 @@ import {
   type Rule,
 } from '../lib/recurring';
 import { localToday } from '../lib/transactions';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
 import { MoneyField } from './ui/MoneyField';
@@ -71,7 +71,7 @@ export function PlanPaymentSheet({ rule, accounts, onClose }: PlanPaymentSheetPr
     setError(null);
     try {
       await payPlan(rule.id, { amount: toDecimalString(amount.trim()), from_account_id: fromId, on, mode });
-      useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+      afterWrite(...MONEY); // REC-32 - a real transfer was posted, on the plan
       onClose();
     } catch (e) {
       const asked = prepaymentQuestion(e);

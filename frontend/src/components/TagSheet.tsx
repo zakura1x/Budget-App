@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { ApiError } from '../lib/api';
+import { afterWrite, type Group } from '../lib/invalidate';
 import { createTag, deleteTag, updateTag, type Tag } from '../lib/tags';
 import { ColourPicker, PALETTE } from './StylePicker';
 import { Button } from './ui/Button';
@@ -36,11 +37,12 @@ export function TagSheet({ open, tag, onClose, onSaved }: TagSheetProps) {
     setBusy(false);
   }, [open, tag]);
 
-  const run = async (action: () => Promise<unknown>, failed: string) => {
+  const run = async (action: () => Promise<unknown>, failed: string, ...touched: Group[]) => {
     setBusy(true);
     setError(null);
     try {
       await action();
+      afterWrite(...touched);
       onSaved();
       onClose();
     } catch (e) {
@@ -51,7 +53,7 @@ export function TagSheet({ open, tag, onClose, onSaved }: TagSheetProps) {
 
   const save = () =>
     run(() => (tag ? updateTag(tag.id, { name: name.trim(), colour }) : createTag({ name: name.trim(), colour })),
-      'That did not save. Try again.');
+      'That did not save. Try again.', 'tags');
 
   const remove = () => {
     if (!tag) return;
@@ -59,7 +61,9 @@ export function TagSheet({ open, tag, onClose, onSaved }: TagSheetProps) {
       setConfirming(true);
       return;
     }
-    void run(() => deleteTag(tag.id), 'That did not delete. Try again.');
+    // TXN-10 - `tag_service.delete_tag` strips the id from every transaction in the
+    // same commit, so the rows held in memory are stale as well.
+    void run(() => deleteTag(tag.id), 'That did not delete. Try again.', 'tags', 'transactions');
   };
 
   return (

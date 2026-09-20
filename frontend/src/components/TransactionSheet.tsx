@@ -30,8 +30,9 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
-import { listAccounts, type Account } from '../lib/accounts';
-import { flatten, listCategories, type Category } from '../lib/categories';
+import { type Account } from '../lib/accounts';
+import { flatten, type Category } from '../lib/categories';
+import { ensureAccounts, ensureCategories, ensureTags } from '../lib/prefetch';
 import {
   applyAmountKey,
   centavos,
@@ -50,9 +51,9 @@ import {
   type EntryType,
   type TransactionDraft,
 } from '../lib/transactions';
+import { afterWrite, MONEY } from '../lib/invalidate';
 import { convertPurchase, createPurchaseWithPlan } from '../lib/recurring';
-import { listTags, type Tag } from '../lib/tags';
-import { useBudgetStore } from '../stores/budgetStore';
+import { type Tag } from '../lib/tags';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore, type RuleSheetRequest } from '../stores/uiStore';
 import { EMPTY_CHOICE, InstallmentFields, termsOf, type InstallmentChoice } from './InstallmentFields';
@@ -214,9 +215,12 @@ export function TransactionSheet() {
     setShowPlan(false);
     setPlan(EMPTY_CHOICE);
     setPlanReady(false);
-    const controller = new AbortController();
-    Promise.all([listAccounts(controller.signal), listCategories(controller.signal), listTags(controller.signal)])
+    let cancelled = false;
+    // From the cache when it is warm, which after an unlock it always is: the
+    // [+] button used to cost three requests every time it was tapped.
+    Promise.all([ensureAccounts(), ensureCategories(), ensureTags()])
       .then(([accountList, categories, tagList]) => {
+        if (cancelled) return;
         const active = accountList.accounts.filter((a) => !a.archived || a.id === editing?.account_id);
         setAccounts(active);
         setTree(categories);
@@ -233,7 +237,7 @@ export function TransactionSheet() {
           setCounterId(into ?? active.find((a) => a.id !== from)?.id ?? null);
         }
       })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
+      .catch((e: Error) => !cancelled && setError(e.message));
 
     if (editing) {
       setKind(editing.type === 'adjustment' ? 'expense' : editing.type);
@@ -283,7 +287,9 @@ export function TransactionSheet() {
       setCashbackRate(null);
       setShowCashback(false);
     }
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);
 
@@ -408,11 +414,7 @@ export function TransactionSheet() {
   };
 
   /** Everything that shows money reloads: the plan posted payments and hid the purchase. */
-  const refreshMoney = () => {
-    useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-    void useLedgerStore.getState().load();
-    void useBudgetStore.getState().load(null);
-  };
+  const refreshMoney = () => afterWrite(...MONEY);
 
   const save = async () => {
     if (!canSave) return;

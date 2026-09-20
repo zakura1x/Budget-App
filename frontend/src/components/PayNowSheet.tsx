@@ -11,9 +11,9 @@
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { ApiError } from '../lib/api';
+import { afterWrite, MONEY } from '../lib/invalidate';
 import { formatPHP } from '../lib/money';
 import { payNow, type Rule } from '../lib/recurring';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
 
@@ -38,7 +38,7 @@ export function PayNowSheet({ rule, accountName, onClose }: PayNowSheetProps) {
     setError(null);
     try {
       await payNow(rule.id);
-      useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+      afterWrite(...MONEY); // REC-33 - the occurrence posted, with its recurring_on
       onClose();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That payment did not save. Try again.');

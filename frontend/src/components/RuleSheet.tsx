@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Lookups } from '../hooks/useLookups';
 import { ApiError } from '../lib/api';
 import { flatten } from '../lib/categories';
+import { afterWrite, MONEY } from '../lib/invalidate';
 import { centavos, formatPHP, toDecimalString } from '../lib/money';
 import {
   createRule,
@@ -36,8 +37,6 @@ import {
   type RuleType,
 } from '../lib/recurring';
 import { localToday } from '../lib/transactions';
-import { useBudgetStore } from '../stores/budgetStore';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { ReceiptControl } from './ReceiptControl';
 import { Button } from './ui/Button';
 import { Segmented } from './ui/Segmented';
@@ -84,7 +83,8 @@ export interface RuleSheetProps {
   prefill?: RuleDraft | null;
   lookups: Lookups;
   onClose: () => void;
-  onSaved: () => void;
+  /** Optional: the sheet already calls `afterWrite`, so a screen rarely needs this. */
+  onSaved?: () => void;
 }
 
 export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose, onSaved }: RuleSheetProps) {
@@ -229,11 +229,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
   }, [open, previewKey]);
 
   // A write can post transactions (a rule starting today, a payoff): refresh what shows money.
-  const refreshMoney = () => {
-    useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-    void useLedgerStore.getState().load();
-    void useBudgetStore.getState().load(null);
-  };
+  const refreshMoney = () => afterWrite(...MONEY);
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -241,7 +237,7 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
     try {
       await action();
       refreshMoney();
-      onSaved();
+      onSaved?.();
       onClose();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');

@@ -58,6 +58,7 @@ VOLATILE = {("attachments", "file_key_version")}  # differs by key version, not 
 # (a card's bill list names what it covers, ACC-35), which cannot be mapped back
 # yet when the row is compared - so the same card would never be recognised.
 MERGE_IGNORED = {("accounts", "bills_cover_transactions"), ("accounts", "bills_cover_rules"),
+                 ("accounts", "bills_cover_payments"),
                  ("recurring_rules", "from_transaction")}  # REC-34 - the same: transactions come later
 
 

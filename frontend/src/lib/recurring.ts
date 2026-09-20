@@ -6,6 +6,7 @@
  * `kind`. Only the server posts from a rule, and `expandRecurring` is safe to
  * call on every open - it posts what is due and nothing twice.
  */
+import type { Bill } from './accounts';
 import { api, ApiError } from './api';
 import { localToday, type Transaction, type TransactionDraft } from './transactions';
 
@@ -192,6 +193,8 @@ export interface ProjectedMonth {
   bills: string;
   /** ACC-35 - bills due this month that today's cash on hand already holds: shown, not taken again. */
   bills_set_aside: string;
+  /** ACC-35 - of the closing, what Home will hold back at the month's end for bills due after it. */
+  bills_held: string;
 }
 
 export interface Projection {
@@ -215,6 +218,8 @@ export interface CardLookahead {
     limit_share: string | null;
     items: ProjectedItem[];
   }[];
+  /** ACC-35 - a card with typed bills: its unpaid bills, instead of statements (which is then empty). */
+  bills: Bill[];
 }
 
 const today = () => `today=${localToday()}`;

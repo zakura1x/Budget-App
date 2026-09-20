@@ -27,8 +27,9 @@ the budget pro-rated by days. Carry-over is ignored. Paused occurrences are
 listed and left out of every total (REC-26).
 
 CARDS WITH TYPED BILLS (ACC-35). Cash on hand already subtracts such a card's
-bill due now; each later bill enters it the day after the one before it falls
-due - so that is the day the projection takes it:
+bill due now; each later bill is taken ON ITS DUE DATE, in the month it is due
+(changed 2026-09-19, user: November's bill showed in October - it used to be
+taken the day after the bill before it, when Home starts holding it back):
 
     bills      = the TYPED part of those bills and the purchases recorded since
                  - past purchases, taken on top of the budget, never inside it
@@ -38,6 +39,10 @@ due - so that is the day the projection takes it:
 The bills cash on hand ALREADY holds (overdue, and the one due now) are listed
 in the month they fall due as kind "bill_now" with no effect, and summed in
 `bills_set_aside` - shown, never taken again.
+
+So a month's closing is the money there BEFORE Home holds back the next bills.
+`bills_held` says how much of it Home will be holding at the month's end: each
+card's next bill due after it, unless today's cash on hand already holds that one.
 
 A card charge that lands on one of those bills is not counted again on its own
 day. Paying the card stays a transfer between two counted accounts: nothing.
@@ -51,7 +56,8 @@ cautious one: money arriving later in the month is not assumed to earn.
 
 THE CARD LOOK-AHEAD (REC-25) groups each card's recurring charges by statement.
 The bill is shown, never subtracted from cash on hand a second time - the
-charges already were, on the days they post.
+charges already were, on the days they post. A card with typed bills shows
+those bills instead - the same figures and lines as its Bills section (2026-09-19).
 """
 
 from dataclasses import dataclass
@@ -108,6 +114,7 @@ class ProjectedMonth:
     items: List[ProjectedItem]
     bills: Decimal = ZERO  # ACC-35 - typed card bills entering cash on hand this month, on top of spending
     bills_set_aside: Decimal = ZERO  # ACC-35 - bills due this month that today's cash on hand already holds
+    bills_held: Decimal = ZERO  # ACC-35 - of the closing, what Home holds back then for bills due after the month
 
 
 @dataclass(frozen=True)
@@ -135,7 +142,8 @@ class CardLookahead:
     account_id: int
     name: str
     spending_limit: Optional[Decimal]
-    statements: List[CardStatement]
+    statements: List[CardStatement]  # empty for a card with typed bills
+    bills: Tuple[account_service.Bill, ...] = ()  # ACC-35 - the unpaid typed bills, lines included
 
 
 def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, months: int = 12) -> Projection:
@@ -152,7 +160,7 @@ def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, mo
     counted: Set[int] = set(cash.account_ids)
     ahead = recurring_service.upcoming(db, cipher, today + ONE_DAY, windows[-1][1])
     # ACC-35. Typed card bills enter on their own days; the charges folded into them are not counted twice.
-    bill_items, billed = _bill_items(views, counted, today)
+    bill_items, billed, chains = _bill_items(views, counted, today)
     ahead = [u for u in ahead if not _lands_on_bill(u, billed)]
 
     result: List[ProjectedMonth] = []
@@ -189,6 +197,7 @@ def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, mo
             start=start, end=end, current=current, opening=opening, income=income, committed=committed,
             transfers=transfers, budget=budget, spending=spending, closing=closing, low_point=low,
             low_on=low_on, overcommitted=committed > budget, items=items, bills=bills, bills_set_aside=set_aside,
+            bills_held=_held_after(chains, end),
         ))
         opening = closing
     return Projection(today=today, basis="budget" if monthly else "calendar", cash_on_hand=cash.total, months=result)
@@ -219,6 +228,11 @@ def cards(db: Session, cipher: UserCipher, *, today: Optional[date] = None, stat
     result: List[CardLookahead] = []
     for view in credit:
         own = view.credit.spending_limit
+        if view.credit.bills:
+            # ACC-35. The card's app said what is due and when - show that, not a cycle guess (D8, 2026-09-19).
+            unpaid = tuple(b for b in view.credit.bills if b.left > ZERO)
+            result.append(CardLookahead(view.id, view.name, own, [], unpaid))
+            continue
         cards_statements: List[CardStatement] = []
         for index, period in enumerate(periods[view.id]):
             items = [_item(u, set()) for u in ahead
@@ -237,14 +251,16 @@ def cards(db: Session, cipher: UserCipher, *, today: Optional[date] = None, stat
 
 def _bill_items(
     views, counted: Set[int], today: date
-) -> Tuple[List[ProjectedItem], Dict[int, Tuple[date, int, int]]]:
+) -> Tuple[List[ProjectedItem], Dict[int, Tuple[date, int, int]], List[List[Tuple[date, Decimal, bool]]]]:
     """
     ACC-35. For each counted card with typed bills: an item for every unpaid
-    bill after the one due now, dated the day after the bill before it falls
-    due - the day cash on hand starts counting it. The typed part is kind
-    "bill"; the plan part is kind "bill_plans" and counts with the fixed
-    charges. Also returns, per card, the last bill's due date and its days,
-    so a charge landing on one of these bills is not counted again.
+    bill after the one due now, dated the day it falls due (2026-09-19, user -
+    before, the day after the bill before it, which put November's bill in
+    October). The typed part is kind "bill"; the plan part is kind
+    "bill_plans" and counts with the fixed charges. Also returns, per card,
+    the last bill's due date and its days, so a charge landing on one of these
+    bills is not counted again - and each card's unpaid bills as (due, left,
+    already in cash on hand), for `_held_after`.
 
     The bills cash on hand ALREADY holds - overdue ones and the one due now -
     are listed too, as kind "bill_now" with no effect, on the day each falls
@@ -255,6 +271,7 @@ def _bill_items(
     """
     items: List[ProjectedItem] = []
     billed: Dict[int, Tuple[date, int, int]] = {}
+    chains: List[List[Tuple[date, Decimal, bool]]] = []
     for view in views:
         credit = view.credit
         if credit is None or credit.due_now is None or view.archived or view.id not in counted:
@@ -270,24 +287,36 @@ def _bill_items(
                     account_id=view.id, counter_account_id=None, amount=bill.left, effect=ZERO,
                     paused=False, final=False,
                 ))
+        chains.append([(b.due, b.left, b.overdue or (now is not None and b.due <= now.due)) for b in unpaid])
         if now is None:
             continue
-        previous = now.due
         for bill in unpaid:
             if bill.overdue or bill.due <= now.due:
                 continue  # in cash on hand already
-            enters = previous + ONE_DAY
             typed = min(bill.typed_left + bill.purchases_left, bill.left)  # money already spent
             planned = bill.left - typed
             label = f"{view.name} bill due {bill.due.day} {bill.due:%b}"
             for kind, amount, name in (("bill", typed, label), ("bill_plans", planned, f"{label} · plans")):
                 if amount > ZERO:
                     items.append(ProjectedItem(
-                        on=enters, rule_id=0, name=name, kind=kind, type="expense", account_id=view.id,
+                        on=bill.due, rule_id=0, name=name, kind=kind, type="expense", account_id=view.id,
                         counter_account_id=None, amount=amount, effect=-amount, paused=False, final=False,
                     ))
-            previous = bill.due
-    return items, billed
+    return items, billed, chains
+
+
+def _held_after(chains: List[List[Tuple[date, Decimal, bool]]], end: date) -> Decimal:
+    """
+    ACC-35. What Home's cash on hand will hold back at `end` for bills not yet
+    taken here: each card's first bill due after it - it is the one "due now"
+    then - unless today's cash on hand already holds that bill.
+    """
+    held = ZERO
+    for chain in chains:
+        first = next(((left, in_cash) for due, left, in_cash in chain if due > end), None)
+        if first is not None and not first[1]:
+            held += first[0]
+    return held
 
 
 def _interest_items(views, counted: Set[int], start: date, end: date, today: date) -> List[ProjectedItem]:

@@ -18,37 +18,35 @@
  * shows owed with plans beside what is billed (REC-14). On a card with typed
  * bills it could only ever agree with itself.
  */
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { type Account, type Credit } from '../lib/accounts';
-import { getProjection, listRules, type Projection, type Rule } from '../lib/recurring';
-import { useLedgerStore } from '../stores/ledgerStore';
+import { keys, STALE } from '../lib/queryKeys';
+import { getProjection, listRules } from '../lib/recurring';
 import { AccountPayments } from './AccountPayments';
 import { AccountPlans } from './AccountPlans';
 import { CardBills } from './CardBills';
 
 export function CardPayments({ account }: { account: Account }) {
   const credit = account.credit as Credit;
-  const version = useLedgerStore((s) => s.version);
-  const [rules, setRules] = useState<Rule[] | null>(null);
-  const [projection, setProjection] = useState<Projection | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    Promise.all([listRules(undefined, controller.signal), getProjection(12, controller.signal)])
-      .then(([found, ahead]) => {
-        setRules(found);
-        setProjection(ahead);
-      })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
-  }, [account.id, version]);
+  // Fetched once here and handed down, so the two cards below do not each ask;
+  // they read the same keys anyway, which is what makes that safe.
+  const { data: rules = null, error } = useQuery({
+    queryKey: keys.rules(),
+    queryFn: ({ signal }) => listRules(undefined, signal),
+    staleTime: STALE.derived,
+  });
+  const { data: projection = null } = useQuery({
+    queryKey: keys.projection(12),
+    queryFn: ({ signal }) => getProjection(12, signal),
+    staleTime: STALE.derived,
+  });
 
   if (rules === null && !error) return <div className="skeleton mt-3 h-40 rounded-card" aria-hidden="true" />;
 
   return (
     <div className="mt-3 space-y-3">
-      {error && <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+      {error && <p className="rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error.message}</p>}
 
       <CardBills account={account} />
 

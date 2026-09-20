@@ -12,6 +12,7 @@
  * (safe-area inset).
  */
 import { NavLink, useLocation } from 'react-router-dom';
+import { prefetchTab } from '../lib/prefetch';
 import { useBudgetStore } from '../stores/budgetStore';
 import { CalendarIcon, HomeIcon, MoreIcon, PlusIcon, WalletIcon } from './Icons';
 
@@ -47,6 +48,9 @@ export function BottomTabBar({ onAdd }: { onAdd: () => void }) {
               <NavLink
                 to={tab.to}
                 end={tab.to === '/'}
+                // Finger down is 80-150 ms before the tab changes: ask now, so
+                // the screen has its answer by the time it mounts (plan §2.5).
+                onPointerDown={() => prefetchTab(tab.to)}
                 className={({ isActive }) => {
                   const on = isActive || tab.also.some((p) => pathname.startsWith(p));
                   return `flex min-h-tap w-full flex-col items-center justify-center gap-0.5 rounded-full py-1 font-mono text-[0.625rem] font-bold uppercase tracking-wide transition ${

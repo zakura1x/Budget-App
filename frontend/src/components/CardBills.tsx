@@ -10,14 +10,19 @@
  * list was saved settle bills oldest first. Editing starts from what is still
  * unpaid, because saving replaces the list and restarts that count - just as
  * a paid bill leaves the card app's Unpaid tab.
+ *
+ * Tap a bill for what it is made of (BillSheet). Below the bills, the section adds up to what the
+ * card owes - the tile's figure - with "Not on a bill yet" for the part no typed bill lists
+ * (2026-09-19, user: the bills and what the card owes did not match, and nothing said why).
  */
 import { addMonths, format, parseISO } from 'date-fns';
 import { useState } from 'react';
 import { ApiError } from '../lib/api';
-import { setBills, type Account, type Credit } from '../lib/accounts';
+import { setBills, type Account, type Bill, type Credit } from '../lib/accounts';
+import { afterWrite } from '../lib/invalidate';
 import { formatPHP, sanitizeAmount, toDecimalString } from '../lib/money';
 import { localToday } from '../lib/transactions';
-import { useLedgerStore } from '../stores/ledgerStore';
+import { BillSheet } from './BillSheet';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 
@@ -35,6 +40,8 @@ export function CardBills({ account }: { account: Account }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [opened, setOpened] = useState<Bill | null>(null);
+  const [why, setWhy] = useState(false);
 
   const start = () => {
     // Everything still unpaid, as the card's app shows it: a saved list replaces the plans and
@@ -61,7 +68,9 @@ export function CardBills({ account }: { account: Account }) {
     try {
       await setBills(account.id, list.filter((r) => r.amount.trim()).map((r) => ({ due: r.due, amount: toDecimalString(r.amount) })));
       setEditing(false);
-      useLedgerStore.setState((s) => ({ version: s.version + 1 }));
+      // ACC-35 - a typed bill list changes cash on hand (the card adds -due_now) and
+      // the card-due alert, which is a budget figure and the tab bar's dot.
+      afterWrite('accounts', 'budget', 'projection');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
     }
@@ -115,6 +124,13 @@ export function CardBills({ account }: { account: Account }) {
     );
   }
 
+  // What the card owes = bills left + not on a bill yet - charges on the bills not made yet.
+  const unbilled = credit.not_on_bill ?? '0.00';
+  const over = unbilled.startsWith('-');
+  const missing = unbilled !== '0.00';
+  const notCharged = (credit.bills_not_charged ?? '0.00') !== '0.00';
+  const reconciles = missing || notCharged;
+
   return (
     <Card padded={false}>
       <div className="flex items-center justify-between px-4 pb-1 pt-3">
@@ -128,7 +144,8 @@ export function CardBills({ account }: { account: Account }) {
           const paid = bill.left === '0.00';
           const part = !paid && bill.paid !== '0.00';
           return (
-            <div key={bill.due} className={`flex min-h-14 items-center gap-3 px-4 py-2 ${paid ? 'opacity-60' : ''}`}>
+            <button type="button" key={bill.due} onClick={() => setOpened(bill)}
+              className={`flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left active:bg-surface-2 ${paid ? 'opacity-60' : ''}`}>
               <span className="min-w-0 flex-1">
                 <span className="block text-body">Due {format(parseISO(bill.due), 'd MMM yyyy')}</span>
                 <span className={`block text-footnote ${bill.overdue ? 'font-semibold text-danger' : 'text-ink-3'}`}>
@@ -155,7 +172,8 @@ export function CardBills({ account }: { account: Account }) {
                 <span className="block text-body font-semibold">{formatPHP(paid ? bill.amount : bill.left)}</span>
                 {part && <span className="block text-caption text-ink-3">of {formatPHP(bill.amount)}</span>}
               </span>
-            </div>
+              <span aria-hidden="true" className="shrink-0 text-ink-3">›</span>
+            </button>
           );
         })}
       </div>
@@ -168,11 +186,42 @@ export function CardBills({ account }: { account: Account }) {
           <span className="text-ink-2">All bills left</span>
           <span className="num">{formatPHP(credit.bills_left)}</span>
         </div>
+        {reconciles && (
+          <>
+            {notCharged && (
+              <div className="flex justify-between text-footnote">
+                <span className="text-ink-2">Charges on the bills not made yet</span>
+                <span className="num">−{formatPHP(credit.bills_not_charged)}</span>
+              </div>
+            )}
+            {missing && (
+              <button type="button" onClick={() => setWhy((w) => !w)} aria-expanded={why}
+                className="flex min-h-tap w-full items-center justify-between text-left text-footnote">
+                <span className="font-semibold text-accent-ink">
+                  {over ? 'The bills hold more than the card owes' : 'Not on a bill yet'} {why ? '▴' : '▾'}
+                </span>
+                <span className="num font-semibold">{formatPHP(over ? unbilled.slice(1) : unbilled)}</span>
+              </button>
+            )}
+            {missing && why && (
+              <p className="text-caption text-ink-3">
+                {over
+                  ? 'The typed bills add up to more than this card’s balance. Check the balance, or the bills in the card’s app.'
+                  : 'The card’s balance includes this, but no bill you typed lists it — usually payments the card’s app shows only in a later month. It is not in cash on hand. When the app lists it, add it with Edit.'}
+              </p>
+            )}
+            <div className="flex justify-between border-t border-stroke/40 pt-1 text-footnote font-semibold">
+              <span>Card owes</span>
+              <span className="num">{formatPHP(credit.owed_with_plans)}</span>
+            </div>
+          </>
+        )}
         <p className="pt-1 text-caption text-ink-3">
           Payments into the card mark bills paid by themselves, oldest first. Installments and repeating charges on this card are
           added to the bill they land on.
         </p>
       </div>
+      <BillSheet bill={opened} onClose={() => setOpened(null)} />
     </Card>
   );
 }

@@ -14,8 +14,9 @@
  * and for a card the bill, own limit and statement check. A card's tile says
  * only what cannot wait: overdue, due soon, or a statement that differs.
  */
+import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
 import { cardStatus, isZero } from '../components/CreditDetails';
@@ -24,11 +25,11 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { isOwed, listAccounts, owedWithPlans, type Account, type AccountList, type AccountType } from '../lib/accounts';
+import { isOwed, listAccounts, owedWithPlans, type Account, type AccountType } from '../lib/accounts';
+import { keys, STALE } from '../lib/queryKeys';
 import { listGoals, type Goal } from '../lib/security';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
 
 /** The order the groups appear in; cards last, as they are money you owe. */
@@ -125,42 +126,26 @@ function GroupHeader({
 
 export function Accounts() {
   const navigate = useNavigate();
-  const version = useLedgerStore((s) => s.version);
-  const [data, setData] = useState<AccountList | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(() => new Set(['archived']));
-  /** GOA - savings goals, shown with the accounts they live in (2026-09-16, user). */
-  const [goals, setGoals] = useState<Goal[]>([]);
   const [editingGoal, setEditingGoal] = useState<{ open: boolean; goal: Goal | null }>({ open: false, goal: null });
   const [goalMoney, setGoalMoney] = useState<{ goal: Goal; mode: 'add' | 'use' } | null>(null);
 
-  const load = useCallback((signal?: AbortSignal) => {
-    return listAccounts(signal)
-      .then((result) => {
-        setData(result);
-        setError(null);
-      })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-  }, []);
+  // The same key `useLookups` reads, so opening this tab costs nothing when the
+  // answer is still fresh, and a write refreshes both at once.
+  const { data, error, refetch } = useQuery({
+    queryKey: keys.accounts(),
+    queryFn: ({ signal }) => listAccounts(signal),
+    staleTime: STALE.lookups,
+  });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load, version]);
-
-  const loadGoals = useCallback((signal?: AbortSignal) => {
-    return listGoals(signal)
-      .then(setGoals)
-      .catch(() => undefined); // the accounts are the page; a goal list that fails to load just stays away
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadGoals(controller.signal);
-    return () => controller.abort();
-  }, [loadGoals, version]);
+  /** GOA - savings goals, shown with the accounts they live in (2026-09-16, user). */
+  // The accounts are the page; a goal list that fails to load just stays away.
+  const { data: goals = [] } = useQuery({
+    queryKey: keys.goals(),
+    queryFn: ({ signal }) => listGoals(signal),
+    staleTime: STALE.lookups,
+  });
 
   const open = (account: Account) => navigate(`/accounts/${account.id}`);
   const toggle = (key: string) =>
@@ -270,7 +255,7 @@ export function Accounts() {
 
       {error && (
         <p className="mt-4 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
-          {error} <button type="button" className="font-semibold underline" onClick={() => void load()}>Try again</button>
+          {error.message} <button type="button" className="font-semibold underline" onClick={() => void refetch()}>Try again</button>
         </p>
       )}
 
@@ -375,11 +360,10 @@ export function Accounts() {
         </section>
       )}
 
-      <AccountSheet open={adding} account={null} onClose={() => setAdding(false)} onSaved={() => void load()} />
+      <AccountSheet open={adding} account={null} onClose={() => setAdding(false)} onSaved={() => undefined} />
       <GoalSheet open={editingGoal.open} goal={editingGoal.goal}
-        onClose={() => setEditingGoal({ open: false, goal: null })} onSaved={() => void loadGoals()} />
-      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)}
-        onSaved={() => void loadGoals()} />
+        onClose={() => setEditingGoal({ open: false, goal: null })} />
+      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)} />
     </>
   );
 }

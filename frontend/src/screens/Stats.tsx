@@ -18,6 +18,7 @@
  * ok/warn/danger appear only on the forecast, where they mean money state.
  * Amounts become numbers only to size a slice or place a point.
  */
+import { useQuery } from '@tanstack/react-query';
 import { addDays, format, parseISO } from 'date-fns';
 import { useEffect, useMemo, useState } from 'react';
 import { Cell, Line, LineChart, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -29,9 +30,9 @@ import { Segmented } from '../components/ui/Segmented';
 import { useLookups, type Lookups } from '../hooks/useLookups';
 import { useThemeColours, type ThemeColours } from '../hooks/useThemeColours';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
+import { keys, STALE } from '../lib/queryKeys';
 import { getOverview, type CategoryShare, type Overview, type Range } from '../lib/stats';
 import { localToday } from '../lib/transactions';
-import { useLedgerStore } from '../stores/ledgerStore';
 
 type Mode = 'budget' | 'month' | 'year' | 'custom';
 
@@ -399,28 +400,23 @@ const count = (n: number) => `${n} transaction${n === 1 ? '' : 's'}`;
 export function Stats() {
   const lookups = useLookups();
   const colours = useThemeColours();
-  const version = useLedgerStore((s) => s.version);
   const [mode, setMode] = useState<Mode>('budget');
   const [on, setOn] = useState(localToday());
   const [custom, setCustom] = useState({ from: iso(addDays(new Date(), -29)), to: localToday() });
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const range: Range | null =
     mode === 'custom'
       ? custom.from && custom.to && custom.from <= custom.to ? { from: custom.from, to: custom.to } : null
       : { span: mode, on };
 
-  useEffect(() => {
-    if (!range) return;
-    setError(null);
-    const controller = new AbortController();
-    getOverview(range, controller.signal)
-      .then(setOverview)
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, on, custom.from, custom.to, version]);
+  // Home's category grid reads the same key for the budget period, so coming
+  // here from Home is free when the period matches.
+  const { data: overview, error } = useQuery({
+    queryKey: keys.stats(range ?? { span: 'month', on }),
+    queryFn: ({ signal }) => getOverview(range!, signal),
+    enabled: range !== null,
+    staleTime: STALE.derived,
+  });
 
   const step = (direction: -1 | 1) => {
     if (!overview) return;
@@ -478,7 +474,7 @@ export function Stats() {
       )}
 
       <div className="mt-3">
-        {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
+        {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error.message}</p>}
         {!overview && !error && <div className="skeleton h-72 rounded-card" aria-hidden="true" />}
         {overview && (
           <>

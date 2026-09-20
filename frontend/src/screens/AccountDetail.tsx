@@ -13,6 +13,7 @@
  * form. A credit card's bill, own limit and statement check live here too.
  */
 import { format, parseISO } from 'date-fns';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
@@ -29,7 +30,8 @@ import { TransactionRow, moneyIn } from '../components/TransactionRow';
 import { Button } from '../components/ui/Button';
 import { Segmented } from '../components/ui/Segmented';
 import { useLookups } from '../hooks/useLookups';
-import { isOwed, kindLabelOf, listAccounts, owedWithPlans, type Account } from '../lib/accounts';
+import { isOwed, kindLabelOf, listAccounts, owedWithPlans } from '../lib/accounts';
+import { keys, STALE } from '../lib/queryKeys';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { type Rule } from '../lib/recurring';
 import { listGoals, type Goal } from '../lib/security';
@@ -92,9 +94,9 @@ export function AccountDetail() {
   const lookups = useLookups();
   const version = useLedgerStore((s) => s.version);
   const openSheet = useUiStore((s) => s.openAddSheet);
+  // TXN-23. A tap shows the entry; the preview's Edit button opens the sheet.
+  const openPreview = useUiStore((s) => s.openPreview);
 
-  const [account, setAccount] = useState<Account | null>(null);
-  const [missing, setMissing] = useState(false);
   const [rows, setRows] = useState<Transaction[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [view, setView] = useState<View>('day');
@@ -105,21 +107,28 @@ export function AccountDetail() {
   /** REC-32. The plans open on this account, and the one being paid. */
   const [openPlans, setOpenPlans] = useState<Rule[]>([]);
   const [paying, setPaying] = useState<Rule | null>(null);
-  /** GOA-08 - the goals setting money aside in this account (several may share it). */
-  const [goals, setGoals] = useState<Goal[]>([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [goalMoney, setGoalMoney] = useState<{ goal: Goal; mode: 'add' | 'use' } | null>(null);
 
-  const loadAccount = useCallback(
-    (signal?: AbortSignal) =>
-      listAccounts(signal)
-        .then((list) => {
-          const found = list.accounts.find((a) => a.id === accountId) ?? null;
-          setAccount(found);
-          setMissing(found === null);
-        })
-        .catch((e: Error) => e.name !== 'AbortError' && setError(e.message)),
-    [accountId],
+  // This page used to fetch the whole account list for itself while `useLookups`
+  // fetched the same list beside it - the duplicate in plan §1.3. One shared key now.
+  const accountsQuery = useQuery({
+    queryKey: keys.accounts(),
+    queryFn: ({ signal }) => listAccounts(signal),
+    staleTime: STALE.lookups,
+  });
+  const account = accountsQuery.data?.accounts.find((a) => a.id === accountId) ?? null;
+  const missing = accountsQuery.isSuccess && account === null;
+
+  /** GOA-08 - the goals setting money aside in this account (several may share it). */
+  const goalsQuery = useQuery({
+    queryKey: keys.goals(),
+    queryFn: ({ signal }) => listGoals(signal),
+    staleTime: STALE.lookups,
+  });
+  const goals = useMemo(
+    () => (goalsQuery.data ?? []).filter((g) => g.account_id === accountId),
+    [goalsQuery.data, accountId],
   );
 
   /** The first page, or - for Month - every page. */
@@ -188,26 +197,13 @@ export function AccountDetail() {
     return { billed: fromCentavos(own), plans: fromCentavos(onPlans), label: 'borrowed' };
   }, [account, openPlans]);
 
-  const loadGoal = useCallback(
-    (signal?: AbortSignal) =>
-      listGoals(signal)
-        .then((found) => setGoals(found.filter((g) => g.account_id === accountId)))
-        .catch(() => undefined),
-    [accountId],
-  );
-
+  // The trail stays hand-rolled (plan D9): it pages by cursor, and the Month
+  // view walks every page. It still reloads on the write signal.
   useEffect(() => {
     const controller = new AbortController();
-    void loadGoal(controller.signal);
-    return () => controller.abort();
-  }, [loadGoal, version]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadAccount(controller.signal);
     void loadTrail(view === 'month', controller.signal);
     return () => controller.abort();
-  }, [loadAccount, loadTrail, version, view]);
+  }, [loadTrail, version, view]);
 
   const more = async () => {
     if (!cursor) return;
@@ -421,10 +417,8 @@ export function AccountDetail() {
           ))}
         </div>
       )}
-      <GoalSheet open={editingGoal !== null} goal={editingGoal} onClose={() => setEditingGoal(null)}
-        onSaved={() => void loadGoal()} />
-      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)}
-        onSaved={() => void loadGoal()} />
+      <GoalSheet open={editingGoal !== null} goal={editingGoal} onClose={() => setEditingGoal(null)} />
+      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)} />
 
       {account && !account.credit && !account.archived && (
         <div className="mt-3 space-y-3">
@@ -445,10 +439,11 @@ export function AccountDetail() {
         </div>
       </div>
 
-      {error && (
+      {(error || accountsQuery.error) && (
         <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
-          {error}{' '}
-          <button type="button" className="font-semibold underline" onClick={() => void loadTrail(view === 'month')}>Try again</button>
+          {error ?? accountsQuery.error?.message}{' '}
+          <button type="button" className="font-semibold underline"
+            onClick={() => { void accountsQuery.refetch(); void loadTrail(view === 'month'); }}>Try again</button>
         </p>
       )}
 
@@ -468,7 +463,8 @@ export function AccountDetail() {
             </div>
             <div className="divide-y divide-stroke/80">
               {d.rows.map((row) => (
-                <button key={row.id} type="button" onClick={() => openSheet(row)} className="block w-full transition active:bg-surface-2">
+                <button key={row.id} type="button" onClick={() => row.id > 0 && openPreview(row)}
+                  className="block w-full transition active:bg-surface-2">
                   <TransactionRow row={row} lookups={lookups} accountId={accountId} />
                 </button>
               ))}
@@ -522,16 +518,11 @@ export function AccountDetail() {
         </p>
       )}
 
+      {/* The sheet invalidates what it wrote; this screen's own effect is keyed on
+          the same signal, so the account and its trail reload without being asked. */}
       <AccountSheet open={editing} account={account} onClose={() => setEditing(false)}
-        onSaved={() => {
-          // A typed balance may have written an unrecorded gain or loss (ACC-29): the trail and
-          // every other figure (Home, Stats) must show it, not only this banner.
-          void loadAccount();
-          void loadTrail(view === 'month');
-          useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-        }} />
-      <StatementSheet open={checking} account={checking ? account : null} onClose={() => setChecking(false)}
-        onChanged={() => { void loadAccount(); void loadTrail(view === 'month'); }} />
+        onSaved={() => undefined} />
+      <StatementSheet open={checking} account={checking ? account : null} onClose={() => setChecking(false)} />
     </>
   );
 }

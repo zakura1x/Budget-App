@@ -6,7 +6,8 @@
  * real transfer from another account. One goal per account, in a cash, debit
  * or savings account; deleting a goal leaves the money where it is.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
 import { PlusIcon } from '../components/Icons';
@@ -14,27 +15,20 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { useLookups } from '../hooks/useLookups';
+import { keys, STALE } from '../lib/queryKeys';
 import { listGoals, type Goal } from '../lib/security';
-import { useLedgerStore } from '../stores/ledgerStore';
 
 export function Goals() {
   const navigate = useNavigate();
   const lookups = useLookups();
-  const version = useLedgerStore((s) => s.version);
-  const [goals, setGoals] = useState<Goal[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ open: boolean; goal: Goal | null }>({ open: false, goal: null });
   const [goalMoney, setGoalMoney] = useState<{ goal: Goal; mode: 'add' | 'use' } | null>(null);
 
-  const load = useCallback((signal?: AbortSignal) =>
-    listGoals(signal).then((found) => { setGoals(found); setError(null); })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message)), []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load, version]);
+  const { data: goals, error } = useQuery({
+    queryKey: keys.goals(),
+    queryFn: ({ signal }) => listGoals(signal),
+    staleTime: STALE.lookups,
+  });
 
   return (
     <>
@@ -43,8 +37,8 @@ export function Goals() {
         subtitle={<button type="button" className="text-accent-ink" onClick={() => navigate('/more')}>‹ More</button>}
         action={<Button onClick={() => setEditing({ open: true, goal: null })} aria-label="Add goal"><PlusIcon size={20} />Add</Button>}
       />
-      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error}</p>}
-      {goals === null && !error && <div className="skeleton h-40 rounded-card" aria-hidden="true" />}
+      {error && <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error.message}</p>}
+      {goals === undefined && !error && <div className="skeleton h-40 rounded-card" aria-hidden="true" />}
       {goals && goals.length === 0 && (
         <Card className="text-center">
           <p className="text-body">No goals yet.</p>
@@ -61,9 +55,9 @@ export function Goals() {
             onUse={() => setGoalMoney({ goal: g, mode: 'use' })} />
         ))}
       </div>
-      <GoalSheet open={editing.open} goal={editing.goal} onClose={() => setEditing({ open: false, goal: null })} onSaved={() => void load()} />
-      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)}
-        onSaved={() => void load()} />
+      {/* The sheets call afterWrite themselves, which refreshes this list. */}
+      <GoalSheet open={editing.open} goal={editing.goal} onClose={() => setEditing({ open: false, goal: null })} />
+      <GoalMoneySheet goal={goalMoney?.goal ?? null} mode={goalMoney?.mode ?? 'add'} onClose={() => setGoalMoney(null)} />
     </>
   );
 }

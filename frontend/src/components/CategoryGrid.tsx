@@ -11,13 +11,13 @@
  * Figures come from GET /stats/overview for exactly the period on Home, so the
  * tiles add up to the "Spent" on the budget card.
  */
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import type { Lookups } from '../hooks/useLookups';
 import { ratio, type CategoryProgress } from '../lib/budgets';
 import { formatPHP } from '../lib/money';
-import { getOverview, type Overview, type Range } from '../lib/stats';
-import { useLedgerStore } from '../stores/ledgerStore';
+import { keys, STALE } from '../lib/queryKeys';
+import { getOverview, type Range } from '../lib/stats';
 import { Glyph } from './Glyph';
 
 const NEUTRAL = '#8E8E93';
@@ -59,20 +59,13 @@ export function CategoryGrid({
   range, progress, lookups,
 }: { range: Range; progress: CategoryProgress[]; lookups: Lookups }) {
   const navigate = useNavigate();
-  const version = useLedgerStore((s) => s.version);
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const key = 'span' in range ? `${range.span}:${range.on}` : `${range.from}:${range.to}`;
-
-  useEffect(() => {
-    const controller = new AbortController();
-    getOverview(range, controller.signal)
-      .then(setOverview)
-      .catch(() => {
-        /* the budget card carries the error; the grid just stays empty */
-      });
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, version]);
+  // The same key Stats uses for the same period, so the two share one answer.
+  // The budget card carries any error; the grid just stays empty.
+  const { data: overview } = useQuery({
+    queryKey: keys.stats(range),
+    queryFn: ({ signal }) => getOverview(range, signal),
+    staleTime: STALE.derived,
+  });
 
   if (!overview) return <div className="skeleton h-40 rounded-card" aria-hidden="true" />;
 

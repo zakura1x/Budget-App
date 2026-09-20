@@ -38,7 +38,9 @@ import {
   type BalanceQuestion,
   type InterestDraft,
 } from '../lib/accounts';
-import { flatten, listCategories, type Category } from '../lib/categories';
+import { flatten, type Category } from '../lib/categories';
+import { afterWrite, MONEY } from '../lib/invalidate';
+import { ensureCategories } from '../lib/prefetch';
 import { InterestFields } from './InterestFields';
 import { MoneyField } from './ui/MoneyField';
 import { centavos, formatPHP, fromCentavos, toDecimalString, toRateString } from '../lib/money';
@@ -174,11 +176,13 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
 
   useEffect(() => {
     if (!open) return;
-    const controller = new AbortController();
-    listCategories(controller.signal)
-      .then((tree) => setIncomeCategories(flatten(tree).filter((c) => c.kind === 'income' && !c.archived)))
+    let cancelled = false;
+    void ensureCategories()
+      .then((tree) => !cancelled && setIncomeCategories(flatten(tree).filter((c) => c.kind === 'income' && !c.archived)))
       .catch(() => undefined);
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -298,6 +302,10 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       }
       if (account) await updateAccount(account.id, draft);
       else await createAccount(draft);
+      // ACC-29/ACC-12: a typed balance or value can write an unrecorded gain or
+      // loss, which belongs on Home, in Stats and in the ledger. Owned here, so
+      // no screen opening this sheet has to remember it.
+      afterWrite(...MONEY);
       onSaved();
       onClose();
     } catch (e) {
@@ -325,6 +333,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     setBusy(true);
     try {
       await setArchived(account.id, !account.archived);
+      afterWrite(...MONEY);
       onSaved();
       onClose();
     } catch (e) {

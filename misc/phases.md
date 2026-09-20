@@ -1847,6 +1847,37 @@ Found while building Phase 5b (2026-09-14):
     open the add sheet on that card, dated the closing day, as an expense or
     income (uiStore.addPreset).
 
+Found while building Phase 10 (2026-09-20) - misc/UX_RESPONSIVENESS_PLAN.md:
+  - RESOLVED 2026-09-20 (steps 1-6 of that plan): every tab switch used to
+    refetch from nothing - each screen held its data in local useState and
+    loaded it in a mount effect, so a visit cost 2-7 requests and always showed
+    a skeleton. @tanstack/react-query now holds those answers
+    (lib/queryClient.ts, lib/queryKeys.ts), cleared by queryClient.clear() on
+    lock beside the stores (SEC-29, no persister plugin EVER). Measured from
+    logs/app.jsonl, old bundle vs new over a comparable burst of navigation:
+    78 requests and 21.7s of server time became 25 and 7.2s; /accounts went
+    from 21 calls to 1, /categories and /tags from 17 each to 1, and
+    /budgets/current - the slowest call in the app at ~600ms - from once per
+    Home visit to once per minute. ledgerStore and budgetStore stay hand-rolled
+    (they own the pending row and the Outcome merge) but now skip a fetch that
+    is still fresh. Also: prefetch on tab press, lazy chunks warmed on idle,
+    and scroll position remembered per route.
+  - STILL OPEN from that plan: the account page's trail pages by cursor and is
+    the last list that is neither a query nor the ledger store, so
+    `ledgerStore.version` survives as its one refresh signal. It goes when the
+    trail moves to useInfiniteQuery. /projection takes 1.7-1.9s on the server -
+    caching hides it, nothing has fixed it.
+  - RESOLVED 2026-09-20 (step 0 of that plan): eleven writes bumped
+    `ledgerStore.version` by hand, which reloads the screens keyed on it but
+    NOT ledgerStore.items or budgetStore.status. So a plan payment (REC-32),
+    an early occurrence (REC-33), a balance typed on the Accounts tab (ACC-29),
+    a renamed category, a deleted tag and a receipt could stay invisible on
+    Home for the rest of the session. All of them now go through
+    `afterWrite(...groups)` (frontend/src/lib/invalidate.ts), the one place
+    that knows what a write touched. StatementSheet's `onChanged` prop is gone
+    with it - the version signal already reloaded the account page, so it was
+    fetching the account and its trail twice.
+
 Found while building Phase 10 (2026-09-15):
   - The main bundle was 873 KB. Stats (recharts) and six rarely visited
     screens (Recurring, Projection, Backup, Goals, Admin, About) now load on

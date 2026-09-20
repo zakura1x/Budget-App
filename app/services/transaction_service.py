@@ -237,7 +237,8 @@ def postings(db: Session, cipher: UserCipher) -> List[Posting]:
     for record in TransactionRepository(db, cipher).cached():
         view = _view(record)
         sign = -1 if view.type == "expense" or view.direction == "out" else 1
-        result.append(Posting(view.account_id, view.txn_date, view.amount * sign, view.type, view.card_posted_on))
+        result.append(Posting(view.account_id, view.txn_date, view.amount * sign, view.type, view.card_posted_on,
+                              view.created_at, view.id))
     return result
 
 

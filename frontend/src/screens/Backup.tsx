@@ -41,9 +41,9 @@ import {
   type RestoreReport,
   type UploadInfo,
 } from '../lib/backups';
+import { afterWrite, EVERYTHING } from '../lib/invalidate';
 import { formatPHP } from '../lib/money';
 import { localToday } from '../lib/transactions';
-import { useBudgetStore } from '../stores/budgetStore';
 import { useLedgerStore } from '../stores/ledgerStore';
 
 const when = (iso: string) => format(parseISO(iso), 'd MMM yyyy, h:mm a');
@@ -110,9 +110,10 @@ function RestoreSheet({ source, onClose, onDone }: { source: Source | null; onCl
       });
       setReport(result);
       if (result.mode !== 'verify') {
-        useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-        void useLedgerStore.getState().load({});
-        void useBudgetStore.getState().load(null);
+        // A restore replaces the lot - including the accounts and categories any
+        // filter refers to, so the ledger goes back to unfiltered first.
+        useLedgerStore.setState({ filters: {} });
+        afterWrite(...EVERYTHING);
         onDone();
       }
     } catch (e) {
@@ -241,9 +242,9 @@ function ImportSheet({ file, onClose }: { file: { name: string; text: string } |
       const done = await runImport({ csv: file.text, mapping, date_format: dateFormat, skip_duplicates: true });
       setResult(`${done.created} transaction${done.created === 1 ? '' : 's'} imported${done.skipped_duplicates ? `, ${done.skipped_duplicates} duplicates skipped` : ''}.`);
       setPreview(null);
-      useLedgerStore.setState((s) => ({ version: s.version + 1 }));
-      void useLedgerStore.getState().load({});
-      void useBudgetStore.getState().load(null);
+      // An import can create accounts and categories as well as transactions.
+      useLedgerStore.setState({ filters: {} });
+      afterWrite(...EVERYTHING);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'The import did not run.');
     }

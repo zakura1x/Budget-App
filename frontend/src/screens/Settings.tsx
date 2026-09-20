@@ -25,8 +25,8 @@ import { Segmented } from '../components/ui/Segmented';
 import { Toggle } from '../components/ui/Toggle';
 import { ApiError } from '../lib/api';
 import type { AllowanceMode, PeriodKind, Preferences, Theme } from '../lib/budgets';
+import { afterWrite } from '../lib/invalidate';
 import { useAuthStore } from '../stores/authStore';
-import { useBudgetStore } from '../stores/budgetStore';
 import { usePreferencesStore } from '../stores/preferencesStore';
 
 const WEEKDAYS = [
@@ -34,10 +34,14 @@ const WEEKDAYS = [
   { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' }, { value: 6, label: 'Saturday' }, { value: 7, label: 'Sunday' },
 ] as const;
 const LOCK_CHOICES = [1, 2, 5, 10, 15, 30];
+/** The preferences that change a figure rather than how the app looks or locks. */
+const MOVES_FIGURES = [
+  'carry_over', 'daily_allowance_mode', 'alert_warn_threshold_pct',
+  'alert_pace_enabled', 'budget_period', 'month_start_day', 'week_start_day',
+] as const;
 
 export function Settings() {
   const navigate = useNavigate();
-  const reloadBudget = useBudgetStore((s) => s.load);
   const { prefs, load, change: save } = usePreferencesStore();
   const serverLock = useAuthStore((s) => s.session?.auto_lock_minutes ?? 5);
   const pinSet = useAuthStore((s) => s.session?.pin_set ?? false);
@@ -52,7 +56,11 @@ export function Settings() {
     setError(null);
     try {
       await save(changes);
-      void reloadBudget(null);
+      // Only some preferences move a figure: the period's shape, what carries
+      // over, how the daily allowance is worked out, when an alert fires. The
+      // theme, the palette and the auto-lock do not, and must not send the app
+      // off refetching. `afterWrite` forces the reload past the freshness check.
+      if (MOVES_FIGURES.some((key) => key in changes)) afterWrite('budget', 'calendar', 'stats');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
     }

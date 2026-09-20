@@ -31,6 +31,15 @@ interface UiState {
   addPreset: AddPreset | null;
   openAddSheet: (editing?: Transaction, on?: string, preset?: AddPreset) => void;
   closeAddSheet: () => void;
+  /**
+   * TXN-23 (2026-09-20, user). The transaction being LOOKED at: tapping a row
+   * anywhere opens this read-only preview, and its Edit button opens the sheet.
+   * A tap used to open the editor itself, which made a glance at an entry a
+   * chance to change it.
+   */
+  preview: Transaction | null;
+  openPreview: (row: Transaction) => void;
+  closePreview: () => void;
   ruleSheet: RuleSheetRequest | null;
   openRuleSheet: (request: RuleSheetRequest) => void;
   closeRuleSheet: () => void;
@@ -44,12 +53,17 @@ export const useUiStore = create<UiState>((set) => ({
   editing: null,
   addOn: null,
   addPreset: null,
+  // Opening the editor closes the preview it was opened from: one sheet at a time.
   openAddSheet: (editing, on, preset) =>
-    set({ addSheetOpen: true, editing: editing ?? null, addOn: on ?? null, addPreset: preset ?? null }),
+    set({ addSheetOpen: true, editing: editing ?? null, addOn: on ?? null, addPreset: preset ?? null, preview: null }),
   closeAddSheet: () => set({ addSheetOpen: false, editing: null, addOn: null, addPreset: null }),
+  preview: null,
+  openPreview: (row) => set({ preview: row }),
+  closePreview: () => set({ preview: null }),
   ruleSheet: null,
   // Opening a rule closes the add sheet: two sheets stacked would fight over the page's scroll lock.
-  openRuleSheet: (request) => set({ ruleSheet: request, addSheetOpen: false, editing: null, addOn: null, addPreset: null }),
+  openRuleSheet: (request) =>
+    set({ ruleSheet: request, addSheetOpen: false, editing: null, addOn: null, addPreset: null, preview: null }),
   closeRuleSheet: () => set({ ruleSheet: null }),
   headline: 'cash',
   setHeadline: (headline) => set({ headline }),

@@ -25,19 +25,19 @@ import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
 import type { Account } from '../lib/accounts';
 import { ApiError } from '../lib/api';
-import { flatten, listCategories, type Category } from '../lib/categories';
+import { flatten, type Category } from '../lib/categories';
+import { ensureCategories, ensureStatement } from '../lib/prefetch';
+import { afterWrite, MONEY } from '../lib/invalidate';
 import { centavos, formatPHP, fromCentavos, sanitizeAmount, toDecimalString } from '../lib/money';
 import {
   changeInstallmentPayment,
   checkStatement,
   confirmInstallmentInterest,
-  getStatement,
   markPostedNext,
   recordCharge,
   type StatementCheck,
   type StatementPlan,
 } from '../lib/statements';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
@@ -66,11 +66,9 @@ export interface StatementSheetProps {
   open: boolean;
   account: Account | null;
   onClose: () => void;
-  /** Something was recorded - balances and the bill have moved. */
-  onChanged: () => void;
 }
 
-export function StatementSheet({ open, account, onClose, onChanged }: StatementSheetProps) {
+export function StatementSheet({ open, account, onClose }: StatementSheetProps) {
   const openAddSheet = useUiStore((s) => s.openAddSheet);
   const [data, setData] = useState<StatementCheck | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -97,9 +95,10 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
     setInterestFor(null);
     setChangeFor(null);
     setNote('');
-    const controller = new AbortController();
-    Promise.all([getStatement(account.id, closes, controller.signal), listCategories(controller.signal)])
+    let cancelled = false;
+    Promise.all([ensureStatement(account.id, closes), ensureCategories()])
       .then(([check, tree]) => {
+        if (cancelled) return;
         accept(check);
         setBank(check.statement.bank_total ?? '');
         const spending = flatten(tree).filter((c) => c.kind === 'expense' && !c.archived);
@@ -107,8 +106,10 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
         setCategories(spending);
         setCategoryId(spending.find((c) => LIKELY.test(c.name))?.id ?? null);
       })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-    return () => controller.abort();
+      .catch((e: Error) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, account, closes]);
 
@@ -126,10 +127,9 @@ export function StatementSheet({ open, account, onClose, onChanged }: StatementS
       setCharging(false);
       setInterestFor(null);
       setChangeFor(null);
-      if (recorded) {
-        onChanged();
-        void useLedgerStore.getState().load();
-      }
+      // A charge, a confirmed interest figure or a repriced plan is a real
+      // posting: balances, the bill, Stats and the months ahead all moved.
+      if (recorded) afterWrite(...MONEY);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
     }

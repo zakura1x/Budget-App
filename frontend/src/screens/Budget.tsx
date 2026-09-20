@@ -15,6 +15,7 @@
  * sample_ui/): a gauge of the budget used, then REMAIN - each category's
  * spent and remaining - with PLAN, the editor, one switch away.
  */
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -32,7 +33,9 @@ import {
 } from '../lib/budgets';
 import { usePreferencesStore } from '../stores/preferencesStore';
 import type { Category } from '../lib/categories';
+import { afterWrite } from '../lib/invalidate';
 import { centavos, formatPHP, fromCentavos, sanitizeAmount, toDecimalString } from '../lib/money';
+import { keys, STALE } from '../lib/queryKeys';
 import { localToday } from '../lib/transactions';
 import { useBudgetStore } from '../stores/budgetStore';
 
@@ -179,13 +182,22 @@ export function Budget() {
     setAllocations(Object.fromEntries(b.allocations.map((a) => [a.category_id, typedFrom(a.amount)])));
   };
 
+  // The budget's SHAPE is a query; its status stays in budgetStore (plan D9).
+  // `hydrate` fills the editor's fields from whichever answer arrives, cached
+  // or fresh, so reopening this screen no longer starts from a skeleton.
+  const { data: shape, error: shapeError } = useQuery({
+    queryKey: keys.budgetShape(),
+    queryFn: ({ signal }) => getBudget(signal),
+    staleTime: STALE.shape,
+  });
+
   useEffect(() => {
-    const controller = new AbortController();
-    getBudget(controller.signal)
-      .then(({ budget: b }) => hydrate(b))
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
+    if (shape) hydrate(shape.budget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shape]);
+
+  useEffect(() => {
     void loadStatus(null);
-    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -222,14 +234,16 @@ export function Budget() {
       const result = budget ? await updateBudget(budget.id, body) : await createBudget(body);
       hydrate(result);
       setSaved(true);
-      void loadStatus(null);
+      // BUD-01/04 - a new amount or a moved allocation changes the allowance, the
+      // category rings on Home and the budget view in Stats, not only this screen.
+      afterWrite('budget', 'stats', 'calendar');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
     }
     setBusy(false);
   };
 
-  if (!loaded) return <div className="skeleton mt-16 h-96 rounded-card" aria-hidden="true" />;
+  if (!loaded && !shapeError) return <div className="skeleton mt-16 h-96 rounded-card" aria-hidden="true" />;
 
   const shownView: View = !budget ? 'plan' : view;
   const current = status?.is_current ? status : null;

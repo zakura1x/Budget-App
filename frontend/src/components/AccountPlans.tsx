@@ -12,13 +12,14 @@
  * what each payment is, how many are left and what the plan still owes are
  * never worked out here.
  */
+import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useLookups } from '../hooks/useLookups';
 import { formatPHP } from '../lib/money';
+import { keys, STALE } from '../lib/queryKeys';
 import { listRules, scheduleLabel, type Rule } from '../lib/recurring';
 import { type Account } from '../lib/accounts';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
 import { PayNowSheet } from './PayNowSheet';
 import { PlanPaymentSheet } from './PlanPaymentSheet';
@@ -43,23 +44,21 @@ export interface AccountPlansProps {
 }
 
 export function AccountPlans({ account, rules: given, alwaysShow = false, onPay, onPlans }: AccountPlansProps) {
-  const version = useLedgerStore((s) => s.version);
   const openRuleSheet = useUiStore((s) => s.openRuleSheet);
   const lookups = useLookups();
-  const [fetched, setFetched] = useState<Rule[] | null>(null);
   const [paying, setPaying] = useState<Rule | null>(null);
   /** REC-33. The repeating charge being paid early. */
   const [payingNow, setPayingNow] = useState<Rule | null>(null);
-  const rules = given ?? fetched;
 
-  useEffect(() => {
-    if (given !== undefined) return;
-    const controller = new AbortController();
-    listRules(undefined, controller.signal)
-      .then(setFetched)
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [given, account.id, version]);
+  // The same key the Recurring screen and the payments card use: one answer
+  // for the whole page, however many of these are on it.
+  const { data: fetched = null } = useQuery({
+    queryKey: keys.rules(),
+    queryFn: ({ signal }) => listRules(undefined, signal),
+    enabled: given === undefined,
+    staleTime: STALE.derived,
+  });
+  const rules = given ?? fetched;
 
   const mine = (rules ?? []).filter((r) => r.account_id === account.id);
   const plans = mine.filter((r) => r.kind === 'installment');

@@ -201,16 +201,18 @@ export function Home() {
   const today = new Date();
   const navigate = useNavigate();
   const name = useAuthStore((s) => s.session?.user.display_name);
-  const { items, filters, load, error } = useLedgerStore();
+  const { items, load, error } = useLedgerStore();
   const { status, alerts, loaded, load: loadBudget, error: budgetError } = useBudgetStore();
-  const openSheet = useUiStore((s) => s.openAddSheet);
+  const openPreview = useUiStore((s) => s.openPreview);  // TXN-23 - a tap shows the entry, never the editor
   const lookups = useLookups();
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    // Home always shows the unfiltered ledger, whatever the ledger screen left behind.
-    const filtered = Object.values(filters).some((v) => v !== undefined);
-    if (filtered || items.length === 0) void load({});
+    // Home always shows the unfiltered ledger, whatever the ledger screen left
+    // behind. Both stores skip the request when what they hold is still fresh
+    // (step 4), so this is no longer "only fetch if we have nothing" - which
+    // was how a write that forgot to reload could leave Recent stale all session.
+    void load({});
     void loadBudget(null);
     // The recurring and interest catch-up runs app-wide, in useCatchUp (App.tsx).
     // Coming back to the app on a new day must not show yesterday's allowance.
@@ -260,11 +262,15 @@ export function Home() {
         <div className="skeleton h-[26rem] rounded-card" aria-hidden="true" />
       )}
 
-      <CategoryGrid
-        range={status ? { from: status.period.start, to: status.period.end } : { span: 'month', on: localToday() }}
-        progress={status?.categories ?? []}
-        lookups={lookups}
-      />
+      {/* Only once the budget status is in: the grid's range IS its cache key, so
+          drawing it before the period is known fetched the month, then the period. */}
+      {loaded && (
+        <CategoryGrid
+          range={status ? { from: status.period.start, to: status.period.end } : { span: 'month', on: localToday() }}
+          progress={status?.categories ?? []}
+          lookups={lookups}
+        />
+      )}
 
       <div className="flex items-end justify-between">
         <SectionTitle>Recent</SectionTitle>
@@ -278,7 +284,7 @@ export function Home() {
       {recent.length > 0 ? (
         <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
           {recent.map((row) => (
-            <button key={row.id} type="button" onClick={() => row.id > 0 && openSheet(row)}
+            <button key={row.id} type="button" onClick={() => row.id > 0 && openPreview(row)}
               className="block w-full transition active:bg-surface-2">
               <TransactionRow row={row} lookups={lookups} />
             </button>

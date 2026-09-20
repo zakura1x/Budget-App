@@ -27,7 +27,6 @@ export function RuleSheetHost() {
       prefill={shown?.prefill ?? null}
       lookups={lookups}
       onClose={close}
-      onSaved={() => undefined}
     />
   );
 }

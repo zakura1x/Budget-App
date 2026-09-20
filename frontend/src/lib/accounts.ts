@@ -31,6 +31,21 @@ export interface Statement {
   posting_lag_days: number;
 }
 
+/**
+ * ACC-35 - one line of a bill (2026-09-19). 'typed' is the card app's own figure; 'purchase' and
+ * 'plan' are added on top of it; 'inside_typed' is already inside the typed figure - shown, never
+ * added; 'payment' is money into the card that settled this bill, oldest bill first.
+ */
+export interface BillLine {
+  kind: 'typed' | 'purchase' | 'plan' | 'inside_typed' | 'payment';
+  amount: string;
+  on: string | null;
+  name: string | null;
+  transaction_id: number | null;
+  rule_id: number | null;
+  category_id: number | null;
+}
+
 /** ACC-35 - one bill typed from the card's own app; what is paid of it is derived. */
 export interface Bill {
   due: string;
@@ -48,6 +63,9 @@ export interface Bill {
   /** Purchases recorded on the card after the list was saved, on this bill's statement. */
   from_purchases: string;
   purchases_left: string;
+  /** Repeating charges on this bill not charged yet - on the bill, not yet in what the card owes. */
+  not_charged: string;
+  lines: BillLine[];
 }
 
 export interface Credit {
@@ -56,6 +74,12 @@ export interface Credit {
   bills_left: string;
   /** Overdue bills + the next one; null without bills. Cash on hand subtracts this, not the balance. */
   due_now: string | null;
+  /**
+   * What the card owes that no bill lists yet (2026-09-19): owed_with_plans - bills_left +
+   * bills_not_charged. Null without bills; negative when the bills hold more than the card owes.
+   */
+  not_on_bill: string | null;
+  bills_not_charged: string;
   limit: string | null;
   statement_closing_day: number;
   payment_due_day: number;

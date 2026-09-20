@@ -6,6 +6,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.v1.schemas.accounts import BillOut
 from app.api.v1.schemas.budgets import Ratio
 from app.api.v1.schemas.common import Money
 from app.api.v1.schemas.transactions import TransactionIn
@@ -236,6 +237,7 @@ class ProjectedMonthOut(BaseModel):
     items: List[ProjectedItemOut]
     bills: Money = Decimal("0.00")  # ACC-35 - typed card bills taken this month, on top of spending
     bills_set_aside: Money = Decimal("0.00")  # ACC-35 - due this month, already out of cash on hand
+    bills_held: Money = Decimal("0.00")  # ACC-35 - of the closing, held back on Home for bills due after it
 
 
 class ProjectionOut(BaseModel):
@@ -267,6 +269,7 @@ class CardLookaheadOut(BaseModel):
     name: str
     spending_limit: Optional[Money] = None
     statements: List[CardStatementOut]
+    bills: List[BillOut] = []  # ACC-35 - a card with typed bills shows them instead of statements
 
 
 # ------------------------------------------------ REC-34: a purchase paid in installments

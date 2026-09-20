@@ -3,36 +3,29 @@
  * the flight, the hotel and the food, each still in its own category. Chosen
  * in the add sheet, filtered on in the ledger, totalled on Stats.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PlusIcon } from '../components/Icons';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TagSheet } from '../components/TagSheet';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { keys, STALE } from '../lib/queryKeys';
 import { listTags, type Tag } from '../lib/tags';
 
 export function Tags() {
   const navigate = useNavigate();
-  const [tags, setTags] = useState<Tag[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Tag | null>(null);
 
-  const load = useCallback((signal?: AbortSignal) => {
-    return listTags(signal)
-      .then((result) => {
-        setTags(result);
-        setError(null);
-      })
-      .catch((e: Error) => e.name !== 'AbortError' && setError(e.message));
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+  // The same answer `useLookups` holds, so a tag chip on a row and this list
+  // can never disagree.
+  const { data: tags, error, refetch } = useQuery({
+    queryKey: keys.tags(),
+    queryFn: ({ signal }) => listTags(signal),
+    staleTime: STALE.taxonomy,
+  });
 
   const open = (tag: Tag | null) => {
     setEditing(tag);
@@ -54,8 +47,8 @@ export function Tags() {
 
       {error && (
         <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">
-          {error}{' '}
-          <button type="button" className="font-semibold underline" onClick={() => void load()}>
+          {error.message}{' '}
+          <button type="button" className="font-semibold underline" onClick={() => void refetch()}>
             Try again
           </button>
         </p>
@@ -93,7 +86,7 @@ export function Tags() {
         </div>
       )}
 
-      <TagSheet open={sheetOpen} tag={editing} onClose={() => setSheetOpen(false)} onSaved={() => void load()} />
+      <TagSheet open={sheetOpen} tag={editing} onClose={() => setSheetOpen(false)} onSaved={() => undefined} />
     </>
   );
 }

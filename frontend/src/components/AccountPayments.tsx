@@ -13,14 +13,15 @@
  * DATE comes from the server's one occurrences() engine and none is worked out
  * here (REC-22).
  */
+import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useLookups } from '../hooks/useLookups';
 import { type Account } from '../lib/accounts';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
+import { keys, STALE } from '../lib/queryKeys';
 import { getProjection, listRules, scheduleLabel, type Projection, type Rule } from '../lib/recurring';
 import { localToday } from '../lib/transactions';
-import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
@@ -38,24 +39,22 @@ export interface AccountPaymentsProps {
 
 export function AccountPayments({ account, rules: givenRules, projection: givenProjection, startOn }: AccountPaymentsProps) {
   const lookups = useLookups();
-  const version = useLedgerStore((s) => s.version);
   const openRuleSheet = useUiStore((s) => s.openRuleSheet);
-  const [fetchedRules, setFetchedRules] = useState<Rule[] | null>(null);
-  const [fetchedProjection, setFetchedProjection] = useState<Projection | null>(null);
+
+  const { data: fetchedRules = null } = useQuery({
+    queryKey: keys.rules(),
+    queryFn: ({ signal }) => listRules(undefined, signal),
+    enabled: givenRules === undefined,
+    staleTime: STALE.derived,
+  });
+  const { data: fetchedProjection = null } = useQuery({
+    queryKey: keys.projection(12),
+    queryFn: ({ signal }) => getProjection(12, signal),
+    enabled: givenProjection === undefined,
+    staleTime: STALE.derived,
+  });
   const rules = givenRules ?? fetchedRules;
   const projection = givenProjection ?? fetchedProjection;
-
-  useEffect(() => {
-    if (givenRules !== undefined && givenProjection !== undefined) return;
-    const controller = new AbortController();
-    Promise.all([listRules(undefined, controller.signal), getProjection(12, controller.signal)])
-      .then(([found, ahead]) => {
-        setFetchedRules(found);
-        setFetchedProjection(ahead);
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [givenRules, givenProjection, account.id, version]);
 
   const payments = (rules ?? []).filter((r) => r.type === 'transfer' && r.counter_account_id === account.id && !r.closed_on);
   // Signed: an account in credit must still add up, which credit.owed - it stops at zero - could not.

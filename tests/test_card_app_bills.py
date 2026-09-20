@@ -161,16 +161,24 @@ def test_a_subscription_on_the_card_counts_only_as_far_as_the_typed_bills(sessio
     assert all(b.from_plans in (Decimal("0.00"), Decimal("549.00")) for b in credit.bills)
 
 
-def test_months_ahead_takes_each_later_bill_the_day_after_the_one_before_is_due(session, owner):
-    """ACC-35 in the projection: cash on hand holds the October bill; November's enters on 16 Oct, and so on."""
+def test_months_ahead_takes_each_later_bill_in_the_month_it_is_due(session, owner):
+    """
+    ACC-35 in the projection: cash on hand holds the October bill; each later one
+    is taken on its own due date (changed 2026-09-19, user: November's bill showed
+    in October, when it was taken the day after the bill before it).
+    """
     setup(session, owner)
     months = projection_service.project(session, owner, today=TODAY, months=6).months  # no budget: calendar months
     assert [m.bills for m in months] == [
-        Decimal("0.00"), Decimal("4120.80"), Decimal("2384.78"), Decimal("1641.90"), Decimal("0.00"), Decimal("0.00")]
+        Decimal("0.00"), Decimal("0.00"), Decimal("4120.80"), Decimal("2384.78"), Decimal("1641.90"), Decimal("0.00")]
     assert months[0].opening == Decimal("12245.51")
     assert months[-1].closing == Decimal("4098.03")  # 20,000 - every bill: 15,901.97
-    november = next(i for i in months[1].items if i.kind == "bill")
-    assert (november.on, november.amount) == (date(2026, 10, 16), Decimal("4120.80"))
+    november = next(i for i in months[2].items if i.kind == "bill")
+    assert (november.on, november.amount) == (date(2026, 11, 15), Decimal("4120.80"))
+    # What Home will hold back at each month's end for a bill not taken yet: the
+    # October bill is in today's cash on hand already, so September holds nothing more.
+    assert [m.bills_held for m in months] == [
+        Decimal("0.00"), Decimal("4120.80"), Decimal("2384.78"), Decimal("1641.90"), Decimal("0.00"), Decimal("0.00")]
 
 
 def test_months_ahead_counts_a_plan_on_a_billed_card_once(session, owner):
@@ -263,9 +271,9 @@ def test_months_ahead_lists_the_bill_cash_on_hand_already_holds(session, owner):
     shown = [i for i in october.items if i.kind == "bill_now"]
     assert [(i.on, i.amount, i.effect) for i in shown] == [(date(2026, 10, 15), Decimal("7754.49"), Decimal("0.00"))]
     assert october.bills_set_aside == Decimal("7754.49")
-    # Not taken again: October still takes only November's bill (entering 16 Oct),
-    # and every figure is what it was before the bill was listed.
-    assert october.bills == Decimal("4120.80")
+    # Not taken again, and November's bill waits for November (2026-09-19); every
+    # figure is what it was before the bill was listed.
+    assert october.bills == Decimal("0.00")
     assert months[0].opening == Decimal("12245.51")  # 20,000 less the bill due now
     assert months[-1].closing == Decimal("4098.03")  # 20,000 less every bill, once
 
@@ -381,3 +389,94 @@ def test_a_plan_the_cards_app_already_counted_is_not_added_again(session, owner)
         "kind": "installment", "type": "expense", "name": "Phone", "account_id": card.id, "category_id": food.id,
         "frequency": "monthly", "start": "2026-10-15", "price": "300.00", "payments": 3}, today=TODAY)
     assert bills_of(session, owner)[date(2026, 10, 15)].from_plans == Decimal("100.00")
+
+
+# ------------------------------------------------------------------ what the bills hold, and what they do not (2026-09-19)
+
+
+def test_what_the_card_owes_beyond_its_bills_is_shown(session, owner):
+    """
+    Reported 2026-09-19: the Bills section did not add up to what the card owes.
+    The balance is 16,149.23 and the typed bills 15,901.97 - 247.26 is on no bill.
+    """
+    _, card = setup(session, owner)
+    credit = views(session, owner, TODAY)[1]["Spaylater"].credit
+    assert credit.not_on_bill == Decimal("247.26")
+    assert credit.bills_left + credit.not_on_bill - credit.bills_not_charged == credit.owed_with_plans
+
+    # A plan and a subscription on the card move the bills, not what is missing from them.
+    gadgets = category_service.create_category(session, owner, {"name": "Gadgets"})
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "type": "expense", "name": "Phone", "account_id": card.id, "category_id": gadgets.id,
+        "frequency": "monthly", "start": "2026-10-05", "price": "12000.00", "payments": 6}, today=TODAY)
+    recurring_service.create_rule(session, owner, {
+        "kind": "subscription", "type": "expense", "name": "Netflix", "account_id": card.id, "category_id": gadgets.id,
+        "frequency": "monthly", "start": "2026-09-20", "amount": "549.00", "reminder_days": 3}, today=TODAY)
+    credit = views(session, owner, TODAY)[1]["Spaylater"].credit
+    assert credit.bills_not_charged > Decimal("0.00")  # Netflix: on the bills, not charged yet
+    assert credit.not_on_bill == Decimal("247.26")
+
+
+def test_a_card_without_bills_has_no_figure_for_it(session, owner):
+    billed_card(session, owner, bills=False)
+    assert views(session, owner, TODAY)[1]["Maribank"].credit.not_on_bill is None
+
+
+def test_a_payment_made_before_the_list_was_typed_that_day_is_not_applied_again(session, owner):
+    """Found 2026-09-19: a payment on the day of the list already took its bill off the card app's Unpaid tab."""
+    card, _ = billed_card(session, owner, bills=False)
+    wallet = account_service.create_account(session, owner, {"name": "GCash", "type": "debit", "opening_balance": "9000.00"})
+    pay(session, owner, wallet, card, "500.00", TODAY)
+    account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "3000.00"}], today=TODAY)
+    assert bills_of(session, owner)[date(2026, 10, 15)].left == Decimal("3000.00")
+    pay(session, owner, wallet, card, "200.00", TODAY)  # made after the list was typed: it does count
+    assert bills_of(session, owner)[date(2026, 10, 15)].left == Decimal("2800.00")
+
+
+def test_a_bill_lists_what_it_is_made_of(session, owner):
+    """Asked 2026-09-19: tap a bill to see the installments and purchases it holds, and what paid it."""
+    card, food = billed_card(session, owner, bills=False)
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "type": "expense", "name": "Aerox", "account_id": card.id, "category_id": food.id,
+        "frequency": "monthly", "start": "2026-10-15", "price": "46.00", "payments": 3}, today=TODAY)
+    account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "3000.00"},
+                                                        {"due": "2026-11-15", "amount": "1000.00"}], today=TODAY)
+    recurring_service.create_rule(session, owner, {
+        "kind": "installment", "type": "expense", "name": "Hoodie", "account_id": card.id, "category_id": food.id,
+        "frequency": "monthly", "start": "2026-10-15", "price": "969.00", "payments": 3}, today=TODAY)
+    buy(session, owner, card, food, "282.00", TODAY, merchant="Shopee")
+    wallet = account_service.create_account(session, owner, {"name": "GCash", "type": "debit", "opening_balance": "9000.00"})
+    pay(session, owner, wallet, card, "3500.00", date(2026, 9, 16))
+
+    october = bills_of(session, owner, date(2026, 9, 16))[date(2026, 10, 15)]
+    lines = [(line.kind, line.name, line.amount) for line in october.lines]
+    assert lines == [
+        ("typed", None, Decimal("3000.00")),
+        ("purchase", "Shopee", Decimal("282.00")),
+        ("plan", "Hoodie", Decimal("323.00")),
+        ("inside_typed", "Aerox", Decimal("15.33")),  # already in the 3,000 - shown, not added
+        ("payment", "Payment", Decimal("3500.00")),
+    ]
+    adds = sum((line.amount for line in october.lines if line.kind in ("typed", "purchase", "plan")), Decimal("0"))
+    assert adds == october.amount
+    assert sum((line.amount for line in october.lines if line.kind == "payment"), Decimal("0")) == october.paid
+    assert next(line for line in october.lines if line.kind == "purchase").transaction_id is not None
+    assert next(line for line in october.lines if line.kind == "plan").rule_id is not None
+
+
+def test_a_payment_split_across_two_bills_shows_on_both(session, owner):
+    wallet, card = setup(session, owner)
+    pay(session, owner, wallet, card, "8000.00", date(2026, 9, 20))
+    bills = views(session, owner, date(2026, 9, 21))[1]["Spaylater"].credit.bills
+    paid = [[line.amount for line in b.lines if line.kind == "payment"] for b in bills[:2]]
+    assert paid == [[Decimal("7754.49")], [Decimal("245.51")]]
+
+
+def test_the_card_look_ahead_shows_the_typed_bills(session, owner):
+    """D8 (2026-09-19): a card with bills shows those bills on Months ahead, not a statement-cycle guess."""
+    setup(session, owner)
+    card = next(c for c in projection_service.cards(session, owner, today=TODAY) if c.name == "Spaylater")
+    assert card.statements == []
+    assert [(b.due, b.left) for b in card.bills] == [
+        (date(2026, 10, 15), Decimal("7754.49")), (date(2026, 11, 15), Decimal("4120.80")),
+        (date(2026, 12, 15), Decimal("2384.78")), (date(2027, 1, 15), Decimal("1641.90"))]
