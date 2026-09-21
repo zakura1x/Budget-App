@@ -291,7 +291,16 @@ out, read from `GET /transactions?account=` and signed per account by
 investment, lent, borrowed and member (ACC-31/32); `subtype` (ACC-33) is a
 label from the Add Account list (`ACCOUNT_KINDS` in `lib/accounts.ts`) and
 must never drive a rule. `isOwed()` - credit and borrowed - is the one
-frontend test for "show this balance as owed". `highlight` (yellow) marks where you are -
+frontend test for "show this balance as owed". A loan's transfer may come from
+CASH THE USER DOES NOT TRACK (ACC-39, 2026-09-20): one `hidden` account,
+get-or-created by `account_service.untracked_cash()` and by nothing else, kept
+out of every list by `visible()` in `lib/accounts.ts` (filtered once, in
+`useLookups` - `accountById` still holds it so a row can name it) and out of
+cash on hand and net worth whatever its switches say. It is never a chip: on a
+lent/borrowed transfer the side the page does not know starts BLANK instead of
+guessing the last-used account, and BLANK MEANS THE WALLET - the draft carries
+`UNTRACKED_ID` and `save()` resolves it. Only the side opposite a lent or
+borrowed account may be left empty. `highlight` (yellow) marks where you are -
 today, a chosen period - and never an amount, so it cannot read as `warn`.
 Colours also live outside theme.css in three places: the theme-color metas
 (both index.html files - the classic ground), the manifest in

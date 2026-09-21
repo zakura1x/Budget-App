@@ -117,6 +117,42 @@ export const TagIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** TXN-04 - the add sheet's "Add note". A pencil. */
+export const NoteIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20.5h3.9l10.4-10.4a2.75 2.75 0 0 0-3.9-3.9L4 16.6v3.9Z" />
+    <path d="M13.6 7.1l3.9 3.9" />
+  </Icon>
+);
+
+/** TXN-16 - "Split": one amount forking into two. */
+export const SplitIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.5 12h4l3.5-5h6" />
+    <path d="M11 17h6" />
+    <path d="M14.5 4.5 17.5 7l-3 2.5" />
+    <path d="M14.5 14.5 17.5 17l-3 2.5" />
+  </Icon>
+);
+
+/** REC-34 - "Installments": a price cut into monthly parts. */
+export const InstallmentsIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+    <path d="M3.5 10h17" />
+    <path d="M7 14h3M13.5 14h3.5" strokeWidth={2.25} />
+  </Icon>
+);
+
+/** TXN-22 - "Cashback": money coming back. */
+export const CashbackIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M9 15.5 15 8.5" />
+    <path d="M9.5 9.5h.01M14.5 14.5h.01" strokeWidth={2.75} />
+  </Icon>
+);
+
 export const RepeatIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M17 3.5 20.5 7 17 10.5" />

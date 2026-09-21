@@ -175,7 +175,31 @@ export interface Account {
   set_aside: string;
   /** Balance less set_aside - what cash on hand counts - or null when nothing is set aside. */
   available: string | null;
+  /**
+   * ACC-39 - untracked cash, the wallet. The app owns this one account: it is
+   * never listed, never picked and never counted. `visible()` takes it out of
+   * every list; only a loan's From / To row offers it, by name.
+   */
+  hidden: boolean;
 }
+
+/**
+ * ACC-39. Every account a list, a picker or a total may show - the wallet is
+ * not one of them. `accountById` (useLookups) deliberately still holds it, so
+ * a transaction row that points at it can still show a name.
+ */
+export const visible = (accounts: Account[]) => accounts.filter((a) => !a.hidden);
+
+/** ACC-39. The wallet, if it has been made yet. */
+export const untracked = (accounts: Account[]) => accounts.find((a) => a.hidden) ?? null;
+
+/**
+ * ACC-39. What a From or To chip holds until the wallet exists: the sheet
+ * resolves it to a real id on save, so nothing creates an account by a tap
+ * that is never saved. Negative, like a pending row's id, so it can never
+ * collide with an account's.
+ */
+export const UNTRACKED_ID = -1;
 
 /** ACC-38 - a suggestion for the add sheet, never a total in its own right. */
 export interface CashbackRule {
@@ -381,6 +405,13 @@ const today = () => `today=${localToday()}`;
 export const listAccounts = (signal?: AbortSignal) => api<AccountList>(`/accounts?${today()}`, { signal });
 
 export const createAccount = (body: AccountDraft) => api<Account>(`/accounts?${today()}`, { method: 'POST', body });
+
+/**
+ * ACC-39. The hidden wallet account, made on the server the first time it is
+ * needed and returned every time after that. Called only when a loan is saved
+ * "from my wallet", never on a tap.
+ */
+export const untrackedCash = () => api<Account>(`/accounts/untracked?${today()}`, { method: 'POST' });
 
 export const updateAccount = (id: number, body: AccountDraft) =>
   api<Account>(`/accounts/${id}?${today()}`, { method: 'PATCH', body });

@@ -155,7 +155,7 @@ This project adds one rule of its own, and it is absolute:
 |---|---|
 | *(no service)* | Key handling lives in `app/core/crypto/`. Its façade is `UserCipher`: repositories are handed one, services pass it along, and neither ever holds a key |
 | `auth_service/` | Login, JWT issue/refresh, lockout, PIN, password rules |
-| `account_service` | Cash, debit, credit, savings, investment, lent, borrowed and member accounts (with a `subtype` label); balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit; bills typed from a card's own app and what is due now (ACC-35); cash on hand and net worth (ACC-36); the interest terms an account earns on (ACC-37) and the cashback it usually pays (ACC-38) |
+| `account_service` | Cash, debit, credit, savings, investment, lent, borrowed and member accounts (with a `subtype` label), plus the one hidden untracked-cash account (ACC-39); balances; credit statement cycles, the bill left to pay, available credit and your own per-cycle spending limit; bills typed from a card's own app and what is due now (ACC-35); cash on hand and net worth (ACC-36); the interest terms an account earns on (ACC-37) and the cashback it usually pays (ACC-38) |
 | `installment_conversion` | REC-34: a purchase on a card or loan turned into an installment plan and back. The purchase is hidden and linked both ways, so nothing counts twice; the plan is an ordinary recurring rule. Imports `recurring_service` and `transaction_service`; only its endpoints import it |
 | `interest_service` | ACC-37: the daily savings interest a bank pays, credited day by day as ordinary income. A catch-up, like the recurring engine (§4.6); the arithmetic itself is pure, in `app/core/utils/interest.py`, and shared with the projection. Imports `transaction_service`; nothing imports it |
 | `statement_service` | Checks a card statement against the bank's total and applies what you say the difference was (§4.4). Writes only through `transaction_service` and `recurring_service`; nothing imports it |
@@ -361,6 +361,21 @@ first bill due on or after that day; anything else is a purchase and takes the
 statement route, falling due the month after (fixed 2026-09-16).
 `projection_service._lands_on_bill` asks the question exactly the same way, or
 a payment would be counted both inside a bill and on its own day.
+
+**Cash the user does not track has one hidden account** (ACC-39, added
+2026-09-20). Money lent out of a wallet that was never an account still needs
+two ends, because a transfer is two legs (§4.2) and a one-legged posting would
+have to be an adjustment - which Stats would read as income (§4.8). So
+`account_service.untracked_cash()` get-or-creates a single account with
+`hidden` set: out of every list and picker (the client filters it once, in
+`useLookups`), out of cash on hand and out of net worth, whatever its own
+switches say. It only ever holds transfer legs, so Stats never sees it either.
+`hidden` is not part of `AccountIn` - only that function writes it - and
+`_clean` carries it through an edit. The client never offers it as a chip: on a
+loan's transfer, an EMPTY side means the wallet (`fromIsWallet` / `toIsWallet`
+in TransactionSheet), the draft leaves with a sentinel id, and `save` turns
+that into the real account - creating it on the server if this is the first
+one. Every other transfer must still name both ends.
 
 **Net worth sits beside it, never instead of it** (ACC-36, added 2026-09-15 at
 the user's request): every active account with its own

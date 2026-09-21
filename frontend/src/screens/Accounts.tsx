@@ -25,7 +25,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { isOwed, listAccounts, owedWithPlans, type Account, type AccountType } from '../lib/accounts';
+import { isOwed, listAccounts, owedWithPlans, visible, type Account, type AccountType } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
 import { listGoals, type Goal } from '../lib/security';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
@@ -156,8 +156,11 @@ export function Accounts() {
       return next;
     });
 
-  const active = data?.accounts.filter((a) => !a.archived) ?? [];
-  const archived = data?.accounts.filter((a) => a.archived) ?? [];
+  // ACC-39. The wallet is not an account you keep - it never appears here, in
+  // either list, and its balance is in no total on this screen.
+  const shown = data ? visible(data.accounts) : [];
+  const active = shown.filter((a) => !a.archived);
+  const archived = shown.filter((a) => a.archived);
   const counted = active.filter((a) => data?.cash_on_hand.account_ids.includes(a.id));
   // The halves are summed from what each account adds to cash on hand - for a card with bills, only
   // what is due now (ACC-35) - so they always add up to the server's total.

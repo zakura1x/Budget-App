@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "file": "assets/index-BpQFGIi8.js",
+    "file": "assets/index-D-D_V3DK.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -14,7 +14,7 @@
       "src/screens/Stats.tsx"
     ],
     "css": [
-      "assets/index-D8Hg2FvO.css"
+      "assets/index-AbHtKcgX.css"
     ],
     "assets": [
       "assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
@@ -22,7 +22,7 @@
     ]
   },
   "src/screens/AboutEncryption.tsx": {
-    "file": "assets/AboutEncryption-DiRxGp8j.js",
+    "file": "assets/AboutEncryption-xDjBOWgO.js",
     "name": "AboutEncryption",
     "src": "src/screens/AboutEncryption.tsx",
     "isDynamicEntry": true,
@@ -31,7 +31,7 @@
     ]
   },
   "src/screens/Admin.tsx": {
-    "file": "assets/Admin-DNGxw9ll.js",
+    "file": "assets/Admin-IMNYOi4f.js",
     "name": "Admin",
     "src": "src/screens/Admin.tsx",
     "isDynamicEntry": true,
@@ -40,7 +40,7 @@
     ]
   },
   "src/screens/Backup.tsx": {
-    "file": "assets/Backup-CDvP2ulQ.js",
+    "file": "assets/Backup-CeONu8D3.js",
     "name": "Backup",
     "src": "src/screens/Backup.tsx",
     "isDynamicEntry": true,
@@ -49,7 +49,7 @@
     ]
   },
   "src/screens/Goals.tsx": {
-    "file": "assets/Goals-OjdMDHn2.js",
+    "file": "assets/Goals-BkH5zar0.js",
     "name": "Goals",
     "src": "src/screens/Goals.tsx",
     "isDynamicEntry": true,
@@ -58,7 +58,7 @@
     ]
   },
   "src/screens/Projection.tsx": {
-    "file": "assets/Projection-DmFT-1az.js",
+    "file": "assets/Projection-4q7mW093.js",
     "name": "Projection",
     "src": "src/screens/Projection.tsx",
     "isDynamicEntry": true,
@@ -67,7 +67,7 @@
     ]
   },
   "src/screens/Recurring.tsx": {
-    "file": "assets/Recurring-LTnGiQjs.js",
+    "file": "assets/Recurring-D0ToqhtT.js",
     "name": "Recurring",
     "src": "src/screens/Recurring.tsx",
     "isDynamicEntry": true,
@@ -76,7 +76,7 @@
     ]
   },
   "src/screens/Stats.tsx": {
-    "file": "assets/Stats-5AuYs9Lo.js",
+    "file": "assets/Stats-B2GpPdqZ.js",
     "name": "Stats",
     "src": "src/screens/Stats.tsx",
     "isDynamicEntry": true,

@@ -30,7 +30,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
-import { type Account } from '../lib/accounts';
+import { untracked, untrackedCash, visible, UNTRACKED_ID, type Account } from '../lib/accounts';
 import { flatten, type Category } from '../lib/categories';
 import { ensureAccounts, ensureCategories, ensureTags } from '../lib/prefetch';
 import {
@@ -57,6 +57,7 @@ import { type Tag } from '../lib/tags';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore, type RuleSheetRequest } from '../stores/uiStore';
 import { EMPTY_CHOICE, InstallmentFields, termsOf, type InstallmentChoice } from './InstallmentFields';
+import { CashbackIcon, CloseIcon, InstallmentsIcon, NoteIcon, SplitIcon, TagIcon } from './Icons';
 import { ReceiptControl } from './ReceiptControl';
 import { DEFAULT_COLOUR, GlyphTile, PALETTE } from './StylePicker';
 import { Button } from './ui/Button';
@@ -82,6 +83,56 @@ function cents(typed: string): number {
 /** The typed form of a stored amount: "150.00" -> "150", "12.50" -> "12.50". */
 function typedFrom(amount: string): string {
   return amount.endsWith('.00') ? amount.slice(0, -3) : amount;
+}
+
+/**
+ * One of the sheet's optional extras - Add note, Tags, Split, Installments,
+ * Cashback, Repeat last entry.
+ *
+ * They used to be coloured TEXT, and read as labels rather than as things you
+ * could tap (user, 2026-09-20: "the add note, split, cashback does not feel
+ * like a button - it's like a text in the design"). Every one is now an
+ * outlined tile on a hard offset shadow that sinks when pressed - the same
+ * neo-brutalist control as every other button in the app (`press`).
+ */
+function SheetAction({
+  label,
+  icon,
+  onClick,
+  children,
+  tone = 'accent',
+}: {
+  /** What it does, for the screen reader and the long-press tooltip - the icon carries it visually. */
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  /** Text worth keeping beside the icon - the cashback figure, the two wordy actions. */
+  children?: React.ReactNode;
+  /**
+   * `quiet` is the way OUT of something you opened - close the note, clear the
+   * tags, stop splitting, remove the cashback. It is the same tile, so it can
+   * be seen and hit (user, 2026-09-20: "the buttons of close or remove of that
+   * data is not much visible" - they were bare grey words); only the ink is
+   * calmer, so a cancel never competes with the action beside it.
+   */
+  tone?: 'accent' | 'quiet';
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={[
+        'press flex h-tap shrink-0 items-center justify-center gap-1.5 rounded-xl bg-surface',
+        tone === 'quiet' ? 'text-ink-2' : 'text-accent-ink',
+        children ? 'px-3 text-footnote font-bold' : 'w-tap',
+      ].join(' ')}
+    >
+      {icon}
+      {children}
+    </button>
+  );
 }
 
 function Chip({
@@ -189,6 +240,8 @@ export function TransactionSheet() {
   const [splitting, setSplitting] = useState(false);
   const [lines, setLines] = useState<SplitLine[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  /** ACC-39. The wallet, if it has been made; null until the first loan is saved from it. */
+  const [wallet, setWallet] = useState<Account | null>(null);
   const [tree, setTree] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagIds, setTagIds] = useState<number[]>([]);
@@ -221,8 +274,21 @@ export function TransactionSheet() {
     Promise.all([ensureAccounts(), ensureCategories(), ensureTags()])
       .then(([accountList, categories, tagList]) => {
         if (cancelled) return;
-        const active = accountList.accounts.filter((a) => !a.archived || a.id === editing?.account_id);
+        // ACC-39. The wallet is not one of the accounts this sheet offers ANYWHERE
+        // - not a chip, not a cashback destination, not a rule's payer. It is
+        // reached only by leaving a loan's side blank.
+        const active = visible(accountList.accounts).filter((a) => !a.archived || a.id === editing?.account_id);
         setAccounts(active);
+        const theWallet = untracked(accountList.accounts);
+        setWallet(theWallet);
+        if (editing && theWallet) {
+          // ACC-39. A leg already on the wallet reads back as BLANK, because
+          // that is how it was typed: the row shows nothing picked and the line
+          // under it says why. Saving sends it straight back to the wallet.
+          const blank = (id: number | null) => (id === theWallet.id ? null : id);
+          setAccountId(blank);
+          setCounterId(blank);
+        }
         setTree(categories);
         setTags(tagList);
         if (!editing) {
@@ -230,11 +296,21 @@ export function TransactionSheet() {
           // forgot" on a card); otherwise the account you used last is the one.
           const preset = addPreset?.accountId;
           const into = active.some((a) => a.id === addPreset?.counterAccountId) ? addPreset?.counterAccountId : undefined;
+          // ACC-31/39. Lend more, Paid back, Borrow more, Pay back: the side the
+          // page knows is filled and the OTHER side starts BLANK (user,
+          // 2026-09-20 - "much better to be default than picking the last-used").
+          // A guessed account here is a withdrawal from an account you never
+          // chose, and the money for a loan often comes from cash instead.
+          const lending = [preset, into].some((id) => {
+            const type = active.find((a) => a.id === id)?.type;
+            return type === 'lent' || type === 'borrowed';
+          });
           const recent = ledger.items.find((row) => row.id > 0)?.account_id;
           const chosen = [preset, recent].find((id) => id !== undefined && id !== into && active.some((a) => a.id === id));
-          const from = chosen ?? active.find((a) => a.id !== into)?.id ?? null;
+          const known = active.some((a) => a.id === preset) ? preset ?? null : null;
+          const from = lending ? known : chosen ?? active.find((a) => a.id !== into)?.id ?? null;
           setAccountId(from);
-          setCounterId(into ?? active.find((a) => a.id !== from)?.id ?? null);
+          setCounterId(into ?? (lending ? null : active.find((a) => a.id !== from)?.id ?? null));
         }
       })
       .catch((e: Error) => !cancelled && setError(e.message));
@@ -338,15 +414,38 @@ export function TransactionSheet() {
     () => flatten(tree).filter((c) => c.kind === 'income' && !c.archived),
     [tree],
   );
+  /**
+   * TXN-22. Where money back lands, without asking: the account's own rule
+   * (ACC-38) if it has one, else the income category that is plainly for this -
+   * Cashback, Rebates, Refunds. The ACCOUNT is not asked either: the server
+   * files it on the account the purchase was made on, which is what a card
+   * actually does. Both are only defaults - the credit is an ordinary income
+   * row, so moving it afterwards is an ordinary edit.
+   *
+   * The picker comes back only when there is nothing sensible to guess, because
+   * then a silent answer would file the money under something like Salary.
+   */
+  const cashbackHome = useMemo(
+    () => incomeCategories.find((c) => /cashback|rebate|refund/i.test(c.name)) ?? null,
+    [incomeCategories],
+  );
   const suggestion = cashbackRule && amountCents > 0 ? percentOf(amount, cashbackRule.rate) : null;
+
+  const cashbackCategoryName =
+    incomeCategories.find((c) => c.id === cashbackCategory)?.name ?? null;
 
   const openCashback = () => {
     setShowCashback(true);
     if (cashback.trim()) return;
-    const guess = incomeCategories.find((c) => /cashback|rebate|refund/i.test(c.name)) ?? incomeCategories[0];
-    setCashbackCategory(cashbackRule?.category_id ?? guess?.id ?? null);
+    setCashbackCategory(cashbackRule?.category_id ?? cashbackHome?.id ?? null);
     setCashbackRate(cashbackRule?.rate ?? null);
     if (suggestion && suggestion !== '0.00') setCashback(typedFrom(suggestion));
+  };
+
+  /** ACC-31. A lent or borrowed account - the two transfers that may come from, or go to, untracked cash. */
+  const isLoan = (id: number | null) => {
+    const type = accounts.find((a) => a.id === id)?.type;
+    return type === 'lent' || type === 'borrowed';
   };
 
   const startSplit = () => {
@@ -357,12 +456,26 @@ export function TransactionSheet() {
     ]);
   };
 
+  /**
+   * ACC-39. On a loan's transfer, LEAVING A SIDE BLANK means the wallet -
+   * cash the user does not track (user, 2026-09-20: "if the user did not pick
+   * anything from the From options, it will automatically recognize that it
+   * comes from My wallet"). Lending out of a pocket is the normal case and
+   * naming an account is the exception, so the normal case costs no taps.
+   *
+   * Only the side OPPOSITE a lent or borrowed account may be blank: everywhere
+   * else the money really did leave, or land in, an account you track, and a
+   * forgotten chip would be a real mistake rather than an answer.
+   */
+  const fromIsWallet = kind === 'transfer' && accountId === null && isLoan(counterId);
+  const toIsWallet = kind === 'transfer' && counterId === null && isLoan(accountId);
+
   const problem = (() => {
     if (amountCents <= 0) return 'Type an amount';
-    if (accountId === null) return 'Choose an account';
+    if (accountId === null && !fromIsWallet) return 'Choose an account';
     if (kind === 'transfer') {
-      if (counterId === null) return 'Choose where the money goes';
-      if (counterId === accountId) return 'Pick two different accounts';
+      if (counterId === null && !toIsWallet) return 'Choose where the money goes';
+      if (counterId !== null && counterId === accountId) return 'Pick two different accounts';
       return null;
     }
     if (splitting) {
@@ -371,6 +484,8 @@ export function TransactionSheet() {
       return null;
     }
     if (categoryId === null) return 'Choose a category';
+    // TXN-22. Only reachable when nothing could be guessed and the picker showed.
+    if (showCashback && cents(cashback) > 0 && cashbackCategory === null) return 'Choose where the cashback lands';
     return null;
   })();
   // REC-34. Only a purchase on a card or a loan can be spread - and not one that is already a plan's payment.
@@ -382,8 +497,12 @@ export function TransactionSheet() {
     && (!spreading || planReady);
 
   const draft = (): TransactionDraft => {
-    const base = { type: kind, amount, account_id: accountId as number, txn_date: txnDate, notes: note.trim() || null };
-    if (kind === 'transfer') return { ...base, counter_account_id: counterId as number };
+    // ACC-39. A blank side leaves as the wallet's sentinel; `save` turns it into
+    // the real hidden account, making it on the server if this is the first one.
+    const from = accountId ?? (fromIsWallet ? UNTRACKED_ID : null);
+    const to = counterId ?? (toIsWallet ? UNTRACKED_ID : null);
+    const base = { type: kind, amount, account_id: from as number, txn_date: txnDate, notes: note.trim() || null };
+    if (kind === 'transfer') return { ...base, counter_account_id: to as number };
     // Only ids that still exist - a tag deleted while the sheet was open would be refused.
     const tagged = { ...base, tag_ids: tagIds.filter((id) => tags.some((t) => t.id === id)) };
     const withCashback = {
@@ -418,7 +537,30 @@ export function TransactionSheet() {
 
   const save = async () => {
     if (!canSave) return;
-    const body = draft();
+    let body = draft();
+
+    // ACC-39. The wallet is made on the server the FIRST time a loan is saved
+    // from it - never by tapping the chip, so a sheet that is cancelled leaves
+    // no account behind. Before the optimistic row, so the ledger never holds
+    // an id the server does not know.
+    if (body.account_id === UNTRACKED_ID || body.counter_account_id === UNTRACKED_ID) {
+      setBusy(true);
+      setError(null);
+      try {
+        const made = await untrackedCash();
+        setWallet(made);
+        body = {
+          ...body,
+          account_id: body.account_id === UNTRACKED_ID ? made.id : body.account_id,
+          ...(body.counter_account_id === UNTRACKED_ID ? { counter_account_id: made.id } : {}),
+        };
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+    }
 
     if (spreading) {
       // REC-34. Not optimistic: the purchase becomes a plan, and the server decides what posts.
@@ -560,6 +702,34 @@ export function TransactionSheet() {
         </Chip>
       ));
 
+  /**
+   * TXN-01. The screen that opened the sheet often already named the account -
+   * the + on SeaBank's own page - and then a row of every account you own is
+   * noise below the categories (user, 2026-09-20: "it should already know
+   * which account it was being used; I think it is redundant").
+   *
+   * So it is stated, not asked: one line saying which account this lands on,
+   * with Change to bring the row back. A transfer is untouched (its two rows
+   * ARE the entry), and an edit always shows the row, because there the
+   * account is part of what you came to change.
+   */
+  /**
+   * TXN-01 / ACC-31. The side the screen that opened the sheet already named -
+   * hidden, not asked. Paid back and Borrow more know the FROM (this account);
+   * Lend more and Pay back know the TO. Showing a picker for the account whose
+   * page you are standing on is a row you read past (user, 2026-09-20).
+   *
+   * Only while it still holds what that screen set: change it and the row
+   * comes back, because then it is a choice again.
+   */
+  const knownAccount =
+    !editing && addPreset?.accountId != null && accountId === addPreset.accountId
+      ? accounts.find((a) => a.id === accountId)
+      : undefined;
+  const knownCounter =
+    !editing && addPreset?.counterAccountId != null && counterId === addPreset.counterAccountId
+      ? accounts.find((a) => a.id === counterId)
+      : undefined;
   return (
     <Sheet open={open} onClose={close} title={editing ? 'Edit transaction' : repeating ? 'Something that repeats' : 'New transaction'}>
       <div className="space-y-3">
@@ -605,27 +775,59 @@ export function TransactionSheet() {
 
         {canRepeat && (
           <div className="flex justify-center">
-            <button
-              type="button"
+            <SheetAction
+              label="Repeat last entry"
+              icon={<span aria-hidden="true" className="text-body leading-none">↻</span>}
               onClick={() => void repeat()}
-              disabled={busy}
-              className="min-h-tap rounded-xl px-3 text-footnote font-semibold text-accent-ink active:bg-accent/10"
             >
-              ↻ Repeat last entry
-            </button>
+              Repeat last entry
+            </SheetAction>
           </div>
         )}
 
         {kind === 'transfer' ? (
           <div className="space-y-2">
-            <p className="text-footnote font-semibold text-ink-2">From</p>
-            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
-              {accountChips(accountId, setAccountId)}
-            </div>
-            <p className="text-footnote font-semibold text-ink-2">To</p>
-            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
-              {accountChips(counterId, setCounterId, accountId)}
-            </div>
+            {!knownAccount && (
+              <>
+                <p className="text-footnote font-semibold text-ink-2">From</p>
+                <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
+                  {/* ACC-39. Tapping the chosen account again clears it - the way a
+                      sub-category chip works - so an answer given by mistake can go
+                      back to blank, which is the wallet. */}
+                  {accountChips(
+                    accountId,
+                    (id) => setAccountId(accountId === id && isLoan(counterId) ? null : id),
+                    counterId,
+                  )}
+                </div>
+              </>
+            )}
+            {/* ACC-39. The blank answer, spelled out where it is being given -
+                never a surprise, and one tap on a chip takes it back. */}
+            {fromIsWallet && (
+              <p className="text-footnote text-ink-3">
+                Nothing picked, so it comes from <span className="font-semibold text-ink-2">
+                {wallet?.name ?? 'my wallet'}</span> — cash you don’t track. Only the loan moves.
+              </p>
+            )}
+            {!knownCounter && (
+              <>
+                <p className="text-footnote font-semibold text-ink-2">To</p>
+                <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
+                  {accountChips(
+                    counterId,
+                    (id) => setCounterId(counterId === id && isLoan(accountId) ? null : id),
+                    accountId,
+                  )}
+                </div>
+              </>
+            )}
+            {toIsWallet && (
+              <p className="text-footnote text-ink-3">
+                Nothing picked, so it goes back into <span className="font-semibold text-ink-2">
+                {wallet?.name ?? 'my wallet'}</span> — cash you don’t track. Only the loan moves.
+              </p>
+            )}
           </div>
         ) : (
           <>
@@ -662,9 +864,15 @@ export function TransactionSheet() {
                 )}
               </>
             )}
-            <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1" role="group" aria-label="Account">
-              {accountChips(accountId, setAccountId)}
-            </div>
+            {/* TXN-01. Nothing at all when the screen that opened the sheet named
+                the account (user, 2026-09-20): the + on SeaBank's page is for
+                SeaBank, and saying so again is a row you read past. The [+] in
+                the tab bar is the way in when you want to choose. */}
+            {!knownAccount && (
+              <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1" role="group" aria-label="Account">
+                {accountChips(accountId, setAccountId)}
+              </div>
+            )}
             {limitHint && (
               <p aria-live="polite" className={`num text-footnote font-medium ${limitHint.tone}`}>
                 {limitHint.text}
@@ -682,41 +890,28 @@ export function TransactionSheet() {
             className="min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-footnote font-medium text-ink"
           />
           {!showNote && (
-            <button type="button" onClick={() => setShowNote(true)}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
-              Add note
-            </button>
+            <SheetAction label="Add note" icon={<NoteIcon size={20} />} onClick={() => setShowNote(true)} />
           )}
           {kind !== 'transfer' && tags.length > 0 && !showTags && (
-            <button type="button" onClick={() => setShowTags(true)}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
-              Tags
-            </button>
+            <SheetAction label="Tags" icon={<TagIcon size={20} />} onClick={() => setShowTags(true)} />
           )}
           {kind !== 'transfer' && !splitting && (
-            <button type="button" onClick={startSplit}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
-              Split
-            </button>
+            <SheetAction label="Split" icon={<SplitIcon size={20} />} onClick={startSplit} />
           )}
           {spreadable && !showPlan && (
-            <button type="button" onClick={() => setShowPlan(true)}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
-              Installments
-            </button>
+            <SheetAction label="Installments" icon={<InstallmentsIcon size={20} />} onClick={() => setShowPlan(true)} />
           )}
           {kind === 'expense' && !showCashback && !spreading && incomeCategories.length > 0 && (
-            <button type="button" onClick={openCashback}
-              className="min-h-tap rounded-xl px-3 text-footnote font-medium text-accent-ink active:bg-accent/10">
-              {suggestion && suggestion !== '0.00'
-                ? `Cashback ${formatPHP(suggestion)}`
-                : 'Cashback'}
-            </button>
+            // The suggested amount is worth its width (ACC-38); the word "Cashback" is not.
+            <SheetAction label="Cashback" icon={<CashbackIcon size={20} />} onClick={openCashback}>
+              {suggestion && suggestion !== '0.00' ? formatPHP(suggestion) : undefined}
+            </SheetAction>
           )}
         </div>
 
         {kind !== 'transfer' && showTags && tags.length > 0 && (
-          <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1" role="group" aria-label="Tags">
+          <div className="flex items-center gap-2">
+          <div className="no-scrollbar -ml-5 flex flex-1 gap-2 overflow-x-auto py-1 pl-5" role="group" aria-label="Tags">
             {tags.map((t) => {
               const on = tagIds.includes(t.id);
               return (
@@ -727,6 +922,13 @@ export function TransactionSheet() {
                 </Chip>
               );
             })}
+          </div>
+          <SheetAction
+            label="Clear tags"
+            icon={<CloseIcon size={18} />}
+            tone="quiet"
+            onClick={() => { setTagIds([]); setShowTags(false); }}
+          />
           </div>
         )}
 
@@ -754,39 +956,36 @@ export function TransactionSheet() {
                 className="num min-h-11 w-28 rounded-xl bg-surface px-3 text-right text-body outline-none"
               />
               {suggestion && suggestion !== '0.00' && cents(cashback) !== cents(suggestion) && (
-                <button type="button"
+                <SheetAction
+                  label={`Use the usual ${Number(cashbackRule?.rate)}%`}
+                  icon={<CashbackIcon size={18} />}
                   onClick={() => { setCashback(typedFrom(suggestion)); setCashbackRate(cashbackRule?.rate ?? null); }}
-                  className="min-h-11 rounded-xl px-2 text-footnote font-medium text-accent-ink active:bg-accent/10">
-                  {formatPHP(suggestion)} ({Number(cashbackRule?.rate)}%)
-                </button>
+                >
+                  {formatPHP(suggestion)}
+                </SheetAction>
               )}
-              <button type="button" onClick={() => { setShowCashback(false); setCashback(''); }}
-                className="min-h-11 shrink-0 rounded-xl px-2 text-footnote text-ink-3 active:bg-accent/10">
-                Remove
-              </button>
+              <SheetAction
+                label="Remove cashback"
+                icon={<CloseIcon size={18} />}
+                tone="quiet"
+                onClick={() => { setShowCashback(false); setCashback(''); }}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={cashbackCategory ?? ''}
-                onChange={(e) => setCashbackCategory(Number(e.target.value) || null)}
-                aria-label="Cashback category"
-                className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
-              >
-                <option value="">Category…</option>
-                {incomeCategories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.parent_id ? `  ${c.name}` : c.name}</option>
-                ))}
-              </select>
-              <select
-                value={cashbackTo ?? accountId ?? ''}
-                onChange={(e) => setCashbackTo(Number(e.target.value) || null)}
-                aria-label="Cashback lands in"
-                className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+              {/* Only when nothing could be guessed - otherwise it is decided, and said below. */}
+              {!cashbackHome && !cashbackRule && (
+                <select
+                  value={cashbackCategory ?? ''}
+                  onChange={(e) => setCashbackCategory(Number(e.target.value) || null)}
+                  aria-label="Cashback category"
+                  className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
+                >
+                  <option value="">Lands in…</option>
+                  {incomeCategories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.parent_id ? `  ${c.name}` : c.name}</option>
+                  ))}
+                </select>
+              )}
               <input
                 type="date"
                 value={cashbackOn ?? txnDate}
@@ -796,21 +995,32 @@ export function TransactionSheet() {
               />
             </div>
             <p className="text-caption text-ink-3">
-              The purchase keeps its full amount — this is its own income entry, dated the day the money arrives.
+              The purchase keeps its full amount — this is its own income entry
+              {cashbackCategoryName ? ` in ${cashbackCategoryName}` : ''}, on this account, dated the day the money
+              arrives.
             </p>
           </div>
         )}
 
         {showNote && (
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            maxLength={500}
-            placeholder="Note"
-            aria-label="Note"
-            className="min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3.5 text-body outline-none focus:shadow-[var(--lift)_var(--lift)_0_0_rgb(var(--c-shadow))]"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={500}
+              placeholder="Note"
+              aria-label="Note"
+              className="min-h-12 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-3.5 text-body outline-none focus:shadow-[var(--lift)_var(--lift)_0_0_rgb(var(--c-shadow))]"
+            />
+            {/* There was no way back at all before this: once opened, the note stayed. */}
+            <SheetAction
+              label="Remove note"
+              icon={<CloseIcon size={18} />}
+              tone="quiet"
+              onClick={() => { setNote(''); setShowNote(false); }}
+            />
+          </div>
         )}
 
         {splitting && kind !== 'transfer' && (
@@ -853,13 +1063,13 @@ export function TransactionSheet() {
               </div>
             ))}
             <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
+              <SheetAction
+                label="Add a line"
+                icon={<span aria-hidden="true" className="text-body font-extrabold leading-none">+</span>}
                 onClick={() => setLines((ls) => [...ls, { key: Date.now(), category_id: null, amount: remaining > 0 ? fromCentavos(remaining) : '' }])}
-                className="min-h-tap text-footnote font-semibold text-accent-ink"
               >
-                + Add a line
-              </button>
+                Add a line
+              </SheetAction>
               <span
                 aria-live="polite"
                 className={`num text-footnote font-semibold ${remaining === 0 ? 'text-ok' : remaining < 0 ? 'text-danger' : 'text-warn'}`}
@@ -871,10 +1081,14 @@ export function TransactionSheet() {
                     : `${formatPHP(fromCentavos(-remaining))} over`}
               </span>
             </div>
-            <button type="button" onClick={() => { setSplitting(false); setLines([]); }}
-              className="min-h-tap text-footnote text-ink-2">
+            <SheetAction
+              label="Don’t split"
+              icon={<CloseIcon size={18} />}
+              tone="quiet"
+              onClick={() => { setSplitting(false); setLines([]); }}
+            >
               Don’t split
-            </button>
+            </SheetAction>
           </div>
         )}
 

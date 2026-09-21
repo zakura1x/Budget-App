@@ -108,6 +108,8 @@ DEFAULT_ICON: Mapping[str, str] = {
 SUBTYPE_MAX = 32
 
 NAME_MAX = 60
+# ACC-39. The one hidden account, for cash the user does not track (2026-09-20).
+UNTRACKED_NAME = "My wallet"
 NOTE_MAX = 280
 MAX_ACCOUNTS = 60  # a personal budget; a four-figure list is a bug, not a use case
 MAX_AMOUNT = Decimal("999999999.99")  # what one transaction may carry - an adjustment is one
@@ -412,6 +414,10 @@ class AccountView:
     # changes for it; `available` and cash on hand (through cash_amount) do.
     set_aside: Decimal = ZERO
     available: Optional[Decimal] = None  # balance less set_aside; None where nothing can be set aside
+    # ACC-39. Untracked cash - the wallet. The app owns this account: it never
+    # appears in a list or a picker, it is never counted in cash on hand or net
+    # worth, and only untracked_cash() ever writes one.
+    hidden: bool = False
 
 
 @dataclass(frozen=True)
@@ -490,7 +496,10 @@ def cash_on_hand(views: Iterable[AccountView]) -> CashOnHand:
     counted: List[AccountView] = []
     excluded: List[AccountView] = []
     for view in views:
-        (counted if view.counts_in_cash_on_hand and not view.archived else excluded).append(view)
+        # ACC-39. Untracked cash is money you have already treated as spent; it
+        # has its switches off anyway, but hidden is what MEANS untracked.
+        keep = view.counts_in_cash_on_hand and not view.archived and not view.hidden
+        (counted if keep else excluded).append(view)
     return CashOnHand(
         # ACC-35: a card with bills subtracts what is due now, not everything it will ever bill.
         total=total(v.cash_amount if v.cash_amount is not None else v.balance for v in counted),
@@ -507,8 +516,8 @@ def net_worth(views: Iterable[AccountView]) -> NetWorth:
     assets = ZERO
     liabilities = ZERO
     for view in views:
-        if view.archived or not view.counts_in_net_worth:
-            continue
+        if view.archived or not view.counts_in_net_worth or view.hidden:
+            continue  # ACC-39: untracked cash is outside every total
         if view.balance > ZERO:
             assets += view.balance
         else:
@@ -541,7 +550,15 @@ def statement(
 # ------------------------------------------------------------------ writing
 
 
-def create_account(db: Session, cipher: UserCipher, payload: Mapping[str, Any]) -> AccountView:
+def create_account(
+    db: Session,
+    cipher: UserCipher,
+    payload: Mapping[str, Any],
+    *,
+    hidden: bool = False,
+) -> AccountView:
+    """`hidden` is not part of the payload and never comes from a request: only
+    untracked_cash() passes it (ACC-39)."""
     repo = AccountRepository(db, cipher)
     if repo.count() >= MAX_ACCOUNTS:
         raise BusinessRuleException(f"An account list stops being useful past {MAX_ACCOUNTS} accounts")
@@ -551,6 +568,8 @@ def create_account(db: Session, cipher: UserCipher, payload: Mapping[str, Any]) 
     _reject_duplicate_name(existing, data["name"], account_id=None)
     if data.get("sort_order") is None:
         data["sort_order"] = _next_sort_order(existing)
+    if hidden:
+        data["hidden"] = True
 
     record = repo.create(data)
     audit_service.record(
@@ -559,6 +578,43 @@ def create_account(db: Session, cipher: UserCipher, payload: Mapping[str, Any]) 
     )
     db.commit()
     return _view(record.id, record.data, (), None)
+
+
+def untracked_cash(db: Session, cipher: UserCipher) -> AccountView:
+    """
+    ACC-39. The wallet: cash the user does not track, because they count it as
+    already spent the day it left a real account (user, 2026-09-20).
+
+    Money lent out of it, and money paid back into it, still has to come from
+    and go somewhere - a transfer is two legs (invariant 2 of the ledger, §4.2)
+    - so it gets ONE account, created here the first time it is needed and
+    never shown again. It is hidden, out of cash on hand and out of net worth,
+    so its balance (which only ever falls) means nothing and is never read.
+
+    Get-or-create, so two taps cannot make two wallets.
+    """
+    repo = AccountRepository(db, cipher)
+    for record in repo.list():
+        if record.data.get("hidden"):
+            return _view(record.id, record.data, (), None)
+
+    # Only the name can collide - the user may already have called something
+    # "My wallet" - and this account is never renamed afterwards.
+    taken = {str(r.data.get("name", "")).casefold() for r in repo.list()}
+    name = UNTRACKED_NAME
+    suffix = 2
+    while name.casefold() in taken:
+        name = f"{UNTRACKED_NAME} ({suffix})"
+        suffix += 1
+
+    return create_account(
+        db,
+        cipher,
+        {"name": name, "type": "cash", "icon": "cash",
+         "counts_in_cash_on_hand": False, "counts_in_net_worth": False,
+         "note": "Cash you do not track. The app keeps this for money lent or paid back in cash."},
+        hidden=True,
+    )
 
 
 def update_account(
@@ -910,6 +966,7 @@ def _view(
         sort_order=int(data.get("sort_order") or 0),
         note=data.get("note"),
         counts_in_net_worth=bool(data.get("counts_in_net_worth", True)),
+        hidden=bool(data.get("hidden", False)),
         valuations=valuations,
         current_value=current_value,
         subtype=data.get("subtype") or None,

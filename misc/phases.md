@@ -1847,6 +1847,20 @@ Found while building Phase 5b (2026-09-14):
     open the add sheet on that card, dated the closing day, as an expense or
     income (uiStore.addPreset).
 
+Found while using the app (2026-09-20):
+  - RESOLVED 2026-09-20 (ACC-39): lending always asked which account the money
+    came from, and pre-picked the last one used. The user's money for a loan
+    comes out of a wallet they deliberately do not track - "I consider my
+    wallet as spent money already" - so neither answer was true, and a guessed
+    account silently withdrew from one they never chose. Now: the side the page
+    does not know starts BLANK on Lend more / Paid back / Borrow more / Pay
+    back, and those rows offer "My wallet" - one hidden account
+    (account_service.untracked_cash, POST /accounts/untracked) made on first
+    use and shown nowhere else, out of cash on hand, net worth and Stats, so
+    lending from it moves the loan and NOTHING else. The rejected alternative
+    was a one-legged posting: the only shape for it is a balance adjustment,
+    which Stats would read as income (2026-09-18).
+
 Found while building Phase 10 (2026-09-20) - misc/UX_RESPONSIVENESS_PLAN.md:
   - RESOLVED 2026-09-20 (steps 1-6 of that plan): every tab switch used to
     refetch from nothing - each screen held its data in local useState and

@@ -265,6 +265,9 @@ class AccountOut(BaseModel):
     plans_unbilled: Money = Decimal("0.00")  # REC-14 - installments still to be charged here
     set_aside: Money = Decimal("0.00")  # GOA-08 - earmarked for goals; the balance is unchanged
     available: Optional[Money] = None  # GOA-08 - balance less set_aside, when something is set aside
+    # ACC-39 - untracked cash. Sent so the client can keep it out of every list
+    # and find it for a loan; there is no way to set it from a request.
+    hidden: bool = False
 
 
 class NetWorthOut(BaseModel):

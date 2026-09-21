@@ -14,12 +14,13 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { listAccounts, type Account } from '../lib/accounts';
+import { listAccounts, visible, type Account } from '../lib/accounts';
 import { flatten, listCategories, type Category } from '../lib/categories';
 import { keys, STALE } from '../lib/queryKeys';
 import { listTags, type Tag } from '../lib/tags';
 
 export interface Lookups {
+  /** ACC-39: the wallet is not here. `accountById` still holds it, so a row pointing at it has a name. */
   accounts: Account[];
   tree: Category[];
   tags: Tag[];
@@ -54,7 +55,7 @@ export function useLookups(): Lookups {
 
   // A screen that fails to load these still draws: the rows fall back to plain
   // labels, and the screen's own data reports its own errors.
-  const accounts = accountsQuery.data?.accounts ?? NO_ACCOUNTS;
+  const all = accountsQuery.data?.accounts ?? NO_ACCOUNTS;
   const tree = treeQuery.data ?? NO_CATEGORIES;
   const tags = tagsQuery.data ?? NO_TAGS;
   const ready = accountsQuery.isSuccess && treeQuery.isSuccess && tagsQuery.isSuccess;
@@ -64,14 +65,17 @@ export function useLookups(): Lookups {
   // background refresh does not re-render every row on the screen.
   return useMemo(
     () => ({
-      accounts,
+      // ACC-39. Filtered ONCE, here, rather than in the seventeen places that
+      // ask: a picker that offered the wallet would let money be moved into
+      // cash the user does not track.
+      accounts: visible(all),
       tree,
       tags,
-      accountById: new Map(accounts.map((a) => [a.id, a])),
+      accountById: new Map(all.map((a) => [a.id, a])),
       categoryById: new Map(flatten(tree).map((c) => [c.id, c])),
       tagById: new Map(tags.map((t) => [t.id, t])),
       ready,
     }),
-    [accounts, tree, tags, ready],
+    [all, tree, tags, ready],
   );
 }
