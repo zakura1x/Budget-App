@@ -17,7 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { useMemo } from 'react';
 import { useLookups } from '../hooks/useLookups';
-import { type Account } from '../lib/accounts';
+import { owedWithPlans, type Account } from '../lib/accounts';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { keys, STALE } from '../lib/queryKeys';
 import { getProjection, listRules, scheduleLabel, type Projection, type Rule } from '../lib/recurring';
@@ -57,8 +57,16 @@ export function AccountPayments({ account, rules: givenRules, projection: givenP
   const projection = givenProjection ?? fetchedProjection;
 
   const payments = (rules ?? []).filter((r) => r.type === 'transfer' && r.counter_account_id === account.id && !r.closed_on);
-  // Signed: an account in credit must still add up, which credit.owed - it stops at zero - could not.
-  const owed = -centavos(account.balance);
+  /**
+   * What is still to pay, the way the account's own headline says it (REC-14):
+   * the balance AND the plans not billed yet. Starting from the balance alone
+   * said a ₱185,000 motorcycle one payment into its plan was paid off this
+   * month, because only ₱5,000 of it had been billed (fixed 2026-09-21, user).
+   *
+   * Signed, because an account in credit must still add up - credit.owed stops
+   * at zero and could not.
+   */
+  const owed = centavos(owedWithPlans(account));
 
   const path = useMemo(() => {
     if (!projection || payments.length === 0) return null;
@@ -68,6 +76,10 @@ export function AccountPayments({ account, rules: givenRules, projection: givenP
       for (const item of month.items) {
         if (item.paused) continue;
         const amount = centavos(item.amount);
+        // An installment's charges are ALREADY inside the figure above - they are
+        // the plan being billed, not new debt - so counting them again would
+        // make the loan grow by 5,000 every month it is paid.
+        if (item.kind === 'installment' && item.account_id === account.id) continue;
         if (item.account_id === account.id) running += item.type === 'income' ? -amount : amount;
         else if (item.type === 'transfer' && item.counter_account_id === account.id) running -= amount;
       }

@@ -9,6 +9,7 @@
  * Tap a month for every projected item, by account. Below, each card's next
  * statements with the recurring charges landing on them - shown, never taken
  * from cash on hand a second time. A card with typed bills shows those bills,
+ * and so does a counted loan, whose dues are its bills (ACC-40),
  * each opening what it is made of (ACC-35, 2026-09-19).
  *
  * A card bill is taken in the month it is DUE (2026-09-19, user: November's
@@ -42,7 +43,10 @@ const short = (iso: string) => format(parseISO(iso), 'd MMM');
 
 const BILL_KINDS = new Set(['bill', 'bill_plans', 'bill_now']);
 
-/** Every card bill due in the month, whether or not today's cash on hand already holds it. */
+/**
+ * Every bill due in the month, whether or not today's cash on hand already holds it - a card's
+ * typed bills (ACC-35) and a counted loan's own dues (ACC-40), which are the same kind of money.
+ */
 function billsDue(month: ProjectedMonth): string {
   return fromCentavos(month.items.filter((i) => BILL_KINDS.has(i.kind) && !i.paused).reduce((sum, i) => sum + centavos(i.amount), 0));
 }
@@ -70,17 +74,17 @@ function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Dat
       </div>
       <p className={`num mt-1 text-title ${negative(month.closing) ? 'text-danger' : ''}`}>{formatPHP(month.closing)}</p>
       <p className="num text-caption text-ink-3">
-        cash on hand at the end{month.bills !== '0.00' && ` · after ${formatPHP(month.bills)} of card bills`}
+        cash on hand at the end{month.bills !== '0.00' && ` · after ${formatPHP(month.bills)} of bills`}
         {(month.bills_set_aside ?? '0.00') !== '0.00' && ` · ${formatPHP(month.bills_set_aside)} of bills due already set aside`}
       </p>
       {(month.bills_held ?? '0.00') !== '0.00' && (
         <p className="num text-caption text-ink-3">
-          Home will hold back {formatPHP(month.bills_held)} of it for card bills due next month
+          Home will hold back {formatPHP(month.bills_held)} of it for bills due next month
         </p>
       )}
       {billsDue(month) !== '0.00' && (
         <p className="num mt-2 flex justify-between border-t border-stroke/40 pt-2 text-footnote">
-          <span className="text-ink-2">Card bills due this month</span>
+          <span className="text-ink-2">Bills due this month</span>
           <span className="font-semibold">{formatPHP(billsDue(month))}</span>
         </p>
       )}
@@ -121,11 +125,11 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
               fixed charges already count against the budget.
             </p>
             {month.bills !== '0.00' && (
-              <p className="flex justify-between"><span className="text-ink-2">Card bills</span>−{formatPHP(month.bills)}</p>
+              <p className="flex justify-between"><span className="text-ink-2">Bills</span>−{formatPHP(month.bills)}</p>
             )}
             {(month.bills_set_aside ?? '0.00') !== '0.00' && (
               <p className="text-caption text-ink-3">
-                {formatPHP(month.bills_set_aside)} of card bills due this month is already out of today's cash on hand,
+                {formatPHP(month.bills_set_aside)} of bills due this month is already out of today's cash on hand,
                 so it is not taken again here.
               </p>
             )}
@@ -134,7 +138,7 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
             )}
             <p className="flex justify-between border-t border-stroke/40 pt-1 font-semibold"><span>Ends with</span>{formatPHP(month.closing)}</p>
             {billsDue(month) !== '0.00' && (
-              <p className="flex justify-between pt-1"><span className="text-ink-2">Card bills due this month</span>{formatPHP(billsDue(month))}</p>
+              <p className="flex justify-between pt-1"><span className="text-ink-2">Bills due this month</span>{formatPHP(billsDue(month))}</p>
             )}
             {(month.bills_held ?? '0.00') !== '0.00' && (
               <p className="text-caption text-ink-3">

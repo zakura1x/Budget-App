@@ -377,6 +377,20 @@ in TransactionSheet), the draft leaves with a sentinel id, and `save` turns
 that into the real account - creating it on the server if this is the first
 one. Every other transfer must still name both ends.
 
+**A loan bills like a card** (ACC-40, added 2026-09-21). A credit card's
+bills are typed from its own app; a loan's are derived, because the plan on it
+IS the schedule. `recurring_service.plans_owed()` walks the rules once and
+answers both questions - what is still to be BILLED (REC-14, the figure a
+card's limit holds back) and what of the SCHEDULE money has not covered - and
+`account_service._dues_view` turns the second into `AccountView.dues` for a
+borrowed account. `due_now` follows ACC-35 exactly (everything overdue plus the
+next one) and takes the place of the balance in `cash_amount`, so a counted
+loan holds back what is due rather than the whole debt. Everything else -
+`balance`, what it says you owe, net worth - still counts the plan in full.
+`projection_service._bill_items` emits the dues the same way it emits a card's
+bills, and `project()` drops the plan's own charges on such an account, or the
+same money would leave twice.
+
 **Net worth sits beside it, never instead of it** (ACC-36, added 2026-09-15 at
 the user's request): every active account with its own
 `counts_in_net_worth` switch on, at full balance, less every debt in full —

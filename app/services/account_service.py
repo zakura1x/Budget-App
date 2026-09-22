@@ -380,6 +380,41 @@ class CreditView:
 
 
 @dataclass(frozen=True)
+class DueView:
+    """ACC-40 - one scheduled payment of a loan that is still to be paid."""
+
+    on: date
+    amount: Decimal
+    overdue: bool
+    rule_id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class DuesView:
+    """
+    ACC-40 (2026-09-21, user: "make the rules in borrowed and loans the same as
+    in credit cards - in credit cards it deducts the monthly dues in cash on
+    hand, and it shows the bills per month").
+
+    A loan's bills. A card's are TYPED from its own app because the statement
+    is the bank's (ACC-35); a loan's are DERIVED, because the plan on it is the
+    schedule. `due_now` follows the card's rule exactly - everything overdue
+    plus the next one - and is what cash on hand holds back (ACC-17) when the
+    account is switched on. Everything else about the account is unchanged:
+    `balance`, what it says you OWE and net worth all still count the plan in
+    full (REC-14).
+    """
+
+    dues: Tuple[DueView, ...]
+    due_now: Decimal  # overdue + the next one - the figure cash on hand takes
+    overdue: Decimal
+    next_on: Optional[date]
+    next_amount: Decimal
+    left_to_pay: Decimal  # every scheduled payment still uncovered
+
+
+@dataclass(frozen=True)
 class AccountView:
     """An account as the API returns it: stored payload plus derived money."""
 
@@ -414,6 +449,9 @@ class AccountView:
     # changes for it; `available` and cash on hand (through cash_amount) do.
     set_aside: Decimal = ZERO
     available: Optional[Decimal] = None  # balance less set_aside; None where nothing can be set aside
+    # ACC-40. A loan's bills, derived from the plans on it; None on an account
+    # with no open plan, which then keeps its plain balance in cash on hand.
+    dues: Optional["DuesView"] = None
     # ACC-39. Untracked cash - the wallet. The app owns this account: it never
     # appears in a list or a picker, it is never counted in cash on hand or net
     # worth, and only untracked_cash() ever writes one.
@@ -457,11 +495,11 @@ def list_accounts(
 ) -> List[AccountView]:
     records = AccountRepository(db, cipher).list()
     by_account = _group_postings(postings)
-    unpaid = _unpaid_installments(db, cipher)
+    unpaid, dues = _plans_owed(db, cipher)
     # ACC-35. The recurring charges are read only when some card has bills to add them to.
     charges = _plan_charges(db, cipher, today) if any(r.data.get("bills") for r in records) else {}
     held = _set_aside(db, cipher)
-    views = [_view(record.id, record.data, by_account.get(record.id, ()), today, unpaid, charges, held)
+    views = [_view(record.id, record.data, by_account.get(record.id, ()), today, unpaid, charges, held, dues)
              for record in records]
     if not include_archived:
         views = [v for v in views if not v.archived]
@@ -479,9 +517,10 @@ def get_account(
     record = AccountRepository(db, cipher).get(account_id)
     if record is None:
         raise NotFoundException("Account not found")
+    unpaid, dues = _plans_owed(db, cipher)
     return _view(record.id, record.data, _group_postings(postings).get(account_id, ()), today,
-                 _unpaid_installments(db, cipher), _plan_charges(db, cipher, today) if record.data.get("bills") else {},
-                 _set_aside(db, cipher))
+                 unpaid, _plan_charges(db, cipher, today) if record.data.get("bills") else {},
+                 _set_aside(db, cipher), dues)
 
 
 def cash_on_hand(views: Iterable[AccountView]) -> CashOnHand:
@@ -902,6 +941,14 @@ def _set_aside(db: Session, cipher: UserCipher) -> Mapping[int, Decimal]:
     return goal_service.set_aside_by_account(db, cipher)
 
 
+def _plans_owed(db: Session, cipher: UserCipher) -> Tuple[Mapping[int, Decimal], Mapping[int, Sequence[Any]]]:
+    """REC-14 / ACC-40 - both of a plan's figures, in one pass (see recurring_service.plans_owed)."""
+    from app.services import recurring_service
+
+    owed = recurring_service.plans_owed(db, cipher)
+    return owed.unpaid, owed.dues
+
+
 def _unpaid_installments(db: Session, cipher: UserCipher) -> Mapping[int, Decimal]:
     """
     REC-14. The unpaid remainder of every open installment, per account -
@@ -929,6 +976,7 @@ def _view(
     unpaid: Optional[Mapping[int, Decimal]] = None,
     charges: Optional[Mapping[int, Sequence[Charge]]] = None,
     held: Optional[Mapping[int, Decimal]] = None,
+    dues: Optional[Mapping[int, Sequence[Any]]] = None,
 ) -> AccountView:
     kind = str(data.get("type", "cash"))
     opening = money(data.get("opening_balance", ZERO))
@@ -976,11 +1024,19 @@ def _view(
                                                  (unpaid or {}).get(account_id, ZERO),
                                                  (charges or {}).get(account_id, ())))
     view = replace(view, plans_unbilled=(unpaid or {}).get(account_id, ZERO))
+    # ACC-40. Only where a schedule is the whole debt: a card has its own bills
+    # (ACC-35) and its own cycle, and money LENT is not something you pay.
+    if kind == "borrowed":
+        view = replace(view, dues=_dues_view((dues or {}).get(account_id, ()), today or date.today()))
     if kind in EARNS_INTEREST:
         view = replace(view, interest=_interest_view(data, view.balance))
     if kind in GIVES_CASHBACK:
         view = replace(view, cashback=_cashback_rule(data.get("cashback")))
     due_now = view.credit.due_now if view.credit is not None else None
+    if due_now is None and view.dues is not None:
+        # ACC-40. The same bargain as a card with bills: what is due now is the
+        # money that is no longer yours to spend, not the whole loan.
+        due_now = view.dues.due_now
     if due_now is not None:
         return replace(view, cash_amount=-due_now)
     # GOA-08. Money set aside for a goal stays in the balance - it still matches the
@@ -990,6 +1046,27 @@ def _view(
         available = view.balance - set_aside
         return replace(view, set_aside=set_aside, available=available, cash_amount=available)
     return replace(view, cash_amount=view.balance)
+
+
+def _dues_view(dues: Sequence[Any], when: date) -> Optional[DuesView]:
+    """
+    ACC-40. A loan's bills from its plans' schedules, and what of them is due
+    NOW: everything already past plus the next one - the card's rule (ACC-35),
+    so the two accounts hold back money the same way.
+    """
+    if not dues:
+        return None
+    rows = tuple(DueView(d.on, d.amount, d.on <= when, d.rule_id, d.name) for d in dues)
+    overdue = total(r.amount for r in rows if r.overdue)
+    upcoming = next((r for r in rows if not r.overdue), None)
+    return DuesView(
+        dues=rows,
+        due_now=(overdue + (upcoming.amount if upcoming else ZERO)).quantize(ZERO),
+        overdue=overdue.quantize(ZERO),
+        next_on=upcoming.on if upcoming else None,
+        next_amount=(upcoming.amount if upcoming else ZERO).quantize(ZERO),
+        left_to_pay=total(r.amount for r in rows).quantize(ZERO),
+    )
 
 
 def _credit_view(

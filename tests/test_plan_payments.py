@@ -15,7 +15,14 @@ import pytest
 
 from app.core.exceptions import BusinessRuleException, PrepaymentChoiceException
 from app.db.repositories.recurring_repository import RecurringRuleRepository
-from app.services import account_service, category_service, recurring_service, transaction_service
+from app.core.utils.money import ZERO
+from app.services import (
+    account_service,
+    category_service,
+    projection_service,
+    recurring_service,
+    transaction_service,
+)
 
 TODAY = date(2026, 9, 16)
 
@@ -203,3 +210,149 @@ def test_the_api_asks_then_pays(api):
     installment = paid.json()["installment"]
     assert (installment["money_paid"], installment["left_to_pay"], installment["payments_left"]) == (
         "15000.00", "170000.00", 34)
+
+
+# ------------------------------------------------------- undoing a payment
+
+
+def test_a_payment_can_be_taken_back(session, owner, loan):
+    """
+    REC-32. A payment made by mistake - or while trying the button - is an
+    ordinary transfer: deleting it from EITHER leg puts the plan and both
+    balances back exactly as they were (2026-09-21, user: "I can't delete the
+    payment I did for this month as I was trying the payment").
+    """
+    before = owed(session, owner, loan.person)
+    pay(session, owner, loan, "5000.00")
+    status = recurring_service.get_rule(session, owner, loan.plan, today=TODAY).installment
+    assert status.money_paid == D("5000.00")
+
+    # The leg the loan's own page lists is the one INTO the loan, and it is the
+    # one the user would tap; deleting it takes its other half with it.
+    legs = [v for v in transaction_service.views(session, owner)
+            if v.recurring_id == loan.plan and v.type == "transfer"]
+    incoming = next(v for v in legs if v.direction == "in")
+    transaction_service.delete_transaction(session, owner, incoming.id, today=TODAY)
+
+    status = recurring_service.get_rule(session, owner, loan.plan, today=TODAY).installment
+    assert (status.money_paid, status.left_to_pay) == (D("0.00"), D("185000.00"))
+    assert owed(session, owner, loan.person) == before
+    bank = account_service.get_account(session, owner, loan.bank,
+                                       postings=transaction_service.postings(session, owner), today=TODAY)
+    assert bank.balance == D("50000.00")
+
+
+def test_paying_the_plan_does_not_move_net_worth(session, owner, loan):
+    """
+    ACC-36 / REC-14. The whole loan is a liability from the day it is taken -
+    this month's payment included - so paying it swaps cash for debt and the
+    grand total stands still (2026-09-21, user: "in my net worth it was not
+    counted that I would pay 5,000 for this month"). Cash on hand is what
+    moves.
+    """
+    def figures():
+        views = account_service.list_accounts(session, owner, postings=transaction_service.postings(session, owner),
+                                              today=TODAY)
+        return account_service.cash_on_hand(views).total, account_service.net_worth(views).total
+
+    cash_before, worth_before = figures()
+    # 50,000 in the bank, 185,000 owed: one payment billed, the other 36 not yet.
+    assert (cash_before, worth_before) == (D("50000.00"), D("-135000.00"))
+
+    pay(session, owner, loan, "5000.00")
+    cash_after, worth_after = figures()
+    assert cash_after == cash_before - D("5000.00")
+    assert worth_after == worth_before
+
+
+# ------------------------------------------------- a loan bills like a card (ACC-40)
+
+
+def views(session, owner, today=TODAY):
+    return account_service.list_accounts(session, owner, postings=transaction_service.postings(session, owner),
+                                         today=today)
+
+
+def test_a_loan_has_bills_of_its_own(session, owner, loan):
+    """
+    ACC-40. The plan IS the schedule, so the loan's bills need no typing: 37
+    payments, the 15 September one already past on the 16th, the next on 15
+    October. `due_now` is the card's rule - everything overdue plus the next.
+    """
+    person = next(v for v in views(session, owner) if v.id == loan.person)
+    assert person.dues is not None
+    assert len(person.dues.dues) == 37
+    assert person.dues.left_to_pay == D("185000.00")
+    assert person.dues.overdue == D("5000.00")
+    assert person.dues.next_on == date(2026, 10, 15)
+    assert person.dues.due_now == D("10000.00")
+
+
+def test_cash_on_hand_holds_back_what_is_due_not_the_loan(session, owner, loan):
+    """
+    ACC-40 / ACC-17 (2026-09-21, user). Switched on, a loan behaves exactly
+    like a card with typed bills: the money held back is what is due now, never
+    the whole debt - otherwise ₱50,000 in the bank would read as ₱135,000 owed.
+    """
+    account_service.update_account(session, owner, loan.person,
+                                   {"name": "Papa bern", "type": "borrowed", "counts_in_cash_on_hand": True},
+                                   postings=transaction_service.postings(session, owner), today=TODAY)
+    assert account_service.cash_on_hand(views(session, owner)).total == D("40000.00")  # 50,000 - 10,000 due
+
+    pay(session, owner, loan, "5000.00")
+    person = next(v for v in views(session, owner) if v.id == loan.person)
+    assert person.dues.overdue == ZERO
+    assert person.dues.due_now == D("5000.00")  # only October's now
+    # 45,000 in the bank after paying, less October's 5,000.
+    assert account_service.cash_on_hand(views(session, owner)).total == D("40000.00")
+    # What it OWES and net worth are untouched by any of this (REC-14).
+    assert owed(session, owner, loan.person) == D("180000.00")
+    assert account_service.net_worth(views(session, owner)).total == D("-135000.00")
+
+
+def test_a_borrowed_account_with_no_plan_has_no_dues(session, owner):
+    """Without a schedule there is nothing to derive, and the account keeps its plain balance."""
+    person = account_service.create_account(session, owner, {"name": "Tita Grace", "type": "borrowed",
+                                                             "opening_balance": "-2000.00",
+                                                             "counts_in_cash_on_hand": True})
+    view = next(v for v in views(session, owner) if v.id == person.id)
+    assert view.dues is None
+    assert view.cash_amount == D("-2000.00")
+
+
+def test_months_ahead_does_not_take_a_due_twice(session, owner, loan):
+    """
+    ACC-40 / ACC-35. Once cash on hand holds back what is due, Months ahead
+    must not take it again: the payments that cover `due_now` are shown where
+    they fall, as money already set aside, with no effect on the month - the
+    bargain a card's typed bills have had since 2026-09-16.
+    """
+    account_service.update_account(session, owner, loan.person,
+                                   {"name": "Papa bern", "type": "borrowed", "counts_in_cash_on_hand": True},
+                                   postings=transaction_service.postings(session, owner), today=TODAY)
+    recurring_service.create_rule(session, owner, {
+        "kind": "standard", "type": "transfer", "name": "Papa bern payment", "account_id": loan.bank,
+        "counter_account_id": loan.person, "frequency": "monthly", "start": "2026-10-15", "amount": "5000.00",
+    }, today=TODAY)
+
+    projection = projection_service.project(session, owner, today=TODAY, months=6)
+    # 50,000 less September's overdue payment and October's, which it holds.
+    assert projection.cash_on_hand == D("40000.00")
+
+    dues = {i.on: i for month in projection.months for i in month.items
+            if i.account_id == loan.person and i.rule_id == 0}
+    # What cash on hand already holds is shown where it falls and never taken...
+    assert dues[TODAY].kind == "bill_now" and dues[TODAY].effect == ZERO        # September's, overdue
+    assert dues[date(2026, 10, 15)].kind == "bill_now"
+    assert dues[date(2026, 10, 15)].effect == ZERO
+    # ...and every later payment leaves on its own due date.
+    assert dues[date(2026, 11, 15)].effect == D("-5000.00")
+
+    # The transfer that pays it moves money between two counted accounts, so it
+    # takes nothing by itself - the due above is the money leaving, once.
+    paid_by = [i for month in projection.months for i in month.items
+               if i.type == "transfer" and i.counter_account_id == loan.person]
+    assert paid_by and all(i.effect == ZERO for i in paid_by)
+    # And the plan's own charges are not a third copy of the same money.
+    assert not [i for month in projection.months for i in month.items
+                if i.account_id == loan.person and i.kind == "installment"]

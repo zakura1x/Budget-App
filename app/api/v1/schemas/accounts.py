@@ -240,6 +240,31 @@ class CreditOut(BaseModel):
     posting_lag_days: int
 
 
+class DueOut(BaseModel):
+    """ACC-40 - one scheduled payment of a loan still to be paid."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    on: date
+    amount: Money
+    overdue: bool
+    rule_id: int
+    name: str
+
+
+class DuesOut(BaseModel):
+    """ACC-40 - a loan's bills, derived from its plans; `due_now` is what cash on hand holds back."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    dues: List[DueOut]
+    due_now: Money
+    overdue: Money
+    next_on: Optional[date] = None
+    next_amount: Money
+    left_to_pay: Money
+
+
 class AccountOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -265,6 +290,7 @@ class AccountOut(BaseModel):
     plans_unbilled: Money = Decimal("0.00")  # REC-14 - installments still to be charged here
     set_aside: Money = Decimal("0.00")  # GOA-08 - earmarked for goals; the balance is unchanged
     available: Optional[Money] = None  # GOA-08 - balance less set_aside, when something is set aside
+    dues: Optional[DuesOut] = None  # ACC-40 - a loan's own bills; null on anything with no open plan
     # ACC-39 - untracked cash. Sent so the client can keep it out of every list
     # and find it for a loan; there is no way to set it from a request.
     hidden: bool = False

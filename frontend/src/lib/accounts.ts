@@ -68,6 +68,30 @@ export interface Bill {
   lines: BillLine[];
 }
 
+/** ACC-40 - one scheduled payment of a loan that is still to be paid. */
+export interface Due {
+  on: string;
+  amount: string;
+  overdue: boolean;
+  rule_id: number;
+  name: string;
+}
+
+/**
+ * ACC-40 - a loan's bills (2026-09-21). A card's are typed from its own app
+ * (ACC-35); a loan's come from the plan on it, because the plan IS the
+ * schedule. `due_now` - everything overdue plus the next one, the card's own
+ * rule - is what cash on hand holds back when the account is switched on.
+ */
+export interface Dues {
+  dues: Due[];
+  due_now: string;
+  overdue: string;
+  next_on: string | null;
+  next_amount: string;
+  left_to_pay: string;
+}
+
 export interface Credit {
   /** ACC-35. Empty unless the bills were typed. */
   bills: Bill[];
@@ -171,6 +195,8 @@ export interface Account {
    * The balance never includes it; what you OWE and net worth do.
    */
   plans_unbilled: string;
+  /** ACC-40 - a loan's bills from the plans on it; null where no plan is running. */
+  dues: Dues | null;
   /** GOA-08 - earmarked for savings goals; the balance is unchanged. */
   set_aside: string;
   /** Balance less set_aside - what cash on hand counts - or null when nothing is set aside. */

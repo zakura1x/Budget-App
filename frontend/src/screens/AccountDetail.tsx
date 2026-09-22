@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
+import { AccountDues } from '../components/AccountDues';
 import { AccountPayments } from '../components/AccountPayments';
 import { AccountPlans } from '../components/AccountPlans';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
@@ -422,6 +423,10 @@ export function AccountDetail() {
 
       {account && !account.credit && !account.archived && (
         <div className="mt-3 space-y-3">
+          {/* ACC-40. A loan's own bills, above its plans: what is due is the
+              question you open the page with, and the plan behind it is the
+              answer to the next one. */}
+          <AccountDues account={account} />
           <AccountPlans account={account} onPay={setPaying} onPlans={setOpenPlans} />
           {/* REC-14. A loan or a borrowed account gets the same monthly payment
               as a card: without it, a plan on one could not be paid at all. */}

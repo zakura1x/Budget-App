@@ -1107,7 +1107,7 @@ export function TransactionSheet() {
         )}
 
         {editing && (
-          <Button variant="ghost" block className="text-danger" onClick={() => void remove()} disabled={busy}>
+          <Button variant="secondary" block className="text-danger" onClick={() => void remove()} disabled={busy}>
             Delete {editing.type === 'transfer' ? 'transfer' : 'transaction'}
           </Button>
         )}

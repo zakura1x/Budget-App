@@ -63,7 +63,7 @@ those bills instead - the same figures and lines as its Bills section (2026-09-1
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -162,6 +162,12 @@ def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, mo
     # ACC-35. Typed card bills enter on their own days; the charges folded into them are not counted twice.
     bill_items, billed, chains = _bill_items(views, counted, today)
     ahead = [u for u in ahead if not _lands_on_bill(u, billed)]
+    # ACC-40. A counted loan's dues are its bills, and _bill_items has just put
+    # each one on its own day. Its plan's CHARGES would be the same money a
+    # second time - on a card that is what _lands_on_bill prevents.
+    dued = {v.id for v in views if v.dues is not None and v.id in counted and not v.archived}
+    ahead = [u for u in ahead
+             if not (u.kind == "installment" and u.type == "expense" and u.account_id in dued)]
 
     result: List[ProjectedMonth] = []
     opening = cash.total
@@ -302,6 +308,27 @@ def _bill_items(
                         on=bill.due, rule_id=0, name=name, kind=kind, type="expense", account_id=view.id,
                         counter_account_id=None, amount=amount, effect=-amount, paused=False, final=False,
                     ))
+    # ACC-40. A counted loan bills the same way, from its plans' schedule
+    # instead of a typed list: what is due now is already inside cash on hand
+    # and is only shown; every later payment leaves on the day it falls due.
+    # The plan's own charges were dropped in project() so this is the one place
+    # the money appears, and the transfer that pays it is neutral by itself -
+    # between two counted accounts, cash on hand does not move.
+    for view in views:
+        dues = view.dues
+        if dues is None or view.archived or view.id not in counted:
+            continue
+        chain: List[Tuple[date, Decimal, bool]] = []
+        for due in dues.dues:
+            now = due.overdue or due.on == dues.next_on
+            chain.append((due.on, due.amount, now))
+            items.append(ProjectedItem(
+                on=max(due.on, today), rule_id=0,
+                name=f"{view.name} due {due.on.day} {due.on:%b}", kind="bill_now" if now else "bill",
+                type="expense", account_id=view.id, counter_account_id=None, amount=due.amount,
+                effect=ZERO if now else -due.amount, paused=False, final=False,
+            ))
+        chains.append(chain)
     return items, billed, chains
 
 

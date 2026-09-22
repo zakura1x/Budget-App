@@ -422,6 +422,14 @@ purchase keeps its proportions (`category_shares`, applied in
 `recurring_service._price_splits`); a bill list that covered the purchase
 covers the plan (`Charge.origin`). All of it is references in backup_service.
 
+A LOAN BILLS LIKE A CARD (ACC-40, 2026-09-21): `recurring_service.plans_owed`
+walks the rules ONCE and returns both what is still to bill (REC-14) and the
+schedule money has not covered; the second becomes `AccountView.dues` on a
+borrowed account, whose `due_now` (overdue + the next one, ACC-35's rule)
+replaces the balance in `cash_amount`. Net worth, `balance` and what it says
+you owe still count the plan in full. `projection_service` emits those dues as
+bills and drops the plan's charges on that account, so the money leaves once.
+
 An installment is OWED in full from the day it is taken (REC-14):
 `AccountView.plans_unbilled` holds the unbilled remainder on every account
 type, and `CreditView.owed_with_plans = owed + unpaid_installments` is what a

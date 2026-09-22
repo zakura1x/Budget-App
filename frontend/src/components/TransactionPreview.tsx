@@ -9,7 +9,9 @@
  * A balance adjustment (ACC-29) has no Edit - it is written when a balance is set, and editing its
  * amount would contradict the record - only Delete, as the sheet has always offered.
  *
- * Delete asks twice here: a row is tapped by accident far more easily than the editor is opened.
+ * Delete asks twice here: a row is tapped by accident far more easily than the editor is opened. It is a
+ * BUTTON, not red words, and the second tap is a solid red one - as plain text beside a filled Edit it read as a
+ * label, so a payment made by mistake looked impossible to take back (user, 2026-09-21).
  */
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
@@ -181,7 +183,13 @@ export function TransactionPreview() {
         {!isPending(row) && (
           <div className={adjustment ? '' : 'grid grid-cols-2 gap-2'}>
             {!adjustment && <Button onClick={() => openAddSheet(row)}>Edit</Button>}
-            <Button variant="ghost" block={adjustment} className="text-danger" onClick={() => void remove()} disabled={busy}>
+            <Button
+              variant={confirming ? 'danger' : 'secondary'}
+              block={adjustment}
+              className={confirming ? '' : 'text-danger'}
+              onClick={() => void remove()}
+              disabled={busy}
+            >
               {confirming ? 'Tap again to delete' : 'Delete'}
             </Button>
           </div>

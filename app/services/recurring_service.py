@@ -151,6 +151,36 @@ class InstallmentStatus:
 
 
 @dataclass(frozen=True)
+class Due:
+    """
+    ACC-40. One scheduled payment of a plan that money has not covered yet -
+    when it falls due, and how much of it is left.
+
+    A loan's bill, and unlike a card's (ACC-35) nobody types it: the plan
+    already carries the schedule, so the dates and the amounts are its own.
+    """
+
+    on: date
+    amount: Decimal
+    rule_id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class PlansOwed:
+    """
+    What every open installment still owes, per account, from ONE pass over the
+    rules and their postings: the unbilled remainder a card's limit holds back
+    (REC-14) and the schedule a loan is paid on (ACC-40). account_service asks
+    for both on every read of the account list, and loading the context twice
+    would walk the whole working set twice.
+    """
+
+    unpaid: Dict[int, Decimal]
+    dues: Dict[int, Tuple[Due, ...]]
+
+
+@dataclass(frozen=True)
 class RuleView:
     id: int
     kind: str
@@ -506,16 +536,45 @@ def upcoming(db: Session, cipher: UserCipher, start: date, end: date) -> List[Up
 
 def unpaid_by_account(db: Session, cipher: UserCipher) -> Dict[int, Decimal]:
     """ACC-14 / REC-14. The unpaid remainder of every open installment, per account - what the bank blocks."""
+    return plans_owed(db, cipher).unpaid
+
+
+def plans_owed(db: Session, cipher: UserCipher) -> PlansOwed:
+    """
+    REC-14 / ACC-40. Both figures an open plan owes, per account, in one pass.
+
+    `unpaid` is what has still to be BILLED - the charges to come, which a
+    card's available credit holds back from day one. `dues` is the SCHEDULE
+    money has not covered yet: every payment of the plan, oldest first, with
+    what is left of it. The two answer different questions and neither is the
+    other: a payment can be billed and unpaid, or paid before it is billed.
+    """
     context = _Context.load(db, cipher)
     unpaid: Dict[int, Decimal] = {}
+    dues: Dict[int, List[Due]] = {}
     for record in context.rules:
-        if record.data.get("kind") != "installment":
+        data = record.data
+        if data.get("kind") != "installment":
             continue
-        status = _installment_status(record.id, record.data, context.posted.get(record.id, []))
-        if not status.closed:
-            account = int(record.data["account_id"])
-            unpaid[account] = unpaid.get(account, ZERO) + status.remaining
-    return unpaid
+        status = _installment_status(record.id, data, context.posted.get(record.id, []))
+        if status.closed:
+            continue
+        account = int(data["account_id"])
+        unpaid[account] = unpaid.get(account, ZERO) + status.remaining
+        # What money has covered of the schedule, oldest payment first - the
+        # same reading as _due_part, which decides what a payment pays for.
+        # An extra payment already came off the schedule, so it is not coverage.
+        left = max(status.money_paid - status.prepaid, ZERO)
+        for day, price, interest in installment_plan(data):
+            amount = price + interest
+            taken = min(left, amount)
+            left -= taken
+            if amount - taken > ZERO:
+                dues.setdefault(account, []).append(
+                    Due(day, (amount - taken).quantize(ZERO), record.id, str(data.get("name", "")))
+                )
+    return PlansOwed(unpaid, {account: tuple(sorted(rows, key=lambda d: (d.on, d.rule_id)))
+                              for account, rows in dues.items()})
 
 
 def plans_on_statement(
