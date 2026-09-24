@@ -163,8 +163,13 @@ def restore(
             live = [r for r in existing[table] if not r.is_deleted]
             index = _index(table, existing[table], deferred) if mode == "merge" else {}
             if mode == "fresh" and table == "user_preferences":
-                for record in live:
-                    repo.soft_delete(record.id)
+                # HARD delete, and every row rather than the live ones: UQ_user_preferences_user is
+                # on user_id alone and cannot see is_deleted, so a row merely marked deleted still
+                # holds the slot and the backup's own row cannot be inserted. A soft delete here
+                # made a fresh restore fail on every account that had ever been registered - which
+                # is the documented recovery path. Found by rehearsing one, 2026-09-24.
+                for record in existing[table]:
+                    repo.hard_delete(record.id)
             restored = skipped = 0
 
             for raw, data in decoded[table]:

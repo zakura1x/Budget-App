@@ -24,6 +24,7 @@ from app.core.crypto.keyring import MasterKeyring, get_master_keyring
 from app.core.crypto.user_cipher import UserCipher
 from app.core.exceptions import BusinessRuleException, ConflictException
 from app.db.models import ENCRYPTED_TABLES, User
+from app.db.repositories.preferences_repository import PreferencesRepository
 from app.db.types import utcnow
 from app.services import (
     account_service,
@@ -280,6 +281,44 @@ def test_fresh_needs_an_empty_account(session, folders):
     source = restore_service.unlock_source(found, keyring=get_master_keyring())
     with pytest.raises(ConflictException):
         restore_service.restore(session, found, alice_cipher, source, mode="fresh")
+
+
+def test_fresh_restore_into_an_account_that_has_preferences(session, folders):
+    """
+    Every real account has a preferences row - create_account writes one - and
+    UQ_user_preferences_user is on user_id ALONE, so it cannot see is_deleted.
+    Clearing the target's row by SOFT delete therefore left it in the table,
+    holding the user_id, and the backup's own preferences row could not be
+    inserted on top of it: a fresh restore failed with an IntegrityError for
+    every account that had ever been signed into.
+
+    That is the documented recovery path (restore.py: "sign up so the account
+    exists with its own key, then run this"), and nothing covered it, because
+    make_user() here does not write preferences the way registration does.
+    Found by rehearsing a real restore on 2026-09-24.
+    """
+    alice, alice_cipher = make_user(session, "alice")
+    fill(session, alice_cipher)  # writes alice's preferences row, as registration does
+    preferences_service.update_preferences(session, alice_cipher, {"theme": "dark"})
+    session.commit()
+    found, _ = backup_of(session, alice.id, folders / "one")
+
+    # Bob is what a real target looks like: registered, so he already has a preferences row.
+    _bob, bob_cipher = make_user(session, "bob")
+    preferences_service.update_preferences(session, bob_cipher, {"theme": "light"})
+    session.commit()
+    bob_prefs = PreferencesRepository(session, bob_cipher)
+    assert len(bob_prefs.list(include_deleted=True)) == 1
+
+    source = restore_service.unlock_source(found, keyring=get_master_keyring())
+    report = restore_service.restore(session, found, bob_cipher, source, mode="fresh")
+    session.commit()
+    assert report.ok
+
+    # One preferences row afterwards, and it is the BACKUP's - fresh means the file wins.
+    rows = bob_prefs.list(include_deleted=True)
+    assert len(rows) == 1
+    assert rows[0].data["theme"] == "dark"
 
 
 def test_merge_twice_adds_nothing_the_second_time(session, folders):

@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, Type
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.core.crypto.envelope import PLACEHOLDER
@@ -121,6 +121,23 @@ class EncryptedRepository:
             update(self.model)
             .where(self.model.id == row_id, self.model.user_id == self.cipher.user_id)
             .values(is_deleted=False, row_updated=utcnow())
+        )
+        if result.rowcount == 1:
+            self._changed()
+        return result.rowcount == 1
+
+    def hard_delete(self, row_id: int) -> bool:
+        """
+        Remove a row for good, payload and all. Rows are soft-deleted
+        everywhere else in this app - this exists for the ONE case where a
+        soft delete is not enough: a table with a plaintext UNIQUE constraint
+        on user_id (`user_preferences`), where the constraint cannot see
+        `is_deleted`, so a row that is only marked deleted still occupies the
+        slot and refuses its replacement. Used by a fresh restore
+        (`restore_service`) and nowhere else. The caller commits.
+        """
+        result = self.session.execute(
+            delete(self.model).where(self.model.id == row_id, self.model.user_id == self.cipher.user_id)
         )
         if result.rowcount == 1:
             self._changed()

@@ -38,13 +38,21 @@ def main() -> int:
     mode.add_argument("--merge", action="store_const", const="merge", dest="mode")
     args = parser.parse_args()
 
+    from app.core.crypto.errors import CryptoError
     from app.core.crypto.keyring import get_master_keyring
+    from app.core.exceptions import AppException
     from app.db.repositories.user_repository import UserRepository
     from app.db.session import get_session
     from app.services.backup_service.bundle import read_bundle
     from app.services.backup_service.restore_service import restore, unlock_source
 
-    found = read_bundle(Path(args.file))
+    # A damaged file, the wrong key or an occupied target are all expected answers here, and this
+    # script runs on the worst day of the year: say what is wrong in one line, never a traceback.
+    try:
+        found = read_bundle(Path(args.file))
+    except (AppException, CryptoError) as exc:
+        print(f"Cannot read {args.file}: {exc}", file=sys.stderr)
+        return 1
     print(f"[restore] backup of user {found.user_id} from {found.created_at.isoformat()}: "
           f"{found.rows} rows, {found.attachments} receipts - checksums OK", file=sys.stderr)
 
@@ -58,6 +66,13 @@ def main() -> int:
         keyring = get_master_keyring()
         source = unlock_source(found, keyring=keyring)
         report = restore(session, found, users.cipher_for(target, keyring), source, mode=args.mode)
+    except (AppException, CryptoError) as exc:
+        session.rollback()
+        print(f"Restore stopped, nothing was written: {exc}", file=sys.stderr)
+        extra = getattr(exc, "extra", None)
+        if extra:
+            print(f"  {json.dumps(extra)}", file=sys.stderr)
+        return 1
     finally:
         session.close()
 
