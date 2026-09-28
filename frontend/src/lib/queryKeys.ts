@@ -25,6 +25,9 @@ export const keys = {
   goals: () => ['goals', localToday()] as const,
   /** GET /budgets - the budget's shape and allocations, the Budget screen's editor. */
   budgetShape: () => ['budget', 'shape', localToday()] as const,
+  /** BUD-17 - under `budget`, so a saved budget or a posted entry asks for it again. */
+  suggestion: (periods: number, step: number | undefined, trim: number, fit: boolean) =>
+    ['budget', 'suggestion', localToday(), periods, step ?? 'setting', trim, fit] as const,
   calendar: (year: number, month: number) => ['calendar', year, month] as const,
   /**
    * A dated slice of the ledger - the calendar's month list and its day sheet.
@@ -33,6 +36,9 @@ export const keys = {
    * show what comes back, so they cache like anything else.
    */
   transactionsIn: (from: string, to: string) => ['transactions', 'range', from, to] as const,
+  /** TXN-24/25 - under `transactions`, so every write that touches an entry refreshes them too. */
+  merchants: () => ['transactions', 'merchants'] as const,
+  deleted: () => ['transactions', 'deleted'] as const,
   stats: (range: Range) =>
     ['stats', localToday(), 'span' in range ? range.span : 'custom',
       'span' in range ? range.on : range.from, 'span' in range ? '' : range.to] as const,

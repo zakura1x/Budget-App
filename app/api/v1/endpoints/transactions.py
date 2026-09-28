@@ -12,12 +12,14 @@ and never the query string.
 """
 
 from datetime import date
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.transactions import (
+    DeletedOut,
+    MerchantOut,
     OutcomeOut,
     PageOut,
     RepeatIn,
@@ -52,6 +54,38 @@ def list_transactions(
         account_id=account, type=type, tag_id=tag, q=q, cursor=cursor, limit=limit,
     )
     return PageOut.model_validate(page)
+
+
+# Both before /{transaction_id}, or their names would be read as an id.
+@router.get("/merchants", response_model=List[MerchantOut])
+def list_merchants(
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> List[MerchantOut]:
+    """TXN-24 - what the add sheet suggests as a merchant is typed."""
+    return [MerchantOut.model_validate(m) for m in transaction_service.merchants(db, ctx.cipher)]
+
+
+@router.get("/deleted", response_model=List[DeletedOut])
+def list_deleted(
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> List[DeletedOut]:
+    """TXN-25 - Recently deleted: the last 30 days, newest first."""
+    return [DeletedOut.model_validate(d) for d in transaction_service.deleted(db, ctx.cipher)]
+
+
+@router.post("/{transaction_id}/restore", response_model=OutcomeOut)
+def restore_transaction(
+    transaction_id: int,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> OutcomeOut:
+    """TXN-25 - Undo, and Restore in Recently deleted. Brings back whatever went with it."""
+    return OutcomeOut.model_validate(
+        transaction_service.restore_transaction(db, ctx.cipher, transaction_id, today=today)
+    )
 
 
 @router.get("/{transaction_id}", response_model=TransactionOut)

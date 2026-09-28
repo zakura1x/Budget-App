@@ -14,12 +14,18 @@
  * With a budget, the screen opens on the current period (2026-09-15, after
  * sample_ui/): a gauge of the budget used, then REMAIN - each category's
  * spent and remaining - with PLAN, the editor, one switch away.
+ *
+ * BUD-17: "Suggest from my spending" opens SuggestionSheet, and "Use this"
+ * there fills the Plan editor - the amount and every category - to be looked
+ * over and saved with the ordinary Save. Home's reminder arrives as
+ * /budget?suggest=1 and opens it straight away.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
+import { SuggestionSheet } from '../components/SuggestionSheet';
 import { Button } from '../components/ui/Button';
 import { Card, SectionTitle } from '../components/ui/Card';
 import { Gauge } from '../components/ui/Gauge';
@@ -159,6 +165,27 @@ export function Budget() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  /** BUD-17 - the suggestion sheet, and whether the editor holds a suggestion not saved yet. */
+  const [params, setParams] = useSearchParams();
+  const [suggesting, setSuggesting] = useState(params.get('suggest') === '1');
+  const [suggested, setSuggested] = useState(false);
+
+  useEffect(() => {
+    if (params.get('suggest') !== '1') return;
+    setSuggesting(true);
+    setView('plan');
+    setParams({}, { replace: true }); // a refresh or Back does not open it again
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
+  const applySuggestion = (total: string, amounts: Record<number, string>) => {
+    setAmount(typedFrom(total));
+    setAllocations(Object.fromEntries(Object.entries(amounts).map(([id, value]) => [id, typedFrom(value)])));
+    setSuggesting(false);
+    setSuggested(true);
+    setSaved(false);
+    setView('plan');
+  };
 
   const hydrate = (b: BudgetShape | null) => {
     setBudget(b);
@@ -234,6 +261,7 @@ export function Budget() {
       const result = budget ? await updateBudget(budget.id, body) : await createBudget(body);
       hydrate(result);
       setSaved(true);
+      setSuggested(false);
       // BUD-01/04 - a new amount or a moved allocation changes the allowance, the
       // category rings on Home and the budget view in Stats, not only this screen.
       afterWrite('budget', 'stats', 'calendar');
@@ -277,6 +305,14 @@ export function Budget() {
 
       {shownView === 'plan' && (
       <>
+      <Button variant="secondary" block className="mb-3" onClick={() => setSuggesting(true)}>
+        Suggest from my spending
+      </Button>
+      {suggested && (
+        <p className="mb-3 rounded-card border-2 border-stroke bg-surface-2 px-4 py-3 text-footnote text-ink-2">
+          Filled in from your recent spending. Change anything you like — nothing is saved until you tap Save.
+        </p>
+      )}
       <Card className="space-y-5">
         <div>
           <p className="mb-2 text-footnote font-semibold text-ink-2">How often it resets</p>
@@ -407,6 +443,7 @@ export function Budget() {
       </Button>
       </>
       )}
+      <SuggestionSheet open={suggesting} onClose={() => setSuggesting(false)} onUse={applySuggestion} />
     </>
   );
 }

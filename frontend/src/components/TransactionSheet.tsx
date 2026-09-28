@@ -27,12 +27,19 @@
  * TAGS (TXN-10) sit behind a "Tags" button beside "Add note" - one tap away,
  * never in the way of two taps and a number. An entry that has tags opens
  * with them showing.
+ *
+ * MERCHANT (TXN-08/24, 2026-09-28, user: a Merchant tile beside Add note) is
+ * an extra like the rest. Typing offers the merchants used before, most used
+ * first; picking one fills the category it was filed under LAST time - but
+ * only when no category is chosen yet, so a suggestion never overrides you.
+ * An edit sends the merchant back as shown, so an imported or recurring
+ * entry's merchant is no longer wiped by saving it.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { untracked, untrackedCash, visible, UNTRACKED_ID, type Account } from '../lib/accounts';
 import { flatten, type Category } from '../lib/categories';
-import { ensureAccounts, ensureCategories, ensureTags } from '../lib/prefetch';
+import { ensureAccounts, ensureCategories, ensureMerchants, ensureTags } from '../lib/prefetch';
 import {
   applyAmountKey,
   centavos,
@@ -49,6 +56,7 @@ import {
   repeatLast,
   updateTransaction,
   type EntryType,
+  type Merchant,
   type TransactionDraft,
 } from '../lib/transactions';
 import { afterWrite, MONEY } from '../lib/invalidate';
@@ -57,9 +65,10 @@ import { type Tag } from '../lib/tags';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore, type RuleSheetRequest } from '../stores/uiStore';
 import { EMPTY_CHOICE, InstallmentFields, termsOf, type InstallmentChoice } from './InstallmentFields';
-import { CashbackIcon, CloseIcon, InstallmentsIcon, NoteIcon, SplitIcon, TagIcon } from './Icons';
+import { CashbackIcon, CloseIcon, InstallmentsIcon, NoteIcon, SplitIcon, StoreIcon, TagIcon } from './Icons';
 import { ReceiptControl } from './ReceiptControl';
 import { DEFAULT_COLOUR, GlyphTile, PALETTE } from './StylePicker';
+import { offerUndo } from './UndoToast';
 import { Button } from './ui/Button';
 import { NumPad, type NumPadKey } from './ui/NumPad';
 import { Segmented } from './ui/Segmented';
@@ -237,6 +246,12 @@ export function TransactionSheet() {
   const [txnDate, setTxnDate] = useState(localToday());
   const [note, setNote] = useState('');
   const [showNote, setShowNote] = useState(false);
+  /** TXN-24. The merchant, and the ones typed before that it can be picked from. */
+  const [merchant, setMerchant] = useState('');
+  const [showMerchant, setShowMerchant] = useState(false);
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  /** Focused when the tile is TAPPED - not when an edit opens with a merchant, or the keyboard would cover the numpad. */
+  const merchantInput = useRef<HTMLInputElement>(null);
   const [splitting, setSplitting] = useState(false);
   const [lines, setLines] = useState<SplitLine[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -271,9 +286,11 @@ export function TransactionSheet() {
     let cancelled = false;
     // From the cache when it is warm, which after an unlock it always is: the
     // [+] button used to cost three requests every time it was tapped.
-    Promise.all([ensureAccounts(), ensureCategories(), ensureTags()])
-      .then(([accountList, categories, tagList]) => {
+    // TXN-24. Suggestions are a convenience: if they cannot be had, the sheet works without them.
+    Promise.all([ensureAccounts(), ensureCategories(), ensureTags(), ensureMerchants().catch(() => [] as Merchant[])])
+      .then(([accountList, categories, tagList, merchantList]) => {
         if (cancelled) return;
+        setMerchants(merchantList);
         // ACC-39. The wallet is not one of the accounts this sheet offers ANYWHERE
         // - not a chip, not a cashback destination, not a rule's payer. It is
         // reached only by leaving a loan's side blank.
@@ -321,6 +338,8 @@ export function TransactionSheet() {
       setTxnDate(editing.txn_date);
       setNote(editing.notes ?? '');
       setShowNote(Boolean(editing.notes));
+      setMerchant(editing.merchant ?? '');
+      setShowMerchant(Boolean(editing.merchant));
       setTagIds(editing.tag_ids ?? []);
       setShowTags((editing.tag_ids ?? []).length > 0);
       setCashback(editing.cashback ? typedFrom(editing.cashback.amount) : '');
@@ -352,6 +371,8 @@ export function TransactionSheet() {
       setTxnDate(addOn ?? localToday());
       setNote('');
       setShowNote(false);
+      setMerchant('');
+      setShowMerchant(false);
       setTagIds([]);
       setShowTags(false);
       setSplitting(false);
@@ -393,6 +414,28 @@ export function TransactionSheet() {
       .sort((a, b) => b.used - a.used || a.order - b.order)
       .map(({ c }) => c);
   }, [tree, kind]);
+  /**
+   * TXN-24. The merchants worth offering: this kind only (the same shop is
+   * rarely both), matching what is typed anywhere in the name, most used first
+   * - the server's order. Empty field: the most used. The one already typed
+   * exactly is not offered back.
+   */
+  const merchantMatches = useMemo(() => {
+    if (!showMerchant || kind === 'transfer') return [];
+    const needle = merchant.trim().toLowerCase();
+    return merchants
+      .filter((m) => m.type === kind && m.name.toLowerCase() !== needle && (!needle || m.name.toLowerCase().includes(needle)))
+      .slice(0, 6);
+  }, [showMerchant, kind, merchant, merchants]);
+
+  const pickMerchant = (m: Merchant) => {
+    setMerchant(m.name);
+    // Only into an empty choice - never over a category you picked yourself.
+    if (categoryId === null && !splitting && m.category_id !== null && chips.some((c) => c.id === m.category_id)) {
+      setCategoryId(m.category_id);
+    }
+  };
+
   const chosenCategory = categoryId !== null ? chips.find((c) => c.id === categoryId) : undefined;
   // A sub-category keeps its main selected, so editing an old entry opens on both rows.
   const mainId = chosenCategory ? chosenCategory.parent_id ?? chosenCategory.id : null;
@@ -504,7 +547,11 @@ export function TransactionSheet() {
     const base = { type: kind, amount, account_id: from as number, txn_date: txnDate, notes: note.trim() || null };
     if (kind === 'transfer') return { ...base, counter_account_id: to as number };
     // Only ids that still exist - a tag deleted while the sheet was open would be refused.
-    const tagged = { ...base, tag_ids: tagIds.filter((id) => tags.some((t) => t.id === id)) };
+    const tagged = {
+      ...base,
+      merchant: merchant.trim() || null,
+      tag_ids: tagIds.filter((id) => tags.some((t) => t.id === id)),
+    };
     const withCashback = {
       ...tagged,
       // Sent as null only when this entry HAD cashback and no longer does -
@@ -593,7 +640,7 @@ export function TransactionSheet() {
         splits: body.splits
           ? body.splits.map((s) => ({ ...s, note: null }))
           : [{ category_id: body.category_id ?? null, amount: body.amount, note: null }],
-        merchant: null,
+        merchant: body.merchant ?? null,
         notes: body.notes ?? null,
         direction: body.type === 'transfer' ? 'out' : null,
         counter_account_id: body.counter_account_id ?? null,
@@ -631,6 +678,7 @@ export function TransactionSheet() {
       const outcome = await deleteTransaction(editing.id);
       ledger.removeIds(outcome.transactions.map((t) => t.id), outcome);
       close();
+      offerUndo(editing); // TXN-25
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not delete. Try again.');
       setBusy(false);
@@ -889,6 +937,16 @@ export function TransactionSheet() {
             aria-label="Date"
             className="min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-footnote font-medium text-ink"
           />
+          {kind !== 'transfer' && !showMerchant && (
+            <SheetAction
+              label="Merchant"
+              icon={<StoreIcon size={20} />}
+              onClick={() => {
+                setShowMerchant(true);
+                window.requestAnimationFrame(() => merchantInput.current?.focus());
+              }}
+            />
+          )}
           {!showNote && (
             <SheetAction label="Add note" icon={<NoteIcon size={20} />} onClick={() => setShowNote(true)} />
           )}
@@ -999,6 +1057,39 @@ export function TransactionSheet() {
               {cashbackCategoryName ? ` in ${cashbackCategoryName}` : ''}, on this account, dated the day the money
               arrives.
             </p>
+          </div>
+        )}
+
+        {kind !== 'transfer' && showMerchant && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                ref={merchantInput}
+                type="text"
+                value={merchant}
+                onChange={(e) => setMerchant(e.target.value)}
+                maxLength={80}
+                placeholder={kind === 'income' ? 'Who paid' : 'Where you paid'}
+                aria-label="Merchant"
+                autoComplete="off"
+                className="min-h-12 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-3.5 text-body outline-none focus:shadow-[var(--lift)_var(--lift)_0_0_rgb(var(--c-shadow))]"
+              />
+              <SheetAction
+                label="Remove merchant"
+                icon={<CloseIcon size={18} />}
+                tone="quiet"
+                onClick={() => { setMerchant(''); setShowMerchant(false); }}
+              />
+            </div>
+            {merchantMatches.length > 0 && (
+              <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1" role="group" aria-label="Merchants used before">
+                {merchantMatches.map((m) => (
+                  <Chip key={m.name} selected={false} onClick={() => pickMerchant(m)}>
+                    {m.name}
+                  </Chip>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

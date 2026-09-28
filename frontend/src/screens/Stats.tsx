@@ -365,6 +365,62 @@ function TrendCard({ overview, colours }: { overview: Overview; colours: ThemeCo
   );
 }
 
+// ------------------------------------------------------------ cash on hand
+
+/**
+ * STA-10. Cash on hand at the end of each bucket, up to today - the plain
+ * balances of the accounts that count in it TODAY. What today's headline
+ * holds back (a card's bills, a loan's dues, money set aside for goals) cannot
+ * be told for a past day, so it is not here, and the note says so. The months
+ * ahead are Months ahead's job, from the rules, not a line drawn forward.
+ */
+function CashOnHandCard({ overview, colours }: { overview: Overview; colours: ThemeColours }) {
+  const points = overview.cash_on_hand ?? [];
+  if (points.length === 0) return null;
+  const pattern = overview.granularity === 'month' ? 'MMM' : 'd MMM';
+  const data = points.map((p) => ({ label: format(parseISO(p.on), pattern), value: draw(p.amount) }));
+  const first = points[0] as { on: string; amount: string };
+  const last = points[points.length - 1] as { on: string; amount: string };
+  const change = centavos(last.amount) - centavos(first.amount);
+
+  return (
+    <>
+      <SectionTitle>Cash on hand</SectionTitle>
+      <Card>
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="num text-title">{formatPHP(last.amount)}</p>
+          {points.length > 1 && (
+            <p className="num text-footnote text-ink-2">
+              {change === 0 ? 'no change' : `${change > 0 ? '+' : '−'}${formatPHP(fromCentavos(Math.abs(change)))}`} since{' '}
+              {format(parseISO(first.on), 'd MMM')}
+            </p>
+          )}
+        </div>
+        <div className="mt-2 h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+              <XAxis dataKey="label" tick={{ fill: colours['ink-2'], fontSize: 10, fontFamily: MONO }} tickLine={false}
+                axisLine={{ stroke: colours.line }} interval="preserveStartEnd" minTickGap={20} />
+              <YAxis hide domain={['auto', 'auto']} />
+              <Tooltip
+                formatter={(value) => peso(Number(value))}
+                contentStyle={{ background: colours.surface, border: `2px solid ${colours.stroke}`, borderRadius: 8, fontSize: 12, fontFamily: MONO, boxShadow: `4px 4px 0 ${colours.stroke}` }}
+                labelStyle={{ color: colours['ink-2'] }}
+              />
+              <Line type="linear" dataKey="value" name="Cash on hand" stroke={colours.ink} strokeWidth={3}
+                dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="mt-2 text-caption text-ink-3">
+          The balances of the accounts that count in cash on hand today, at the end of each {overview.granularity}. Card
+          bills and money set aside for goals are not taken out here, as they are on Home.
+        </p>
+      </Card>
+    </>
+  );
+}
+
 // -------------------------------------------------------------------- lists
 
 function Ranked({ title, note, rows }: {
@@ -489,6 +545,7 @@ export function Stats() {
               <>
                 <CategoryCard overview={overview} lookups={lookups} colours={colours} />
                 <TrendCard overview={overview} colours={colours} />
+                <CashOnHandCard overview={overview} colours={colours} />
                 <Ranked
                   title="Top merchants"
                   rows={overview.merchants.map((m) => ({

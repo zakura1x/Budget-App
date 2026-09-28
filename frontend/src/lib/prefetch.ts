@@ -24,6 +24,7 @@ import { listRules } from './recurring';
 import { listGoals } from './security';
 import { getStatement } from './statements';
 import { listTags } from './tags';
+import { listMerchants } from './transactions';
 import { LAZY_SCREENS } from '../screens/lazy';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useLedgerStore } from '../stores/ledgerStore';
@@ -78,6 +79,8 @@ export const ensureAccounts = () => ensure(keys.accounts(), listAccounts, STALE.
 export const ensureCategories = () => ensure(keys.categories(), listCategories, STALE.taxonomy);
 export const ensureTags = () => ensure(keys.tags(), listTags, STALE.taxonomy);
 export const ensureRules = () => ensure(keys.rules(), (signal) => listRules(undefined, signal), STALE.derived);
+/** TXN-24 - the add sheet's merchant suggestions, asked for once and kept until a write changes them. */
+export const ensureMerchants = () => ensure(keys.merchants(), listMerchants, STALE.derived);
 export const ensureStatement = (accountId: number, closes: string) =>
   ensure(keys.statement(accountId, closes), (signal) => getStatement(accountId, closes, signal), STALE.statement);
 

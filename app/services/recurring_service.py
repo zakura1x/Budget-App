@@ -640,6 +640,12 @@ def update_rule(
     context = _Context.load(db, cipher)
     posted = [v for v in context.posted.get(rule_id, []) if v.recurring_on is not None]
     data = _clean(db, cipher, payload, record.data, today, posted_count=len(posted))
+    if data.get("kind") == "subscription" and record.data.get("kind") == "subscription":
+        # SUB-07. A cancelled subscription keeps ending on the day it was
+        # cancelled whatever the edit says - only Resume restarts the charges,
+        # or it would charge again while still listed as Cancelled.
+        if _subscription_row(db, cipher, rule_id).data.get("cancelled_on"):
+            data["end_on"] = record.data.get("end_on")
     # REC-05, fixed 2026-09-16 (a real plan lost its first payment this way).
     # A start moved EARLIER has to bring the catch-up marker back with it, or
     # every occurrence between the new start and the old marker is treated as
@@ -679,6 +685,101 @@ def delete_rule(db: Session, cipher: UserCipher, rule_id: int) -> None:
         cipher=cipher, detail={"name": record.data.get("name"), "kind": record.data.get("kind")},
     )
     db.commit()
+
+
+def cancel_subscription(
+    db: Session, cipher: UserCipher, rule_id: int, *, on: Optional[date] = None, today: Optional[date] = None
+) -> RuleView:
+    """
+    SUB-07. You cancelled it with the service on `on` (today by default). The
+    rule ENDS that day (REC-06) - a charge on the day itself stands, nothing
+    after it posts - and the subscription row remembers the day and the end it
+    had before, so it stays listed under Cancelled with what it has saved you,
+    and Resume can put it back exactly. A charge already posted after `on`
+    (a cancellation entered late) is real money and stays.
+    """
+    today = today or date.today()
+    on = on or today
+    repo = RecurringRuleRepository(db, cipher)
+    record = _record(repo, rule_id)
+    data = dict(record.data)
+    if data.get("kind") != "subscription":
+        raise BusinessRuleException("Only a subscription is cancelled - end or delete any other rule")
+    sub = _subscription_row(db, cipher, rule_id)
+    if sub.data.get("cancelled_on"):
+        raise BusinessRuleException("This subscription is already cancelled")
+
+    SubscriptionRepository(db, cipher).update(sub.id, {
+        **sub.data, "cancelled_on": on.isoformat(), "end_on_before_cancel": data.get("end_on"), "cancel_by": None,
+    })
+    # Written directly, not through _schedule: a cancellation before the first
+    # charge is an end BEFORE the start, which simply means it never charges.
+    data["end_on"] = on.isoformat()
+    repo.update(rule_id, data)
+    audit_service.record(
+        db, audit_service.UPDATE, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
+        cipher=cipher, detail={"name": data.get("name"), "cancelled_on": on.isoformat()},
+    )
+    db.commit()
+    return get_rule(db, cipher, rule_id, today=today)
+
+
+def resume_subscription(db: Session, cipher: UserCipher, rule_id: int, *, today: Optional[date] = None) -> RuleView:
+    """
+    SUB-07. Signed up again: the end it had before comes back, and it charges
+    from TODAY - the catch-up marker moves up, or every month it was
+    cancelled would be charged on the next open.
+    """
+    today = today or date.today()
+    repo = RecurringRuleRepository(db, cipher)
+    record = _record(repo, rule_id)
+    sub = _subscription_row(db, cipher, rule_id)
+    if not sub.data.get("cancelled_on"):
+        raise BusinessRuleException("This subscription is not cancelled")
+    data = dict(record.data)
+    data["end_on"] = sub.data.get("end_on_before_cancel")
+    if _as_date(data["posted_through"]) < today - ONE_DAY:
+        data["posted_through"] = (today - ONE_DAY).isoformat()
+    repo.update(rule_id, data)
+    SubscriptionRepository(db, cipher).update(sub.id, {
+        **sub.data, "cancelled_on": None, "end_on_before_cancel": None,
+    })
+    audit_service.record(
+        db, audit_service.UPDATE, user_id=cipher.user_id, entity="recurring_rules", entity_id=rule_id,
+        cipher=cipher, detail={"name": data.get("name"), "resumed_on": today.isoformat()},
+    )
+    db.commit()
+    _expand(db, cipher, [repo.get(rule_id)], today)
+    return get_rule(db, cipher, rule_id, today=today)
+
+
+def set_cancel_by(
+    db: Session, cipher: UserCipher, rule_id: int, on: Optional[date], *, today: Optional[date] = None
+) -> RuleView:
+    """
+    SUB-07. "Remind me to cancel by" - a free trial's last day. Only a reminder
+    (in-app, SUB-06's model): nothing is cancelled when the day comes. None
+    clears it.
+    """
+    today = today or date.today()
+    record = _record(RecurringRuleRepository(db, cipher), rule_id)
+    if record.data.get("kind") != "subscription":
+        raise BusinessRuleException("Only a subscription has a cancel-by reminder")
+    sub = _subscription_row(db, cipher, rule_id)
+    if sub.data.get("cancelled_on"):
+        raise BusinessRuleException("This subscription is already cancelled")
+    SubscriptionRepository(db, cipher).update(sub.id, {**sub.data, "cancel_by": on.isoformat() if on else None})
+    db.commit()
+    return get_rule(db, cipher, rule_id, today=today)
+
+
+def _subscription_row(db: Session, cipher: UserCipher, rule_id: int):
+    """The subscriptions row beside a rule - made if an old rule never had one."""
+    subs = SubscriptionRepository(db, cipher)
+    for sub in subs.list():
+        if sub.data.get("recurring_rule_id") == rule_id:
+            return sub
+    return subs.create({"recurring_rule_id": rule_id, "reminder_days": REMINDER_DAYS_DEFAULT})
 
 
 def set_paused(db: Session, cipher: UserCipher, rule_id: int, paused: bool, *, today: Optional[date] = None) -> RuleView:

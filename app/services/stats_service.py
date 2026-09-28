@@ -39,7 +39,7 @@ rules, are Phase 7's projection (REC-21). It reports the budget beside it when
 the range is the budget period.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
@@ -51,7 +51,7 @@ from app.core.exceptions import ValidationException
 from app.core.utils.date_utils import add_months, days_in_month
 from app.core.utils.money import CENTS, ZERO, total
 from app.db.repositories.category_repository import CategoryRepository
-from app.services import transaction_service
+from app.services import account_service, transaction_service
 from app.services.budget_service import budget_service
 from app.services.transaction_service import TransactionView
 
@@ -140,6 +140,14 @@ class Forecast:
 
 
 @dataclass(frozen=True)
+class CashPoint:
+    """STA-10. Cash on hand at the end of `on` - the last day of a trend bucket, never a day still to come."""
+
+    on: date
+    amount: Decimal
+
+
+@dataclass(frozen=True)
 class Overview:
     start: date
     end: date
@@ -154,6 +162,7 @@ class Overview:
     accounts: List[AccountTotal]
     tags: List[TagTotal]
     forecast: Optional[Forecast]
+    cash_on_hand: List[CashPoint] = field(default_factory=list)  # STA-10
 
 
 # ------------------------------------------------------ the pure arithmetic
@@ -348,7 +357,21 @@ def overview(
         accounts=_accounts(expenses, incomes),
         tags=_tags(purchases),
         forecast=_forecast(db, cipher, counted_spent, start, end, today) if contains_today else None,
+        cash_on_hand=_cash_on_hand(db, cipher, start, end, granularity, today),
     )
+
+
+def _cash_on_hand(db: Session, cipher: UserCipher, start: date, end: date, granularity: str,
+                  today: date) -> List[CashPoint]:
+    """
+    STA-10. One point per trend bucket, at its last day - or today, for the
+    bucket today is in - so the line lines up with the bars above it. Days
+    still to come are not shown: that is Months ahead's job (REC-21), from
+    the rules, not a line drawn forward from the past.
+    """
+    days = [min(last, today) for first, last in buckets(start, end, granularity) if first <= today]
+    amounts = account_service.cash_history(db, cipher, days, transaction_service.postings(db, cipher))
+    return [CashPoint(day, amount) for day, amount in zip(days, amounts)]
 
 
 # ---------------------------------------------------------------- internals

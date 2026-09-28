@@ -53,7 +53,7 @@ and page in Python over TransactionRepository.cached() (TXN-12/13).
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -70,6 +70,7 @@ from app.db.repositories.account_repository import AccountRepository
 from app.db.repositories.category_repository import CategoryRepository
 from app.db.repositories.encrypted_repository import Record
 from app.db.repositories.transaction_repository import TransactionRepository
+from app.db.types import utcnow
 from app.services import account_service, audit_service, tag_service
 from app.services.account_service import Posting
 
@@ -84,6 +85,8 @@ SPLIT_NOTE_MAX = 120
 MAX_TAGS = 10
 EARLIEST = date(2000, 1, 1)
 PAGE_MAX = 200
+MERCHANTS_MAX = 200  # TXN-24 - more suggestions than anyone scrolls
+RECENTLY_DELETED_DAYS = 30  # TXN-25 - how far back Recently deleted lists
 
 
 # ------------------------------------------------------------------- shapes
@@ -167,6 +170,37 @@ class Outcome:
     accounts: List[account_service.AccountView]
     cash_on_hand: account_service.CashOnHand
     budget_status: Optional[Any] = None  # budget_service.BudgetStatus, or None with no budget
+
+
+@dataclass(frozen=True)
+class Merchant:
+    """
+    TXN-24. A merchant typed before, and what it was filed under LAST time -
+    so picking it again can pre-select the category. `category_id` is None
+    when the latest entry was split (which line would it be?) or its category
+    is gone or archived.
+    """
+
+    name: str
+    type: str  # expense | income - the same shop is rarely both, and never the same category
+    count: int
+    category_id: Optional[int]
+    last_used: date
+
+
+@dataclass(frozen=True)
+class Deleted:
+    """
+    TXN-25. One entry in Recently deleted: the row as it was, when it went, and
+    whether it can come back. `reason` says why not, in words, so the screen
+    can show the Restore button disabled with the reason under it rather than
+    let a tap fail.
+    """
+
+    transaction: TransactionView
+    deleted_at: datetime
+    restorable: bool
+    reason: Optional[str] = None
 
 
 # -------------------------------------------------------- the pure invariant
@@ -325,6 +359,51 @@ def list_transactions(
     )
 
 
+def merchants(db: Session, cipher: UserCipher) -> List[Merchant]:
+    """
+    TXN-24. Every merchant already typed, most used first, each with the
+    category its LATEST entry was filed under - what the add sheet suggests as
+    you type, and pre-selects when you pick one.
+
+    Merchant is encrypted (TXN-08), so this is a loop over the working set and
+    could never be SQL. Names are matched as a person would read them: case,
+    and runs of spaces, do not make "Jollibee" and "jollibee " two shops. The
+    spelling shown is the latest one used.
+
+    Left out: transfers and balance adjustments (no merchant of their own), and
+    a cashback credit - it borrows its purchase's merchant, and suggesting
+    "SM Supermarket" as an income would file the next purchase there.
+    """
+    categories = _categories(db, cipher)
+    found: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for view in sorted(views(db, cipher), key=lambda v: (v.txn_date, v.id)):
+        if view.type not in ("expense", "income") or view.cashback_of or not view.merchant:
+            continue
+        key = (view.type, _merchant_key(view.merchant))
+        if not key[1]:
+            continue
+        entry = found.setdefault(key, {"count": 0})
+        entry["count"] += 1
+        entry["name"] = " ".join(view.merchant.split())
+        entry["last_used"] = view.txn_date
+        # The latest entry decides - a shop you moved from Food to Household
+        # last week is Household now, however often it was Food before.
+        only = view.splits[0].category_id if len(view.splits) == 1 else None
+        category = categories.get(only) if only is not None else None
+        usable = category is not None and not category.get("archived") and category.get("kind") == view.type
+        entry["category_id"] = only if usable else None
+
+    ranked = sorted(found.items(), key=lambda item: (-item[1]["count"], -item[1]["last_used"].toordinal(), item[0]))
+    return [
+        Merchant(name=e["name"], type=kind, count=e["count"], category_id=e["category_id"], last_used=e["last_used"])
+        for (kind, _), e in ranked[:MERCHANTS_MAX]
+    ]
+
+
+def _merchant_key(name: str) -> str:
+    return " ".join(name.split()).casefold()
+
+
 # ------------------------------------------------------------------ writing
 
 
@@ -423,7 +502,14 @@ def delete_transaction(db: Session, cipher: UserCipher, transaction_id: int, *, 
         purchase = _record(db, cipher, record.data["cashback_of"])
         repo.update(purchase.id, {**purchase.data, "cashback": None, "cashback_id": None})
 
+    # TXN-25. `deleted_at` is what puts a row in Recently deleted. Only THIS
+    # delete writes it: a purchase hidden by an installment conversion
+    # (REC-34), a plan's charges removed by converting back, and a cashback
+    # credit taken away by an edit are soft-deleted too - none of them is
+    # something you deleted, and none can safely be brought back on its own.
+    stamp = utcnow().isoformat(timespec="seconds")
     for leg in doomed:
+        repo.update(leg.id, {**leg.data, "deleted_at": stamp})
         repo.soft_delete(leg.id)
     audit_service.record(
         db, audit_service.DELETE, user_id=cipher.user_id, entity="transactions",
@@ -432,6 +518,189 @@ def delete_transaction(db: Session, cipher: UserCipher, transaction_id: int, *, 
     )
     db.commit()
     return outcome(db, cipher, [_view(leg) for leg in doomed], today=today)
+
+
+def deleted(db: Session, cipher: UserCipher, *, now: Optional[datetime] = None) -> List[Deleted]:
+    """
+    TXN-25. What you deleted in the last RECENTLY_DELETED_DAYS, newest first.
+
+    One line per thing deleted, the way the ledger shows it: a transfer as its
+    out leg, and a purchase that took its cashback with it as the purchase
+    alone - both halves come back together. Only rows carrying `deleted_at`
+    are listed, so entries deleted before this existed are not (they cannot be
+    told apart from a purchase hidden by an installment conversion).
+    """
+    now = now or utcnow()
+    repo = TransactionRepository(db, cipher)
+    cutoff = now - timedelta(days=RECENTLY_DELETED_DAYS)
+    rows = {r.id: r for r in repo.deleted_since(cutoff) if r.data.get("deleted_at")}
+
+    listed: List[Deleted] = []
+    context = _RestoreContext.load(db, cipher)
+    for record in rows.values():
+        data = record.data
+        if data.get("type") == "transfer" and data.get("direction") == "in" and data.get("pair_id") in rows:
+            continue  # shown as its out leg
+        if data.get("cashback_of") in rows:
+            continue  # went with its purchase, and comes back with it
+        when = _parse_stamp(data["deleted_at"])
+        if when is None or when < cutoff:
+            continue
+        problem = _restore_problem(context, _restore_group(db, cipher, record))
+        listed.append(Deleted(_view(record), when, problem is None, problem))
+    return sorted(listed, key=lambda d: (d.deleted_at, d.transaction.id), reverse=True)
+
+
+def restore_transaction(
+    db: Session, cipher: UserCipher, transaction_id: int, *, today: Optional[date] = None
+) -> Outcome:
+    """
+    TXN-25. Bring back something you deleted - and everything that went with
+    it: a transfer's other leg, a purchase's cashback credit. A credit deleted
+    ON ITS OWN is joined back to its purchase, which lost the link then.
+
+    Refused, with the reason, when bringing it back would contradict what has
+    happened since (`_restore_problem`). Tags deleted meanwhile are dropped
+    rather than refused - the entry is still the entry without them.
+    """
+    repo = TransactionRepository(db, cipher)
+    record = repo.get(transaction_id, include_deleted=True)
+    if record is None or not record.is_deleted or not record.data.get("deleted_at"):
+        raise NotFoundException("That entry is not in Recently deleted")
+    group = _restore_group(db, cipher, record)
+    problem = _restore_problem(_RestoreContext.load(db, cipher), group)
+    if problem is not None:
+        raise BusinessRuleException(problem)
+
+    known_tags = tag_service.known_ids(db, cipher)
+    restored: List[Record] = []
+    for row in group:
+        data = {k: v for k, v in row.data.items() if k != "deleted_at"}
+        data["tag_ids"] = [t for t in data.get("tag_ids") or [] if t in known_tags]
+        repo.update(row.id, data)
+        repo.undelete(row.id)
+        restored.append(Record(row.id, data, row.row_created, row.row_updated, False))
+
+    # A credit deleted on its own took the cashback off its purchase; put it back.
+    lone = [r for r in restored if r.data.get("cashback_of") and all(g.id != r.data["cashback_of"] for g in group)]
+    for credit in lone:
+        purchase = _record(db, cipher, credit.data["cashback_of"])
+        block = {"amount": credit.data["amount"], "account_id": credit.data["account_id"],
+                 "category_id": (credit.data.get("splits") or [{}])[0].get("category_id"),
+                 "on": credit.data["txn_date"], "rate": None}
+        restored.append(repo.update(purchase.id, {**purchase.data, "cashback": block, "cashback_id": credit.id}))
+
+    audit_service.record(
+        db, audit_service.RESTORE, user_id=cipher.user_id, entity="transactions",
+        entity_id=transaction_id, cipher=cipher,
+        detail={"type": record.data.get("type"), "legs": len(group)},
+    )
+    db.commit()
+    return outcome(db, cipher, [_view(r) for r in restored], today=today)
+
+
+def _restore_group(db: Session, cipher: UserCipher, record: Record) -> List[Record]:
+    """The rows one Restore brings back: this one, a transfer's other leg, a purchase's credit."""
+    repo = TransactionRepository(db, cipher)
+    group = [record]
+    linked = []
+    if record.data.get("type") == "transfer":
+        linked.append(record.data.get("pair_id"))
+    linked.append(record.data.get("cashback_id"))
+    for row_id in linked:
+        if not row_id:
+            continue
+        other = repo.get(int(row_id), include_deleted=True)
+        # Only a row that went in the SAME delete - a credit taken away earlier by an edit stays gone.
+        if other is not None and other.is_deleted and other.data.get("deleted_at") == record.data.get("deleted_at"):
+            group.append(other)
+    return group
+
+
+@dataclass(frozen=True)
+class _RestoreContext:
+    """What every restore check reads, loaded once however many entries are listed."""
+
+    accounts: Mapping[int, Mapping[str, Any]]
+    categories: Mapping[int, Mapping[str, Any]]
+    rules: Set[int]
+    live: Sequence[Record]
+
+    @classmethod
+    def load(cls, db: Session, cipher: UserCipher) -> "_RestoreContext":
+        # Imported here: recurring_service imports this module, and the
+        # repository is all a restore needs from that side.
+        from app.db.repositories.recurring_repository import RecurringRuleRepository
+
+        return cls(
+            accounts={r.id: r.data for r in AccountRepository(db, cipher).list()},
+            categories=_categories(db, cipher),
+            rules={r.id for r in RecurringRuleRepository(db, cipher).list()},
+            live=TransactionRepository(db, cipher).cached(),
+        )
+
+
+def _restore_problem(context: _RestoreContext, group: Sequence[Record]) -> Optional[str]:
+    """
+    Why this group cannot come back, or None. Each answer is something that
+    changed after the delete and that a restore would contradict:
+
+      * its account is gone or archived, or a category it was filed under was
+        deleted - there would be nowhere for it to live
+      * it was money paid ON a plan (REC-32) - the payment's extra part lives
+        in the plan's own `prepayments`, which the delete did not touch, so a
+        restored transfer would disagree with the plan; pay it again instead
+      * the plan that posted it was deleted, or that occurrence has been
+        posted again since (REC-33 pay now, or the catch-up)
+      * that day's savings interest was credited again since (ACC-37)
+      * a lone cashback credit whose purchase is gone or already earns another
+    """
+    accounts, categories, live = context.accounts, context.categories, context.live
+    ids = {r.id for r in group}
+
+    for row in group:
+        data = row.data
+        for field_name in ("account_id", "counter_account_id"):
+            account_id = data.get(field_name)
+            if account_id is None:
+                continue
+            account = accounts.get(int(account_id))
+            if account is None:
+                return "Its account was deleted"
+            if account.get("archived"):
+                return f"{account.get('name') or 'Its account'} is archived - unarchive it first"
+        if data.get("type") in ("expense", "income"):
+            for split in data.get("splits") or []:
+                if split.get("category_id") not in categories:
+                    return "A category it was filed under was deleted"
+        rule_id = data.get("recurring_id")
+        if rule_id:
+            if not data.get("recurring_on"):
+                return "A payment on a plan - pay it again from the plan instead"
+            if int(rule_id) not in context.rules:
+                return "The plan that posted it was deleted"
+            if any(r.data.get("recurring_id") == rule_id and r.data.get("recurring_on") == data["recurring_on"]
+                   for r in live):
+                return "That charge has been recorded again since"
+        if data.get("interest_on"):
+            if any(r.data.get("interest_on") == data["interest_on"] and r.data.get("account_id") == data["account_id"]
+                   for r in live):
+                return "That day's interest has been credited again since"
+        purchase_id = data.get("cashback_of")
+        if purchase_id and purchase_id not in ids:
+            purchase = next((r for r in live if r.id == purchase_id), None)
+            if purchase is None:
+                return "The purchase it came from is gone"
+            if purchase.data.get("cashback_id"):
+                return "Its purchase already has other cashback"
+    return None
+
+
+def _parse_stamp(value: Any) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 def repeat_last(

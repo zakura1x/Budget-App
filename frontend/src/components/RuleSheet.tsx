@@ -38,6 +38,7 @@ import {
 } from '../lib/recurring';
 import { localToday } from '../lib/transactions';
 import { ReceiptControl } from './ReceiptControl';
+import { SubscriptionControls } from './SubscriptionControls';
 import { Button } from './ui/Button';
 import { Segmented } from './ui/Segmented';
 import { Sheet } from './ui/Sheet';
@@ -434,6 +435,9 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
             </ul>
           </div>
         )}
+
+        {/* SUB-07 - cancel, resume, and "remind me to cancel by". */}
+        {rule && kind === 'subscription' && <SubscriptionControls rule={rule} onDone={onClose} />}
 
         {error && <p className="text-footnote text-danger">{error}</p>}
 

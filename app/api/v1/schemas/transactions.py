@@ -123,6 +123,29 @@ class PageOut(BaseModel):
     days: List[DayTotalOut]
 
 
+class MerchantOut(BaseModel):
+    """TXN-24 - a merchant typed before, and the category its latest entry was filed under."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    type: Literal["expense", "income"]
+    count: int
+    category_id: Optional[int] = None
+    last_used: date
+
+
+class DeletedOut(BaseModel):
+    """TXN-25 - one line in Recently deleted; `reason` says why Restore is not offered."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    transaction: TransactionOut
+    deleted_at: datetime
+    restorable: bool
+    reason: Optional[str] = None
+
+
 class OutcomeOut(BaseModel):
     """
     Everything a write changed, so no screen needs a second request - the

@@ -76,6 +76,7 @@ export interface Alert {
     | 'card_limit_approaching'
     | 'card_limit_pace'
     | 'subscription_due'
+    | 'subscription_cancel_by'
     | 'statement_differs';
   severity: 'danger' | 'warn';
   message: string;
@@ -97,6 +98,49 @@ export interface BudgetStatus {
   allocated: string;
   unallocated: string;
   alerts: Alert[];
+  /** BUD-17 - "Your spending has changed": only in a period's first days, and only when it drifted over 15%. */
+  reminder?: { suggested: string; in_force: string; periods: number } | null;
+}
+
+/** BUD-17 - one category's line in a suggested budget. `history` lines up with Suggestion.periods. */
+export interface SuggestedLine {
+  category_id: number;
+  history: string[];
+  median: string;
+  average: string;
+  scheduled: string;
+  current: string | null;
+  spent_in: number;
+  suggested: string;
+  reason: 'median' | 'scheduled' | 'kept' | 'single';
+}
+
+/** BUD-17 - a budget worked out from recent spending. Reading it writes nothing. */
+export interface Suggestion {
+  period: Period;
+  kind: PeriodKind;
+  asked: number;
+  periods: Period[];
+  in_force: string | null;
+  lines: SuggestedLine[];
+  occasional: { category_id: number; history: string[]; spent_in: number }[];
+  buffer: string;
+  total: string;
+  income: string | null;
+  over_income: boolean;
+  fitted: boolean;
+  cannot_fit: boolean;
+  step: string;
+  trim: number;
+  /** false: no finished period of entries to work from yet */
+  ready: boolean;
+}
+
+export interface SuggestionAsk {
+  periods: 1 | 3 | 6;
+  step?: number;
+  trim: 0 | 5 | 10;
+  fit: boolean;
 }
 
 export interface BudgetDraft {
@@ -126,6 +170,10 @@ export interface Preferences {
   /** 1 Monday .. 7 Sunday */
   week_start_day: number;
   auto_lock_minutes: number;
+  /** BUD-17 - a suggested budget rounds up to this many pesos: 1, 10, 50, 100, 500 or 1000. */
+  budget_round_step?: number;
+  /** BUD-17 - the period-start "your spending has changed" reminder. */
+  budget_suggestion_nudge?: boolean;
   [key: string]: unknown;
 }
 
@@ -141,6 +189,15 @@ export const createBudget = (body: BudgetDraft) => api<Budget>(`/budgets?${today
 
 export const updateBudget = (id: number, body: BudgetDraft) =>
   api<Budget>(`/budgets/${id}?${today()}`, { method: 'PATCH', body });
+
+export const getSuggestion = (ask: SuggestionAsk, signal?: AbortSignal) => {
+  const params = new URLSearchParams({ periods: String(ask.periods), trim: String(ask.trim), fit: String(ask.fit) });
+  if (ask.step !== undefined) params.set('step', String(ask.step));
+  return api<Suggestion>(`/budgets/suggestion?${today()}&${params.toString()}`, { signal });
+};
+
+/** BUD-17 - "Not now": the reminder stays away until the next period. Kept on the server, never in the browser. */
+export const dismissReminder = () => api<void>(`/budgets/suggestion/dismiss?${today()}`, { method: 'POST' });
 
 export const getPreferences = (signal?: AbortSignal) => api<Preferences>('/settings/preferences', { signal });
 

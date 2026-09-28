@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getHealth } from '../lib/api';
 import { keys, STALE } from '../lib/queryKeys';
-import { CalendarIcon, GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, WalletIcon } from '../components/Icons';
+import { CalendarIcon, GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, TrashIcon, WalletIcon } from '../components/Icons';
 import { useAuthStore } from '../stores/authStore';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SectionTitle } from '../components/ui/Card';
@@ -65,6 +65,8 @@ export function More() {
           chevron onClick={() => navigate('/goals')} />
         <ListRow icon={<CalendarIcon size={20} />} title="Months ahead" subtitle="Cash on hand by month, card statements"
           chevron onClick={() => navigate('/projection')} />
+        <ListRow icon={<TrashIcon size={20} />} title="Recently deleted" subtitle="Bring back an entry from the last 30 days"
+          chevron onClick={() => navigate('/deleted')} />
       </ListGroup>
 
       <SectionTitle>App</SectionTitle>

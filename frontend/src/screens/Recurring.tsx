@@ -123,11 +123,14 @@ export function Recurring() {
   const rules = rulesQuery.data;
   const error = rulesQuery.error;
 
-  const shown = (rules ?? []).filter((r) => r.kind === tab);
+  // SUB-07. A cancelled subscription leaves the list it charges in and is shown under Cancelled, with what it saved.
+  const cancelled = (subs?.items ?? []).filter((i) => i.cancelled_on);
+  const cancelledIds = new Set(cancelled.map((i) => i.rule.id));
+  const shown = (rules ?? []).filter((r) => r.kind === tab && !(tab === 'subscription' && cancelledIds.has(r.id)));
   const open = (rule: Rule | null, prefill: RuleDraft | null = null) => setSheet({ open: true, rule, prefill });
   const owed = shown.filter((r) => r.installment && !r.installment.closed)
     .reduce((sum, r) => sum + centavos(r.installment?.remaining ?? '0'), 0);
-  const empty = rules !== null && shown.length === 0;
+  const empty = rules !== null && shown.length === 0 && !(tab === 'subscription' && cancelled.length > 0);
 
   return (
     <>
@@ -173,6 +176,11 @@ export function Recurring() {
               {i.rule.name} charges {i.due_in_days === 0 ? 'today' : `in ${i.due_in_days} day${i.due_in_days === 1 ? '' : 's'}`}
             </p>
           ))}
+          {subs.items.filter((i) => i.cancel_soon && i.cancel_by).map((i) => (
+            <p key={`cancel-${i.rule.id}`} className="mt-2 rounded-card border-2 border-warn bg-warn/10 px-3 py-2 text-footnote font-semibold text-warn">
+              Cancel {i.rule.name} by {short(i.cancel_by as string)}
+            </p>
+          ))}
         </Card>
       )}
       {tab === 'installment' && rules !== null && shown.length > 0 && (
@@ -215,6 +223,26 @@ export function Recurring() {
             })}
           </div>
         )
+      )}
+
+      {tab === 'subscription' && cancelled.length > 0 && (
+        <>
+          <SectionTitle>Cancelled</SectionTitle>
+          <div className="divide-y divide-stroke/80 overflow-hidden rounded-card bg-surface shadow-card">
+            {cancelled.map((i) => (
+              <button key={i.rule.id} type="button" onClick={() => open(i.rule)}
+                className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition active:bg-surface-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body">{i.rule.name}</span>
+                  <span className="block truncate text-footnote text-ink-2">Cancelled {short(i.cancelled_on as string)}</span>
+                </span>
+                <span className="num shrink-0 text-right text-footnote text-ink-2">
+                  {i.saved && i.saved !== '0.00' ? <>saved <span className="font-semibold text-ink">{formatPHP(i.saved)}</span></> : 'nothing yet'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {tab === 'subscription' && subs && subs.upcoming.length > 0 && (

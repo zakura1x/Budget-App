@@ -35,6 +35,11 @@ export interface Goal {
   account_balance: string;
   account_available: string;
   short_by: string;
+  /** GOA-05. To set aside each month to reach it on time; null with no date, a past one, or nothing left. */
+  per_month?: string | null;
+  /** This month and the target's own included. */
+  months_left?: number | null;
+  overdue?: boolean;
 }
 
 export interface GoalDraft {

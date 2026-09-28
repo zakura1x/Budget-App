@@ -18,6 +18,7 @@ from app.db.repositories.preferences_repository import PreferencesRepository
 from app.services import audit_service
 from app.services.auth_service.registration_service import default_preferences
 from app.services.budget_service.allowance import MODES
+from app.services.budget_service.suggest import STEPS
 
 EDITABLE = (
     "carry_over", "daily_allowance_mode", "alert_warn_threshold_pct", "alert_pace_enabled",
@@ -25,6 +26,8 @@ EDITABLE = (
     "theme", "budget_period", "month_start_day", "week_start_day", "auto_lock_minutes",
     # the neo-brutalist redesign, 2026-09-18
     "palette",
+    # BUD-17, 2026-09-28: the suggested budget's rounding step, and its period-start reminder
+    "budget_round_step", "budget_suggestion_nudge",
 )
 THEMES = ("system", "light", "dark")
 # UX-05: the colour palette, independent of light/dark (every palette has both).
@@ -47,6 +50,13 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         cleaned["carry_over"] = _bool(changes["carry_over"], "carry_over")
     if "alert_pace_enabled" in changes:
         cleaned["alert_pace_enabled"] = _bool(changes["alert_pace_enabled"], "alert_pace_enabled")
+    if "budget_suggestion_nudge" in changes:
+        cleaned["budget_suggestion_nudge"] = _bool(changes["budget_suggestion_nudge"], "budget_suggestion_nudge")
+    if "budget_round_step" in changes:
+        step = changes["budget_round_step"]
+        if isinstance(step, bool) or step not in STEPS:
+            raise ValidationException(f"budget_round_step must be one of: {', '.join(map(str, STEPS))}")
+        cleaned["budget_round_step"] = step
     if "daily_allowance_mode" in changes:
         if changes["daily_allowance_mode"] not in MODES:
             raise ValidationException(f"daily_allowance_mode must be one of: {', '.join(MODES)}")

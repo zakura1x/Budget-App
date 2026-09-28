@@ -135,6 +135,13 @@ export interface SubscriptionItem {
   monthly: string;
   due_in_days: number | null;
   remind: boolean;
+  /** SUB-07. The day it was cancelled, and what it would have charged since - null/"0.00" while it runs. */
+  cancelled_on?: string | null;
+  saved?: string;
+  /** A day you mean to cancel it by (a free trial); reminded on Home within its reminder days. */
+  cancel_by?: string | null;
+  cancel_by_in_days?: number | null;
+  cancel_soon?: boolean;
 }
 
 export interface SubscriptionOverview {
@@ -278,6 +285,18 @@ export const getSubscriptions = (signal?: AbortSignal) =>
   api<SubscriptionOverview>(`/subscriptions?${today()}`, { signal });
 
 export const getDetected = (signal?: AbortSignal) => api<Candidate[]>(`/subscriptions/detected?${today()}`, { signal });
+
+/** SUB-07 - cancelled with the service on `on` (today by default): nothing charges after that day. */
+export const cancelSubscription = (id: number, on?: string) =>
+  api<Rule>(`/subscriptions/${id}/cancel?${today()}`, { method: 'POST', body: { on: on ?? null } });
+
+/** SUB-07 - signed up again. It charges from today, never the months it was cancelled. */
+export const resumeSubscription = (id: number) =>
+  api<Rule>(`/subscriptions/${id}/resume?${today()}`, { method: 'POST' });
+
+/** SUB-07 - remind me to cancel by `on` (null clears it). A reminder only - nothing is cancelled for you. */
+export const setCancelBy = (id: number, on: string | null) =>
+  api<Rule>(`/subscriptions/${id}/cancel-by?${today()}`, { method: 'POST', body: { on } });
 
 export const getProjection = (months: 3 | 6 | 12, signal?: AbortSignal) =>
   api<Projection>(`/projection?${today()}&months=${months}`, { signal });

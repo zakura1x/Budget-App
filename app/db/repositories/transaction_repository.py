@@ -22,9 +22,10 @@ Category deletion rewrites transactions through this same repository
 second write path to forget.
 """
 
+from datetime import datetime
 from typing import Any, List, Mapping, Optional
 
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from app.core.crypto.working_set import get_working_set
@@ -41,6 +42,22 @@ class TransactionRepository(EncryptedRepository):
     def cached(self) -> List[Record]:
         """Every live transaction this user owns, from the working set."""
         return get_working_set().rows(self.cipher.user_id, TABLE, self.list)
+
+    def deleted_since(self, cutoff: datetime) -> List[Record]:
+        """
+        TXN-25. Soft-deleted rows touched on or after `cutoff`, oldest first.
+        Never cached - the working set holds live rows only. `row_updated` is
+        plaintext and a soft delete sets it, so SQL can narrow this to recent
+        deletions before anything is decrypted; the service decides which of
+        them the user actually deleted.
+        """
+        m = self.model
+        query = (
+            select(m.id, m.key_version, m.payload, m.row_created, m.row_updated, m.is_deleted)
+            .where(m.user_id == self.cipher.user_id, m.is_deleted == True, m.row_updated >= cutoff)  # noqa: E712
+            .order_by(m.id)
+        )
+        return [self._open(*row) for row in self.session.execute(query)]
 
     def create(self, data: Mapping[str, Any]) -> Record:
         record = super().create(data)

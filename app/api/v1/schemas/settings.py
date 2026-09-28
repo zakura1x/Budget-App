@@ -69,6 +69,9 @@ class GoalOut(BaseModel):
     account_balance: Money = Decimal("0.00")
     account_available: Money = Decimal("0.00")  # balance less every goal's set-aside money there
     short_by: Money = Decimal("0.00")  # the balance has fallen this far below what is set aside
+    per_month: Optional[Money] = None  # GOA-05 - to set aside each month to be on time
+    months_left: Optional[int] = None  # this month and the target's included
+    overdue: bool = False
 
 
 class AdminUserOut(BaseModel):

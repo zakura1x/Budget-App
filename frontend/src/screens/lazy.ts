@@ -12,6 +12,7 @@ export const loadBackup = () => import('./Backup');
 export const loadGoals = () => import('./Goals');
 export const loadProjection = () => import('./Projection');
 export const loadRecurring = () => import('./Recurring');
+export const loadRecentlyDeleted = () => import('./RecentlyDeleted');
 export const loadStats = () => import('./Stats');
 
 /** Warmed in this order: Stats is the heaviest and the most visited of them. */
@@ -21,6 +22,7 @@ export const LAZY_SCREENS = [
   loadProjection,
   loadGoals,
   loadBackup,
+  loadRecentlyDeleted,
   loadAboutEncryption,
   loadAdmin,
 ];

@@ -114,6 +114,15 @@ class ForecastOut(BaseModel):
     budget_available: Optional[Money] = None
 
 
+class CashPointOut(BaseModel):
+    """STA-10 - cash on hand at the end of a day: plain balances of the accounts that count in it today."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    on: date
+    amount: Money
+
+
 class OverviewOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -130,3 +139,4 @@ class OverviewOut(BaseModel):
     accounts: List[AccountTotalOut]
     tags: List[TagTotalOut]
     forecast: Optional[ForecastOut] = None
+    cash_on_hand: List[CashPointOut] = []

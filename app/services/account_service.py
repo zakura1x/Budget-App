@@ -547,6 +547,51 @@ def cash_on_hand(views: Iterable[AccountView]) -> CashOnHand:
     )
 
 
+def balance_on(data: Mapping[str, Any], postings: Sequence[Posting], day: date) -> Decimal:
+    """
+    STA-10. An account's balance at the END of `day`, by the same rule as
+    `_view`: the opening balance plus everything dated on or before it - or,
+    for an investment (ACC-08/12), the value last typed by then plus only what
+    moved after that value.
+    """
+    upto = [p for p in postings if p.on <= day]
+    opening = money(data.get("opening_balance", ZERO))
+    if str(data.get("type")) == "investment":
+        typed = [v for v in _valuations(data.get("valuations")) if v.on <= day]
+        base = typed[-1] if typed else None
+        value = base.value if base else opening
+        return value + total(p.amount for p in upto if base is None or not base.covers(p))
+    return opening + total(p.amount for p in upto)
+
+
+def cash_history(db: Session, cipher: UserCipher, days: Sequence[date], postings: Sequence[Posting]) -> List[Decimal]:
+    """
+    STA-10. Cash on hand at the end of each of `days`: the plain balances of
+    the accounts that count in it TODAY (ACC-18 - the switch's history is not
+    kept, so a past day is read through today's choice).
+
+    Deliberately plain balances. A card's typed bills (ACC-35), a loan's dues
+    (ACC-40) and money set aside for goals (GOA-08) change what TODAY's cash on
+    hand holds back, but none of them can be told for a past day - a bill list
+    is replaced when saved, and set-aside money is not a posting. The chart
+    says so rather than mixing the two.
+    """
+    by_account = _group_postings(postings)
+    counted = [
+        record for record in AccountRepository(db, cipher).list()
+        if _counts_in_cash(record.data) and not record.data.get("archived") and not record.data.get("hidden")
+    ]
+    return [
+        total(balance_on(record.data, by_account.get(record.id, ()), day) for record in counted).quantize(ZERO)
+        for day in days
+    ]
+
+
+def _counts_in_cash(data: Mapping[str, Any]) -> bool:
+    kind = str(data.get("type", "cash"))
+    return bool(data.get("counts_in_cash_on_hand", COUNTS_IN_CASH_ON_HAND_DEFAULT.get(kind, True)))
+
+
 def net_worth(views: Iterable[AccountView]) -> NetWorth:
     """
     ACC-36. Every active account at full value, whatever its cash-on-hand

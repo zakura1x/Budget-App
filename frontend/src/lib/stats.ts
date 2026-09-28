@@ -53,6 +53,8 @@ export interface Overview {
     projected: string;
     budget_available: string | null;
   } | null;
+  /** STA-10 - at the end of each trend bucket up to today; plain balances of the accounts counted today. */
+  cash_on_hand?: { on: string; amount: string }[];
 }
 
 export type Range = { span: Span; on: string } | { from: string; to: string };

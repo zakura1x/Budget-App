@@ -30,8 +30,8 @@ aside.
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Dict, List, Mapping, Optional
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -73,13 +73,34 @@ class GoalView:
     account_balance: Decimal = ZERO
     account_available: Decimal = ZERO  # balance less everything set aside there, by every goal
     short_by: Decimal = ZERO  # how far the balance has fallen below what is set aside there
+    # GOA-05. What to set aside each month to reach the target on time, and over how many months.
+    per_month: Optional[Decimal] = None
+    months_left: Optional[int] = None
+    overdue: bool = False  # the target date has passed and it is not reached
+
+
+def monthly_need(remaining: Decimal, today: date, target_date: Optional[date]) -> Tuple[Optional[Decimal], Optional[int]]:
+    """
+    GOA-05. (amount a month, months) to set aside `remaining` by `target_date`.
+
+    Months are counted INCLUDING this one and the target's own month - money
+    set aside in September counts in September - so a target later this month
+    asks for all of it now. Rounded UP to the centavo: rounding down would
+    leave the last month a centavo short. None with no date, a date already
+    past, or nothing left. Pure, and shared by the goals built on it (sinking
+    funds, the emergency fund, the payday prompt - ROADMAP.md Phase 13).
+    """
+    if target_date is None or remaining <= ZERO or target_date < today:
+        return None, None
+    months = (target_date.year - today.year) * 12 + (target_date.month - today.month) + 1
+    return (remaining / months).quantize(Decimal("0.01"), rounding=ROUND_CEILING), months
 
 
 def list_goals(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> List[GoalView]:
     records = GoalRepository(db, cipher).list()
     balances = _balances(db, cipher, today)
     held = _held_by_account(records)
-    views = [_view(r.id, r.data, balances, held) for r in records]
+    views = [_view(r.id, r.data, balances, held, today or date.today()) for r in records]
     return sorted(views, key=lambda v: (v.reached, v.target_date or date.max, v.name.casefold()))
 
 
@@ -88,7 +109,8 @@ def get_goal(db: Session, cipher: UserCipher, goal_id: int, *, today: Optional[d
     record = repo.get(goal_id)
     if record is None:
         raise NotFoundException("Goal not found")
-    return _view(record.id, record.data, _balances(db, cipher, today), _held_by_account(repo.list()))
+    return _view(record.id, record.data, _balances(db, cipher, today), _held_by_account(repo.list()),
+                 today or date.today())
 
 
 def set_aside_by_account(db: Session, cipher: UserCipher) -> Dict[int, Decimal]:
@@ -233,27 +255,33 @@ def _balances(db: Session, cipher: UserCipher, today: Optional[date]) -> Mapping
 
 
 def _view(goal_id: int, data: Mapping[str, Any], balances: Mapping[int, Decimal],
-          held: Mapping[int, Decimal]) -> GoalView:
+          held: Mapping[int, Decimal], today: date) -> GoalView:
     target = money(data["target"])
     saved = _saved(data)
     account_id = int(data["account_id"])
     balance = balances.get(account_id, ZERO)
     on_account = held.get(account_id, ZERO)
+    target_date = date.fromisoformat(data["target_date"]) if data.get("target_date") else None
+    remaining = max(target - saved, ZERO)
+    per_month, months_left = monthly_need(remaining, today, target_date)
     return GoalView(
         id=goal_id,
         name=str(data.get("name", "")),
         target=target,
-        target_date=date.fromisoformat(data["target_date"]) if data.get("target_date") else None,
+        target_date=target_date,
         account_id=account_id,
         colour=str(data.get("colour") or "#3FA37A"),
         icon=str(data.get("icon") or "piggy-bank"),
         saved=saved,
-        remaining=max(target - saved, ZERO),
+        remaining=remaining,
         ratio=min(saved / target, Decimal(1)).quantize(RATIO, rounding=ROUND_HALF_UP) if target > ZERO else Decimal(0),
         reached=saved >= target,
         account_balance=balance,
         account_available=balance - on_account,
         short_by=max(on_account - max(balance, ZERO), ZERO),
+        per_month=per_month,
+        months_left=months_left,
+        overdue=target_date is not None and target_date < today and remaining > ZERO,
     )
 
 

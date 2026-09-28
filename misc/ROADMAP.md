@@ -34,12 +34,12 @@ but a feature is worth little if the data behind it cannot be recovered.
 
 | ID | Feature | Source | Phase | Size | Status |
 |---|---|---|---|---|---|
-| **TXN-24** | Merchant memory — suggest merchant, pre-pick its category | new (#2) | 11 | S | ⬜ |
-| **TXN-25** | Recently deleted, and Undo after a delete | new (#3) | 11 | M | ⬜ |
-| **BUD-17** | Suggested budget from your recent spending | new (2026-09-28) | 11 | M | ⬜ |
-| **GOA-05** | Required-per-month for a goal | deferred | 11 | S | ⬜ |
-| **SUB-07** | Cancellation tracking | deferred | 11 | S | ⬜ |
-| **STA-10** | Cash on hand over time | deferred | 11 | S | ⬜ |
+| **TXN-24** | Merchant memory — suggest merchant, pre-pick its category | new (#2) | 11 | S | ✅ 2026-09-28 |
+| **TXN-25** | Recently deleted, and Undo after a delete | new (#3) | 11 | M | ✅ 2026-09-28 |
+| **BUD-17** | Suggested budget from your recent spending | new (2026-09-28) | 11 | M | ✅ 2026-09-28 |
+| **GOA-05** | Required-per-month for a goal | deferred | 11 | S | ✅ 2026-09-28 |
+| **SUB-07** | Cancellation tracking | deferred | 11 | S | ✅ 2026-09-28 |
+| **STA-10** | Cash on hand over time | deferred | 11 | S | ✅ 2026-09-28 |
 | **CAL-07** | Upcoming bills and charges on the calendar | new (#4) | 12 | M | ⬜ |
 | **REC-27** | What-if: try a plan before committing | deferred | 12 | M | ⬜ |
 | **REC-35** | Debt payoff planner (snowball vs avalanche) | new (#5) | 12 | M | ⬜ |
@@ -69,14 +69,28 @@ widgets and Siri (UX-16/17), a plaintext full archive (DAT-18).
 
 ### 🎯 Objective: Six features built from data the app already has — no new table
 
+> **✅ Built 2026-09-28** — all six, 87 new backend tests (846 in all, 0 failed),
+> checked in the browser on a local in-memory copy. FEATURES.md has each row.
+> Where the build differed from the plan below:
+> - **TXN-24:** the add sheet had NO merchant field; the user chose a
+>   **Merchant tile** beside Add note (over learning from notes). Editing an
+>   entry used to wipe its merchant - the sheet now sends it back.
+> - **TXN-25:** a plan payment (REC-32) is refused, not routed through
+>   recurring_service. A restore is refused with its reason for an archived
+>   account and a deleted category too. Nothing is purged after 30 days - the
+>   list just stops showing it.
+> - **SUB-07:** "saved" leaves out any occurrence that DID post, so a
+>   cancellation entered late never claims money that was really spent.
+> - **STA-10:** plain balances, as recommended - the card says so.
+
 | ID | Feature | Status |
 |---|---|---|
-| TXN-24 | Merchant memory | ⬜ |
-| TXN-25 | Recently deleted + Undo | ⬜ |
-| BUD-17 | Suggested budget | ⬜ |
-| GOA-05 | Required-per-month | ⬜ |
-| SUB-07 | Cancellation tracking | ⬜ |
-| STA-10 | Cash on hand over time | ⬜ |
+| TXN-24 | Merchant memory | ✅ 2026-09-28 |
+| TXN-25 | Recently deleted + Undo | ✅ 2026-09-28 |
+| BUD-17 | Suggested budget | ✅ 2026-09-28 |
+| GOA-05 | Required-per-month | ✅ 2026-09-28 |
+| SUB-07 | Cancellation tracking | ✅ 2026-09-28 |
+| STA-10 | Cash on hand over time | ✅ 2026-09-28 |
 
 ### TXN-24 · Merchant memory
 Typing a merchant offers the ones you have used before (most-used first), and

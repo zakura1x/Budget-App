@@ -26,6 +26,7 @@ import { Toggle } from '../components/ui/Toggle';
 import { ApiError } from '../lib/api';
 import type { AllowanceMode, PeriodKind, Preferences, Theme } from '../lib/budgets';
 import { afterWrite } from '../lib/invalidate';
+import { formatPHP } from '../lib/money';
 import { useAuthStore } from '../stores/authStore';
 import { usePreferencesStore } from '../stores/preferencesStore';
 
@@ -34,10 +35,14 @@ const WEEKDAYS = [
   { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' }, { value: 6, label: 'Saturday' }, { value: 7, label: 'Sunday' },
 ] as const;
 const LOCK_CHOICES = [1, 2, 5, 10, 15, 30];
+/** BUD-17 - what a suggested budget rounds up to, in pesos (the server's STEPS). */
+const ROUND_STEPS = [1, 10, 50, 100, 500, 1000];
 /** The preferences that change a figure rather than how the app looks or locks. */
 const MOVES_FIGURES = [
   'carry_over', 'daily_allowance_mode', 'alert_warn_threshold_pct',
   'alert_pace_enabled', 'budget_period', 'month_start_day', 'week_start_day',
+  // BUD-17 - the suggestion and the reminder in the budget status
+  'budget_round_step', 'budget_suggestion_nudge',
 ] as const;
 
 export function Settings() {
@@ -155,6 +160,25 @@ export function Settings() {
                 </label>
                 <p className="mt-2 text-footnote text-ink-3">Also the first column of the calendar.</p>
               </div>
+            </div>
+            {/* BUD-17 (user, 2026-09-28): the suggested budget rounds up to this step, and the reminder can be turned off. */}
+            <div className="space-y-3 border-t border-stroke/40 pt-4">
+              <label className="flex items-center justify-between gap-3 text-body">
+                <span>Round suggestions up to</span>
+                <select
+                  value={Number(prefs.budget_round_step ?? 100)}
+                  onChange={(e) => void change({ budget_round_step: Number(e.target.value) })}
+                  className="num min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-body text-ink"
+                >
+                  {ROUND_STEPS.map((step) => <option key={step} value={step}>{formatPHP(`${step}.00`).replace('.00', '')}</option>)}
+                </select>
+              </label>
+              <Toggle
+                checked={prefs.budget_suggestion_nudge !== false}
+                onChange={(value) => void change({ budget_suggestion_nudge: value })}
+                label="Remind me when my spending changes"
+                hint="In the first days of a period, if your recent spending is more than 15% away from your budget. It only opens a suggestion — nothing changes until you save."
+              />
             </div>
           </Card>
 

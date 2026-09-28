@@ -50,6 +50,9 @@ def default_preferences() -> dict:
         "alert_warn_threshold_pct": settings.ALERT_WARN_THRESHOLD_PCT,
         "alert_pace_enabled": settings.ALERT_PACE_ENABLED,
         "auto_lock_minutes": settings.PIN_AUTO_LOCK_MINUTES,
+        # BUD-17 (user, 2026-09-28): round suggestions up to PHP 100, and remind when spending drifts.
+        "budget_round_step": 100,
+        "budget_suggestion_nudge": True,
     }
 
 

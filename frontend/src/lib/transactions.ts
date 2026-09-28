@@ -155,6 +155,34 @@ export const deleteTransaction = (id: number) =>
 export const repeatLast = (on: string) =>
   api<Outcome>(`/transactions/repeat-last?today=${localToday()}`, { method: 'POST', body: { on } });
 
+/**
+ * TXN-24 - a merchant typed before, and the category its LATEST entry was
+ * filed under (null when that entry was split, or its category is archived).
+ */
+export interface Merchant {
+  name: string;
+  type: 'expense' | 'income';
+  count: number;
+  category_id: number | null;
+  last_used: string;
+}
+
+export const listMerchants = (signal?: AbortSignal) => api<Merchant[]>('/transactions/merchants', { signal });
+
+/** TXN-25 - one line of Recently deleted. `reason` says why Restore is not offered. */
+export interface Deleted {
+  transaction: Transaction;
+  deleted_at: string;
+  restorable: boolean;
+  reason: string | null;
+}
+
+export const listDeleted = (signal?: AbortSignal) => api<Deleted[]>('/transactions/deleted', { signal });
+
+/** TXN-25 - Undo, and Restore. Brings back whatever went with it: a transfer's other leg, a purchase's cashback. */
+export const restoreTransaction = (id: number) =>
+  api<Outcome>(`/transactions/${id}/restore?today=${localToday()}`, { method: 'POST' });
+
 /** Today in the user's own timezone, as the API's date string. */
 export function localToday(): string {
   const now = new Date();

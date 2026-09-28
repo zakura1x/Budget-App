@@ -26,7 +26,8 @@ import { Button } from '../components/ui/Button';
 import { Card, SectionTitle } from '../components/ui/Card';
 import { Ring, toneFor, type Tone } from '../components/ui/Ring';
 import { useLookups, type Lookups } from '../hooks/useLookups';
-import { ratio, type Alert, type BudgetStatus } from '../lib/budgets';
+import { dismissReminder, ratio, type Alert, type BudgetStatus } from '../lib/budgets';
+import { afterWrite } from '../lib/invalidate';
 import { formatPHP } from '../lib/money';
 import { localToday } from '../lib/transactions';
 import { useAuthStore } from '../stores/authStore';
@@ -197,6 +198,46 @@ function BudgetCard({ status }: { status: BudgetStatus }) {
   );
 }
 
+/**
+ * BUD-17's period-start reminder (user, 2026-09-28): the budget has drifted
+ * more than 15% from what is actually spent. It only OPENS the suggestion.
+ * "Not now" is remembered on the server, in the budget, so it stays away until
+ * the next period on every device - nothing is kept in the browser.
+ */
+function ReminderCard({ status }: { status: BudgetStatus }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const reminder = status.reminder;
+  if (!reminder) return null;
+  const unit = status.budget.period === 'monthly' ? 'month' : status.budget.period === 'weekly' ? 'week' : 'period';
+
+  const notNow = async () => {
+    setBusy(true);
+    try {
+      await dismissReminder();
+      afterWrite('budget'); // the status comes back without it
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="mb-3 space-y-3">
+      <div>
+        <p className="text-headline">Your spending has changed</p>
+        <p className="num mt-1 text-footnote text-ink-2">
+          Your last {reminder.periods} {unit}s come to about {formatPHP(reminder.suggested)} a {unit} · your budget is{' '}
+          {formatPHP(reminder.in_force)}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button onClick={() => navigate('/budget?suggest=1')}>Review budget</Button>
+        <Button variant="secondary" onClick={() => void notNow()} disabled={busy}>Not now</Button>
+      </div>
+    </Card>
+  );
+}
+
 export function Home() {
   const today = new Date();
   const navigate = useNavigate();
@@ -242,6 +283,7 @@ export function Home() {
       {status
         ? status.is_current && <AlertBanner alerts={status.alerts} status={status} lookups={lookups} />
         : <AlertBanner alerts={alerts} status={null} lookups={lookups} />}
+      {status?.is_current && <ReminderCard status={status} />}
       {(error || budgetError) && (
         <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error ?? budgetError}</p>
       )}
@@ -254,9 +296,15 @@ export function Home() {
           <p className="mx-auto mt-1 max-w-xs text-footnote text-ink-2">
             One amount for the month or week. The app works out a daily figure and keeps it honest as you spend.
           </p>
-          <Button className="mt-4" onClick={() => navigate('/budget')}>
-            Set a budget
-          </Button>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button onClick={() => navigate('/budget')}>
+              Set a budget
+            </Button>
+            {/* BUD-17 - worked out from the entries already here, to look over before it is saved. */}
+            <Button variant="secondary" onClick={() => navigate('/budget?suggest=1')}>
+              Start from my spending
+            </Button>
+          </div>
         </Card>
       ) : (
         <div className="skeleton h-[26rem] rounded-card" aria-hidden="true" />

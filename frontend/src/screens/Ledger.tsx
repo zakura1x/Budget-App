@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TransactionRow } from '../components/TransactionRow';
+import { offerUndo } from '../components/UndoToast';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Segmented } from '../components/ui/Segmented';
@@ -234,6 +235,7 @@ export function Ledger() {
     try {
       const outcome = await deleteTransaction(row.id);
       removeIds(outcome.transactions.map((t) => t.id), outcome);
+      offerUndo(row); // TXN-25
     } catch (e) {
       useLedgerStore.setState({ error: e instanceof ApiError ? e.message : 'That did not delete.' });
     }

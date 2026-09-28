@@ -168,6 +168,23 @@ class SubscriptionOut(BaseModel):
     monthly: Money
     due_in_days: Optional[int] = None
     remind: bool
+    cancelled_on: Optional[date] = None  # SUB-07
+    saved: Money = Decimal("0.00")  # what it would have charged since
+    cancel_by: Optional[date] = None
+    cancel_by_in_days: Optional[int] = None
+    cancel_soon: bool = False
+
+
+class CancelIn(BaseModel):
+    """SUB-07 - the day it was cancelled with the service; today by default."""
+
+    on: Optional[date] = None
+
+
+class CancelByIn(BaseModel):
+    """SUB-07 - remind me to cancel by this day; null clears it."""
+
+    on: Optional[date] = None
 
 
 class UpcomingChargeOut(BaseModel):

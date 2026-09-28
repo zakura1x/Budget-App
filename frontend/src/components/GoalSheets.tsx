@@ -223,6 +223,18 @@ export function GoalCard({ goal, accountName, onEdit, onAdd, onUse, compact = fa
           {!goal.reached && ` · ${formatPHP(goal.remaining)} to go`}
           {goal.target_date && ` · by ${format(parseISO(goal.target_date), 'd MMM yyyy')}`}
         </p>
+        {/* GOA-05 - this month and the target's own both count; rounded up so the last month is never short. */}
+        {goal.per_month && goal.months_left && (
+          <p className="mt-1 text-footnote text-ink-2">
+            <span className="num font-semibold text-ink">{formatPHP(goal.per_month)}</span>
+            {goal.months_left === 1
+              ? ' to set aside this month to be on time'
+              : ` a month for ${goal.months_left} months to be on time`}
+          </p>
+        )}
+        {goal.overdue && (
+          <p className="mt-1 text-footnote text-ink-2">The target date has passed — move it, or keep adding when you can.</p>
+        )}
         {short && (
           <p className="mt-1 text-footnote font-semibold text-warn">
             {accountName ?? 'The account'} holds {formatPHP(goal.account_balance)} — {formatPHP(goal.short_by)} short of

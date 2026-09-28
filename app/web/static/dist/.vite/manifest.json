@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "file": "assets/index-C2Ox7-q5.js",
+    "file": "assets/index-DF8Zs1YO.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -11,10 +11,11 @@
       "src/screens/Goals.tsx",
       "src/screens/Projection.tsx",
       "src/screens/Recurring.tsx",
+      "src/screens/RecentlyDeleted.tsx",
       "src/screens/Stats.tsx"
     ],
     "css": [
-      "assets/index-CBY9armk.css"
+      "assets/index-BDLs1bvv.css"
     ],
     "assets": [
       "assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
@@ -22,7 +23,7 @@
     ]
   },
   "src/screens/AboutEncryption.tsx": {
-    "file": "assets/AboutEncryption-aEnM4E6P.js",
+    "file": "assets/AboutEncryption-BtNd9ZIG.js",
     "name": "AboutEncryption",
     "src": "src/screens/AboutEncryption.tsx",
     "isDynamicEntry": true,
@@ -31,7 +32,7 @@
     ]
   },
   "src/screens/Admin.tsx": {
-    "file": "assets/Admin-D1YSzZTS.js",
+    "file": "assets/Admin-tIFAIgTG.js",
     "name": "Admin",
     "src": "src/screens/Admin.tsx",
     "isDynamicEntry": true,
@@ -40,7 +41,7 @@
     ]
   },
   "src/screens/Backup.tsx": {
-    "file": "assets/Backup-CIdlah7W.js",
+    "file": "assets/Backup-CTmSTQh9.js",
     "name": "Backup",
     "src": "src/screens/Backup.tsx",
     "isDynamicEntry": true,
@@ -49,7 +50,7 @@
     ]
   },
   "src/screens/Goals.tsx": {
-    "file": "assets/Goals-Bp8exhLS.js",
+    "file": "assets/Goals-Buo84xTY.js",
     "name": "Goals",
     "src": "src/screens/Goals.tsx",
     "isDynamicEntry": true,
@@ -58,7 +59,7 @@
     ]
   },
   "src/screens/Projection.tsx": {
-    "file": "assets/Projection-DwfqPnsp.js",
+    "file": "assets/Projection-CnuA1bQ4.js",
     "name": "Projection",
     "src": "src/screens/Projection.tsx",
     "isDynamicEntry": true,
@@ -66,8 +67,17 @@
       "index.html"
     ]
   },
+  "src/screens/RecentlyDeleted.tsx": {
+    "file": "assets/RecentlyDeleted-BJOIcyi3.js",
+    "name": "RecentlyDeleted",
+    "src": "src/screens/RecentlyDeleted.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
   "src/screens/Recurring.tsx": {
-    "file": "assets/Recurring-D_DdirQW.js",
+    "file": "assets/Recurring-SlLCO0VG.js",
     "name": "Recurring",
     "src": "src/screens/Recurring.tsx",
     "isDynamicEntry": true,
@@ -76,7 +86,7 @@
     ]
   },
   "src/screens/Stats.tsx": {
-    "file": "assets/Stats-D8XkiYEr.js",
+    "file": "assets/Stats-Dt3KPBPr.js",
     "name": "Stats",
     "src": "src/screens/Stats.tsx",
     "isDynamicEntry": true,

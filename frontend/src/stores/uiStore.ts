@@ -46,6 +46,13 @@ interface UiState {
   /** ACC-36. Which headline the Accounts tab shows - in memory only, back to cash on hand after a lock. */
   headline: 'cash' | 'net';
   setHeadline: (headline: 'cash' | 'net') => void;
+  /**
+   * TXN-25. The entry just deleted, for the Undo toast - in memory for a few
+   * seconds and then gone; Recently deleted under More keeps it for 30 days.
+   */
+  undo: { id: number; label: string } | null;
+  offerUndo: (id: number, label: string) => void;
+  clearUndo: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -67,4 +74,7 @@ export const useUiStore = create<UiState>((set) => ({
   closeRuleSheet: () => set({ ruleSheet: null }),
   headline: 'cash',
   setHeadline: (headline) => set({ headline }),
+  undo: null,
+  offerUndo: (id, label) => set({ undo: { id, label } }),
+  clearUndo: () => set({ undo: null }),
 }));

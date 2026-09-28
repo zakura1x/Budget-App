@@ -21,6 +21,8 @@ moment you look, and returned in the same response as the figures it is about.
                             its statement cycle is passing (ACC-22)
     subscription_due        a subscription charges within its      warn
                             reminder days (SUB-06)
+    subscription_cancel_by  the day you meant to cancel one by is  warn
+                            within its reminder days (SUB-07)
     statement_differs       a card's last statement was checked    warn
                             against the bank and does not match
                             (ACC-24)
@@ -58,12 +60,17 @@ class Alert:
 
 @dataclass(frozen=True)
 class SubscriptionDue:
-    """SUB-06. A subscription whose next charge is within its reminder days."""
+    """
+    SUB-06. A subscription whose next charge is within its reminder days - or,
+    with `cancel_by` (SUB-07), one you meant to cancel by a date that is now
+    that close: a free trial about to turn into a charge.
+    """
 
     rule_id: int
     name: str
     account_id: int
     due_in_days: int
+    cancel_by: bool = False
 
 
 @dataclass(frozen=True)
@@ -147,6 +154,10 @@ def _when(days: int) -> str:
     return "today" if days == 0 else f"in {days} day{'s' if days != 1 else ''}"
 
 
+def _by(days: int) -> str:
+    return "today" if days == 0 else "by tomorrow" if days == 1 else f"within {days} days"
+
+
 def account_alerts(
     *,
     cards_due: Iterable[CardDue] = (),
@@ -169,6 +180,10 @@ def account_alerts(
         alerts.append(Alert("statement_differs", "warn", "A card's statement does not match the bank's total",
                             account_id=statement.account_id))
     for sub in subscriptions_due:
+        if sub.cancel_by:
+            alerts.append(Alert("subscription_cancel_by", "warn", f"Cancel {sub.name} {_by(sub.due_in_days)}",
+                                account_id=sub.account_id, rule_id=sub.rule_id))
+            continue
         alerts.append(Alert("subscription_due", "warn", f"{sub.name} charges {_when(sub.due_in_days)}",
                             account_id=sub.account_id, rule_id=sub.rule_id))
     return alerts

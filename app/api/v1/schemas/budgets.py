@@ -105,6 +105,16 @@ class AlertOut(BaseModel):
     rule_id: Optional[int] = None  # subscription_due (SUB-06)
 
 
+class ReminderOut(BaseModel):
+    """BUD-17 - "Your spending has changed": the suggested total beside the budget in force."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    suggested: Money
+    in_force: Money
+    periods: int
+
+
 class StatusOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -119,6 +129,55 @@ class StatusOut(BaseModel):
     allocated: Money
     unallocated: Money
     alerts: List[AlertOut]
+    reminder: Optional[ReminderOut] = None
+
+
+class SuggestedLineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    category_id: int
+    history: List[Money]  # per period, oldest first - lines up with SuggestionOut.periods
+    median: Money
+    average: Money
+    scheduled: Money
+    current: Optional[Money] = None
+    spent_in: int
+    suggested: Money
+    reason: Literal["median", "scheduled", "kept", "single"]
+
+
+class OccasionalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    category_id: int
+    history: List[Money]
+    spent_in: int
+
+
+class SuggestionOut(BaseModel):
+    """
+    BUD-17. A suggested budget - read only. `suggestion` is null when there is
+    no finished period to work from yet; `periods` may be fewer than `asked`.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    period: PeriodOut
+    kind: PeriodKind
+    asked: int
+    periods: List[PeriodOut]
+    in_force: Optional[Money] = None
+    lines: List[SuggestedLineOut] = []
+    occasional: List[OccasionalOut] = []
+    buffer: Money = Decimal("0.00")
+    total: Money = Decimal("0.00")
+    income: Optional[Money] = None
+    over_income: bool = False
+    fitted: bool = False
+    cannot_fit: bool = False
+    step: Money = Decimal("100.00")
+    trim: int = 0
+    ready: bool = False  # false: nothing to suggest from yet
 
 
 class StatusEnvelope(BaseModel):
@@ -146,3 +205,6 @@ class PreferencesIn(BaseModel):
     month_start_day: Optional[int] = Field(default=None, ge=1, le=31)
     week_start_day: Optional[int] = Field(default=None, ge=1, le=7)
     auto_lock_minutes: Optional[int] = Field(default=None, ge=1, le=60)
+    # BUD-17: what a suggested budget rounds up to, and the period-start reminder
+    budget_round_step: Optional[Literal[1, 10, 50, 100, 500, 1000]] = None
+    budget_suggestion_nudge: Optional[bool] = None

@@ -153,6 +153,23 @@ export const CashbackIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** TXN-24 - "Merchant": a shop front. */
+export const StoreIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 9.5 5.5 4h13L20 9.5" />
+    <path d="M4 9.5a2.67 2.67 0 0 0 5.33 0 2.67 2.67 0 0 0 5.34 0 2.67 2.67 0 0 0 5.33 0" />
+    <path d="M5.5 11.5V20h13v-8.5M10 20v-4.5h4V20" />
+  </Icon>
+);
+
+/** TXN-25 - Recently deleted. */
+export const TrashIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6.5h16M9.5 6.5V4.25h5V6.5" />
+    <path d="M6 6.5 7 20h10l1-13.5M10 10.5v5.5M14 10.5v5.5" />
+  </Icon>
+);
+
 export const RepeatIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M17 3.5 20.5 7 17 10.5" />

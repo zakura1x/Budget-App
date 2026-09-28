@@ -67,6 +67,7 @@ from app.services.budget_service.allowance import (
     daily_allowance,
 )
 from app.services.budget_service.carry_over import carried_in
+from app.services.budget_service import suggest as suggest_rules
 
 MAX_BUDGET = Decimal("999999999.99")
 
@@ -105,6 +106,15 @@ class CategoryProgress:
 
 
 @dataclass(frozen=True)
+class Reminder:
+    """BUD-17. "Your spending has changed" - what the suggestion comes to beside the budget in force."""
+
+    suggested: Decimal
+    in_force: Decimal
+    periods: int
+
+
+@dataclass(frozen=True)
 class BudgetStatus:
     budget: BudgetView
     period: BudgetPeriod
@@ -117,6 +127,24 @@ class BudgetStatus:
     allocated: Decimal
     unallocated: Decimal  # the period's amount minus every allocation; negative when over-allocated
     alerts: List[Alert] = field(default_factory=list)
+    reminder: Optional[Reminder] = None  # BUD-17 - only in the first days of a period, and only when it drifted
+
+
+@dataclass(frozen=True)
+class SuggestionView:
+    """
+    BUD-17. The suggestion for the period containing today, from the finished
+    periods before it. `periods` are the ones actually used - fewer than
+    `asked` when there is not that much history - and `suggestion` is None
+    when there is none at all.
+    """
+
+    period: BudgetPeriod
+    kind: str
+    asked: int
+    periods: Tuple[BudgetPeriod, ...]
+    in_force: Optional[Decimal]
+    suggestion: Optional[suggest_rules.Suggestion]
 
 
 # ------------------------------------------------------------------ reading
@@ -190,6 +218,19 @@ def status(
             statements_differ=statements_differ,
         )
 
+    reminder = None
+    if is_current and suggest_rules.reminder_window(
+        today_index=(today - period.start).days, kind=str(data["period"]), period=period,
+        dismissed_for=data.get("suggestion_dismissed_for"),
+        enabled=bool(prefs.get("budget_suggestion_nudge", True)),
+    ):
+        found = suggestion(db, cipher, today=today, periods=suggest_rules.REMINDER_HISTORY,
+                           step=_step(prefs), spends=spends)
+        if found.suggestion is not None and suggest_rules.reminder_due(
+            history=len(found.periods), suggested=found.suggestion.total, in_force=amount,
+        ):
+            reminder = Reminder(found.suggestion.total, amount, len(found.periods))
+
     return BudgetStatus(
         budget=budget,
         period=period,
@@ -202,7 +243,181 @@ def status(
         allocated=allocated,
         unallocated=(amount or ZERO) - allocated,
         alerts=alerts,
+        reminder=reminder,
     )
+
+
+def suggestion(
+    db: Session,
+    cipher: UserCipher,
+    *,
+    today: Optional[date] = None,
+    periods: int = 3,
+    step: Optional[int] = None,
+    trim: int = 0,
+    fit: bool = False,
+    spends: Optional[Sequence[Spend]] = None,
+) -> SuggestionView:
+    """
+    BUD-17. A budget worked out from the last `periods` FINISHED periods, for
+    the period containing today - the one a saved budget applies to, because
+    an amount changed today applies to the current period (update_budget).
+    Reads only; saving goes through create_budget / update_budget like any
+    other edit, so there is still one writer.
+
+    Spending here is exactly what the budget counts - expense splits, never a
+    transfer or a balance adjustment - so the suggestion and the progress bars
+    can never disagree. A sub-category's spending belongs to its main
+    category, as an allocation on the parent covers its children; a
+    sub-category budgeted directly keeps its own.
+    """
+    today = today or date.today()
+    if periods not in suggest_rules.PERIOD_CHOICES:
+        raise ValidationException(f"periods must be one of {suggest_rules.PERIOD_CHOICES}")
+    prefs = _preferences(db, cipher)
+    step = _step(prefs) if step is None else step
+    if step not in suggest_rules.STEPS:
+        raise ValidationException(f"step must be one of {suggest_rules.STEPS}")
+    if trim not in suggest_rules.TRIMS:
+        raise ValidationException(f"trim must be one of {suggest_rules.TRIMS}")
+
+    record = _current_record(db, cipher)
+    config = _config(record.data) if record is not None else _default_config(prefs)
+    period_of = lambda day: budget_period(day, **config)  # noqa: E731 - read as "the period of"
+    current = period_of(today)
+    spends = list(spends if spends is not None else _spends(db, cipher))
+
+    # The finished periods, newest first, then only those after the first entry
+    # ever recorded - a month before you started is not a month of nothing.
+    earliest = min((s.on for s in spends), default=None)
+    history: List[BudgetPeriod] = []
+    day = current.start
+    for _ in range(periods):
+        day = _day_before(day)
+        found = period_of(day)
+        if earliest is None or found.end < earliest:
+            break
+        history.append(found)
+        day = found.start
+    history.reverse()
+
+    in_force = _amount_for(record.data, current) if record is not None else None
+    if not history:
+        return SuggestionView(current, config["kind"], periods, (), in_force, None)
+
+    categories = {r.id: r.data for r in CategoryRepository(db, cipher).list()}
+    allocations = (
+        {a.category_id: a.amount for a in _view(db, cipher, record, today).allocations} if record is not None else {}
+    )
+
+    def unit_of(category_id: Optional[int]) -> Optional[int]:
+        """The line a category's spending belongs to."""
+        if category_id is None or category_id in allocations:
+            return category_id
+        parent = (categories.get(category_id) or {}).get("parent_id")
+        return parent if parent is not None else category_id
+
+    def usable(unit: Optional[int]) -> bool:
+        """An archived or vanished category gets no new line, and its spending counts nowhere."""
+        data = categories.get(unit) if unit is not None else None
+        if data is None or data.get("kind") != "expense":
+            return False
+        return not data.get("archived") or unit in allocations
+
+    by_unit: Dict[int, List[Decimal]] = {}
+    for spend in spends:
+        index = next((i for i, p in enumerate(history) if p.covers(spend.on)), None)
+        unit = unit_of(spend.category_id)
+        if index is None or not usable(unit):
+            continue
+        row = by_unit.setdefault(unit, [ZERO] * len(history))
+        row[index] += spend.amount
+
+    income = [ZERO] * len(history)
+    for view in transaction_service.views(db, cipher):
+        if view.type != "income":
+            continue
+        index = next((i for i, p in enumerate(history) if p.covers(view.txn_date)), None)
+        if index is not None:
+            income[index] += view.amount
+
+    result = suggest_rules.suggest(
+        {unit: [money(a) for a in row] for unit, row in by_unit.items()},
+        periods=len(history),
+        income=income,
+        scheduled=_scheduled(db, cipher, current, unit_of, usable),
+        current={unit: amount for unit, amount in allocations.items() if usable(unit)},
+        step=step,
+        trim=trim,
+        fit=fit,
+    )
+    return SuggestionView(current, config["kind"], periods, tuple(history), in_force, result)
+
+
+def dismiss_reminder(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> None:
+    """
+    BUD-17. "Not now" - hide the reminder until the next period. Kept in the
+    budget's own payload, on the server: nothing may be remembered in the
+    browser (invariant 10), and it means dismissing it on the phone hides it
+    on the PC too.
+    """
+    today = today or date.today()
+    record = _current_record(db, cipher)
+    if record is None:
+        raise NotFoundException("There is no budget yet")
+    data = dict(record.data)
+    data["suggestion_dismissed_for"] = _period_of(data)(today).start.isoformat()
+    BudgetRepository(db, cipher).update(record.id, data)
+    db.commit()
+
+
+def _scheduled(
+    db: Session,
+    cipher: UserCipher,
+    period: BudgetPeriod,
+    unit_of: Callable[[Optional[int]], Optional[int]],
+    usable: Callable[[Optional[int]], bool],
+) -> Dict[int, Decimal]:
+    """
+    BUD-17's floor: what recurring charges, subscriptions and installment
+    payments charge each line in `period` - posted already or still to come,
+    because both are this period's spending. From THE schedule
+    (recurring_service.occurrences, REC-22), never a date rule of its own.
+    Imported here: recurring_service reaches this module through
+    transaction_service, so a top-level import would be a cycle.
+    """
+    from app.db.repositories.recurring_repository import RecurringRuleRepository
+    from app.services import recurring_service
+
+    floor: Dict[int, Decimal] = {}
+    for rule in RecurringRuleRepository(db, cipher).list():
+        if rule.data.get("type") != "expense":
+            continue
+        for occurrence in recurring_service.occurrences(rule.id, rule.data, period.start, period.end):
+            if occurrence.paused:
+                continue
+            for category_id, amount in occurrence.splits:
+                unit = unit_of(category_id)
+                if usable(unit):
+                    floor[unit] = floor.get(unit, ZERO) + amount
+    return floor
+
+
+def _step(prefs: Mapping[str, Any]) -> int:
+    value = prefs.get("budget_round_step", suggest_rules.DEFAULT_STEP)
+    return value if value in suggest_rules.STEPS else suggest_rules.DEFAULT_STEP
+
+
+def _default_config(prefs: Mapping[str, Any]) -> Dict[str, Any]:
+    """The Settings defaults a new budget would start from - custom falls back to monthly, having no length."""
+    kind = prefs.get("budget_period") or settings.DEFAULT_BUDGET_PERIOD
+    return {
+        "kind": kind if kind in ("weekly", "monthly") else "monthly",
+        "month_start_day": int(prefs.get("month_start_day") or settings.DEFAULT_MONTH_START_DAY),
+        "week_start_day": int(prefs.get("week_start_day") or settings.DEFAULT_WEEK_START_DAY),
+        "custom_days": None,
+        "custom_anchor": None,
+    }
 
 
 def standalone_alerts(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> List[Alert]:
@@ -516,11 +731,16 @@ def _subscriptions_due(db: Session, cipher: UserCipher, today: date) -> List[Sub
     """
     from app.services import subscription_service
 
-    return [
+    items = subscription_service.reminders(db, cipher, today=today)
+    due = [
         SubscriptionDue(item.rule.id, item.rule.name, item.rule.account_id, item.due_in_days)
-        for item in subscription_service.reminders(db, cipher, today=today)
-        if item.due_in_days is not None
+        for item in items if item.remind and item.due_in_days is not None
     ]
+    cancel = [
+        SubscriptionDue(item.rule.id, item.rule.name, item.rule.account_id, item.cancel_by_in_days, cancel_by=True)
+        for item in items if item.cancel_soon and item.cancel_by_in_days is not None
+    ]
+    return due + cancel
 
 
 def _replace_allocations(

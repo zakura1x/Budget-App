@@ -541,6 +541,29 @@ worker is served at `/ZBDGT/sw.js` with its own CSP. Preferences are loaded
 into `preferencesStore` after unlock and dropped on lock (theme, week start,
 auto-lock); they are never persisted in the browser.
 
+**Phase 11** (2026-09-28, misc/ROADMAP.md) - rules worth keeping:
+
+- **Recently deleted (TXN-25)** lists only rows carrying `deleted_at`, and
+  ONLY `transaction_service.delete_transaction` writes it. Every other soft
+  delete - an installment conversion (REC-34), a revert's charges, a credit an
+  edit took away - is NOT something the user deleted; never stamp one.
+  `restore_transaction` brings back the group (`_restore_group`) and refuses
+  through `_restore_problem`; a new kind of link between rows must join both.
+- **Merchants (TXN-24)** are read from the working set
+  (`transaction_service.merchants`); the add sheet only pre-selects a category
+  when none is chosen yet.
+- **The suggested budget (BUD-17)** reads, never writes: the rules are pure in
+  `budget_service/suggest.py`, saving is the ordinary create/update. The
+  reminder's dismissal lives in the budget payload
+  (`suggestion_dismissed_for`), never in the browser; `status()` computes the
+  suggestion only inside `reminder_window`.
+- **Cancelling a subscription (SUB-07)** is recurring_service's write
+  (`cancel_subscription` / `resume_subscription` / `set_cancel_by`);
+  subscription_service only reads. `update_rule` keeps a cancelled one ended.
+- **Cash on hand over time (STA-10)** is plain balances of the accounts counted
+  TODAY (`account_service.balance_on` / `cash_history`) - never try to rebuild
+  bills, dues or set-aside money for a past day.
+
 There is no "copy last period's budget" action,
 because allocations persist across periods - confirmed by the user on
 2026-09-14, along with every other proposed default in FEATURES.md §13 and

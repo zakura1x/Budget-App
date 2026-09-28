@@ -24,6 +24,7 @@ import { moneyIn } from './TransactionRow';
 import { isPending, useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore } from '../stores/uiStore';
 import { ReceiptControl } from './ReceiptControl';
+import { offerUndo } from './UndoToast';
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
 
@@ -66,6 +67,7 @@ export function TransactionPreview() {
       const outcome = await deleteTransaction(row.id);
       ledger.removeIds(outcome.transactions.map((t) => t.id), outcome);
       close();
+      offerUndo(row); // TXN-25 - and it waits under More → Recently deleted for 30 days
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not delete. Try again.');
       setBusy(false);

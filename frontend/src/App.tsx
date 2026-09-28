@@ -22,6 +22,7 @@ import { usePreferencesStore } from './stores/preferencesStore';
 import { Splash } from './components/Splash';
 import { TransactionPreview } from './components/TransactionPreview';
 import { TransactionSheet } from './components/TransactionSheet';
+import { UndoToast } from './components/UndoToast';
 import { useAutoLock } from './hooks/useAutoLock';
 import { useCatchUp } from './hooks/useCatchUp';
 import { clearScrollMemory, useScrollMemory } from './hooks/useScrollMemory';
@@ -60,6 +61,7 @@ const Backup = lazy(() => lazyScreens.loadBackup().then((m) => ({ default: m.Bac
 const Goals = lazy(() => lazyScreens.loadGoals().then((m) => ({ default: m.Goals })));
 const Projection = lazy(() => lazyScreens.loadProjection().then((m) => ({ default: m.Projection })));
 const Recurring = lazy(() => lazyScreens.loadRecurring().then((m) => ({ default: m.Recurring })));
+const RecentlyDeleted = lazy(() => lazyScreens.loadRecentlyDeleted().then((m) => ({ default: m.RecentlyDeleted })));
 const Stats = lazy(() => lazyScreens.loadStats().then((m) => ({ default: m.Stats })));
 
 function SignedOutRoutes() {
@@ -100,6 +102,7 @@ function AppTabs() {
             <Route path="/about-encryption" element={<AboutEncryption />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/transactions" element={<Ledger />} />
+            <Route path="/deleted" element={<RecentlyDeleted />} />
             <Route path="/budget" element={<Budget />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -111,6 +114,7 @@ function AppTabs() {
       <TransactionSheet />
       <TransactionPreview />
       <RuleSheetHost />
+      <UndoToast />
     </>
   );
 }
