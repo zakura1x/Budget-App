@@ -102,6 +102,12 @@ export function Settings() {
                 { value: 'dark', label: 'Dark' },
               ]}
             />
+            <Toggle
+              checked={prefs.haptics ?? true}
+              onChange={(value) => void change({ haptics: value })}
+              label="Vibrate on taps"
+              hint="A short buzz on keys, saves and deletes. Android only - an iPhone does not let a web app vibrate."
+            />
           </Card>
 
           <SectionTitle>Budget</SectionTitle>

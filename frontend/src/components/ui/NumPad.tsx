@@ -8,6 +8,7 @@
  * `decimal={false}` for the PIN pad: the bottom-left key is left empty.
  */
 import { BackspaceIcon } from '../Icons';
+import { buzz } from '../../lib/haptics';
 
 export type NumPadKey = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '.' | 'back';
 
@@ -40,7 +41,10 @@ export function NumPad({ onKey, onLongBackspace, decimal = true, disabled = fals
             type="button"
             disabled={disabled}
             aria-label={key === 'back' ? 'Delete' : key === '.' ? 'Decimal point' : key}
-            onClick={() => onKey(key)}
+            onClick={() => {
+              buzz('tap');
+              onKey(key);
+            }}
             onPointerDown={() => {
               if (key === 'back' && onLongBackspace) pressTimer = window.setTimeout(onLongBackspace, 500);
             }}

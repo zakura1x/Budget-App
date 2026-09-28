@@ -59,6 +59,7 @@ import {
   type Merchant,
   type TransactionDraft,
 } from '../lib/transactions';
+import { buzz } from '../lib/haptics';
 import { afterWrite, MONEY } from '../lib/invalidate';
 import { convertPurchase, createPurchaseWithPlan } from '../lib/recurring';
 import { type Tag } from '../lib/tags';
@@ -649,6 +650,7 @@ export function TransactionSheet() {
         created_at: null,
       });
       close();
+      buzz('success'); // UX-14 - the entry is on the ledger already, as the pending row
       try {
         ledger.applyOutcome(await createTransaction(body), pendingId);
       } catch (e) {
@@ -664,6 +666,7 @@ export function TransactionSheet() {
     setError(null);
     try {
       ledger.applyOutcome(await updateTransaction(editing.id, body), editing.id);
+      buzz('success');
       close();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
@@ -677,6 +680,7 @@ export function TransactionSheet() {
     try {
       const outcome = await deleteTransaction(editing.id);
       ledger.removeIds(outcome.transactions.map((t) => t.id), outcome);
+      buzz('warn');
       close();
       offerUndo(editing); // TXN-25
     } catch (e) {
@@ -690,6 +694,7 @@ export function TransactionSheet() {
     setError(null);
     try {
       ledger.applyOutcome(await repeatLast(localToday()));
+      buzz('success');
       close();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Nothing to repeat yet.');

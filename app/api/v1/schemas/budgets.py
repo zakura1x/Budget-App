@@ -213,3 +213,4 @@ class PreferencesIn(BaseModel):
     safety_work: Optional[Literal["employee", "contract", "self"]] = None
     safety_dependents: Optional[Literal["0", "1-2", "3+"]] = None
     safety_earners: Optional[Literal["1", "2+"]] = None
+    haptics: Optional[bool] = None  # UX-14

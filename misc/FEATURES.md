@@ -36,8 +36,8 @@
 | 9. Subscriptions | `SUB` | 9 | 0 | 0 | 0 | 9 |
 | 10. Savings Goals | `GOA` | 11 | 0 | 0 | 0 | 11 |
 | 11. Data In/Out | `DAT` | 16 | 2 | 2 | 0 | 20 |
-| 12. Settings & UX | `UX` | 14 | 3 | 3 | 0 | 20 |
-| **Total** | | **199** | **5** | **17** | **0** | **220** |
+| 12. Settings & UX | `UX` | 15 | 2 | 3 | 0 | 20 |
+| **Total** | | **200** | **4** | **17** | **0** | **220** |
 
 > **2026-09-14 — the recovery phrase is out.** SEC-14/15/16/20/22 moved to ❌
 > Out and two features came in: password reset by email (SEC-30) and an
@@ -49,7 +49,7 @@
 > 11–15. A new ID gets its row here the day it is built. **Phase 11 built the
 > same day:** TXN-24, TXN-25, BUD-17, GOA-05, SUB-07, STA-10. **Phase 12 too:** CAL-06,
 > CAL-07, REC-27, REC-35. **Phase 13 too:** GOA-09, GOA-10, GOA-11, GOA-12. **Phase 14:** ACC-41, STA-12,
-> SEC-32, SEC-12.
+> SEC-32, SEC-12. **Phase 15:** UX-14 only (the user's choice; the rest wait).
 
 **All decisions are closed** — §13 records what was chosen and why. Four new
 second-order questions came out of those choices; each has a working default
@@ -438,7 +438,7 @@ wrong. One engine makes that bug impossible rather than merely unlikely.
 | UX-11 | Currency display — **PHP, fixed** | ✅ v1 | 8b | Single currency (ACC-11). No picker; `₱` and PHP grouping are formatting constants |
 | UX-12 | "About your encryption" screen | ✅ v1 | 8b | What is protected, what is not, plain language |
 | UX-13 | Offline writes with sync-on-reconnect | 🟡 Deferred | 9 | Genuinely hard — merging offline edits into an encrypted store |
-| UX-14 | Haptics | 🟡 Deferred | — | Vibration API; weak on iOS Safari |
+| UX-14 | **Haptics** | ✅ v1 | 15 | **Built 2026-09-28.** A short vibration on a number-pad key, an entry saved or repeated, an entry deleted and a wrong PIN (`lib/haptics.ts`, `buzz`). `navigator.vibrate` - Android only; iOS Safari has no vibration for web pages and is left alone. *Vibrate on taps* in Settings → Appearance, on by default, kept with the other preferences on the server (`haptics`) |
 | UX-15 | Multi-language (iOS app has 11) | 🟡 Deferred | — | English only in v1 |
 | UX-16 | Home-screen widgets | ❌ Out | — | Native iOS capability. A PWA cannot provide it |
 | UX-17 | Siri Shortcuts one-tap entry | ❌ Out | — | Native. Nearest equivalent is a home-screen bookmark straight to the add sheet |

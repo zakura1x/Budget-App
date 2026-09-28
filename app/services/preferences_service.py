@@ -34,6 +34,8 @@ EDITABLE = (
     "payday_prompt_min", "safety_work", "safety_dependents", "safety_earners",
     # Phase 14, 2026-09-28: the monthly review's "Not now" (STA-12) - the start of the period it was for
     "review_dismissed_for",
+    # UX-14: vibrate on keys, saves and deletes
+    "haptics",
 )
 THEMES = ("system", "light", "dark")
 # UX-05: the colour palette, independent of light/dark (every palette has both).
@@ -56,6 +58,8 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         cleaned["carry_over"] = _bool(changes["carry_over"], "carry_over")
     if "alert_pace_enabled" in changes:
         cleaned["alert_pace_enabled"] = _bool(changes["alert_pace_enabled"], "alert_pace_enabled")
+    if "haptics" in changes:
+        cleaned["haptics"] = _bool(changes["haptics"], "haptics")
     if "budget_suggestion_nudge" in changes:
         cleaned["budget_suggestion_nudge"] = _bool(changes["budget_suggestion_nudge"], "budget_suggestion_nudge")
     if "payday_prompt_min" in changes:

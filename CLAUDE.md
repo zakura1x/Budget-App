@@ -612,6 +612,10 @@ auto-lock); they are never persisted in the browser.
   on purpose (user, 2026-09-28) - do not swap in a WebAuthn package without
   asking. `users.passkeys` holds PUBLIC keys only.
 
+**Phase 15** (2026-09-28): only UX-14 was chosen. Vibration goes through
+`buzz()` in `lib/haptics.ts` and nothing else calls `navigator.vibrate`; it
+reads the server-side `haptics` preference, never browser storage.
+
 There is no "copy last period's budget" action,
 because allocations persist across periods - confirmed by the user on
 2026-09-14, along with every other proposed default in FEATURES.md §13 and

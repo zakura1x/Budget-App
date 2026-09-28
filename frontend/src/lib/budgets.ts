@@ -180,6 +180,8 @@ export interface Preferences {
   safety_work?: 'employee' | 'contract' | 'self';
   safety_dependents?: '0' | '1-2' | '3+';
   safety_earners?: '1' | '2+';
+  /** UX-14 - vibrate on keys, saves and deletes; Android only. */
+  haptics?: boolean;
   [key: string]: unknown;
 }
 

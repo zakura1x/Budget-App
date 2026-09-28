@@ -55,7 +55,7 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **DAT-09** | PDF / Excel export | deferred | 15 | M | ⏸️ |
 | **DAT-20** | Nightly server backup via Task Scheduler | deferred | 15 | S | ⏸️ |
 | **UX-13** | Offline writes with sync-on-reconnect | deferred | 15 | L | ⏸️ |
-| **UX-14** | Haptics | deferred | 15 | S | ⬜ |
+| **UX-14** | Haptics | deferred | 15 | S | ✅ 2026-09-28 |
 | **UX-15** | Multi-language | deferred | 15 | L | ⬜ |
 
 **Deliberately NOT on this list** (still ❌ Out in FEATURES.md, for the reasons
@@ -549,12 +549,21 @@ unwrap a DEK. The PIN always stays as the fallback.
 
 ## 📦 PHASE 15: Larger or optional — needs a decision first
 
+> **Decided by the user, 2026-09-28:** build **UX-14 only**. DAT-09, DAT-20
+> and UX-15 were offered and not chosen - they stay here, undecided - and
+> UX-13 stays blocked by invariant 10.
+>
+> **✅ UX-14 built 2026-09-28** - `lib/haptics.ts` (`buzz`), on the number
+> pads, a saved / repeated / deleted entry and a wrong PIN; a *Vibrate on
+> taps* switch (the `haptics` preference, on by default). 2 backend and 3
+> frontend tests.
+
 | ID | Feature | Status | What has to happen first |
 |---|---|---|---|
 | DAT-09 | PDF / Excel export | ⏸️ | A second deliberate opening in the encryption boundary; DAT-18 chose to keep exactly one. Needs the user's decision, and DAT-02's warning every time |
 | DAT-20 | Nightly backup via Windows Task Scheduler | ⏸️ | Someone with admin rights on the server must create the task. Writing a backup needs no key, so the script side is small |
 | UX-13 | Offline writes, synced on reconnect | ⏸️ | Queuing a write in the browser means storing it there, which invariant 10 / SEC-29 forbids. Blocked unless that decision changes |
-| UX-14 | Haptics | ⬜ | Nothing — `navigator.vibrate` on Android; iOS Safari ignores it |
+| UX-14 | Haptics | ✅ | Built 2026-09-28 - `navigator.vibrate` on Android; iOS Safari ignores it |
 | UX-15 | Multi-language | ⬜ | Every string pulled out of the components first; large, and English-only has been fine |
 
 ---

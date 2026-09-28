@@ -1744,7 +1744,7 @@ scripts/
 - ✅ Phase 12 · Looking ahead: CAL-07, REC-27, REC-35, CAL-06, plus Phase 11's three fixes — built 2026-09-28 (867 backend tests, 0 failed)
 - ✅ Phase 13 · Set aside & safety net: GOA-09, GOA-10, GOA-11, GOA-12 — built 2026-09-28 (878 backend tests passed, 14 skipped, 0 failed)
 - ✅ Phase 14 · Checking, review & security: ACC-41, STA-12, SEC-32, SEC-12 — built 2026-09-28 (910 backend tests passed, 14 skipped, 0 failed)
-- ☐ Phase 15 · Needs a decision first: DAT-09, DAT-20, UX-13, UX-14, UX-15
+- ◐ Phase 15 · Needs a decision first: UX-14 built 2026-09-28 (the user's choice); DAT-09, DAT-20, UX-15 not chosen yet; UX-13 blocked by invariant 10
 
 ---
 

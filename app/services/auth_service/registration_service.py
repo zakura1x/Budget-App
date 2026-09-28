@@ -55,6 +55,8 @@ def default_preferences() -> dict:
         "budget_suggestion_nudge": True,
         # GOA-12 (user, 2026-09-28): offer to set money aside when income of PHP 5,000 or more lands.
         "payday_prompt_min": 5000,
+        # UX-14 (2026-09-28): a short vibration on keys, saves and deletes, where the phone allows it.
+        "haptics": True,
     }
 
 

@@ -4,6 +4,7 @@
  * an <input>, so no browser offers to "save" them.
  */
 import { useEffect, useState } from 'react';
+import { buzz } from '../lib/haptics';
 import { NumPad, type NumPadKey } from './ui/NumPad';
 
 export interface PinPadProps {
@@ -22,7 +23,7 @@ export function PinPad({ length, onComplete, busy = false, errorKey = 0 }: PinPa
     if (!errorKey) return;
     setShaking(true);
     setPin('');
-    if ('vibrate' in navigator) navigator.vibrate?.(80);
+    buzz('error');
     const t = window.setTimeout(() => setShaking(false), 420);
     return () => window.clearTimeout(t);
   }, [errorKey]);
