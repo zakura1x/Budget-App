@@ -54,6 +54,7 @@ from app.core.utils.date_utils import (
 )
 from app.core.utils.interest import (
     BASES,
+    MAX_RATE,
     YEAR_DAYS,
     daily_net,
     dump_bands,
@@ -130,6 +131,11 @@ MAX_BACKFILL_DAYS = 366  # how far back interest may be turned on and filled in
 # - no total is derived from it, and the amount on an entry always wins.
 GIVES_CASHBACK: Tuple[str, ...] = ("cash", "debit", "credit", "savings", "member")
 
+# REC-35. The accounts you OWE on - the ones the debt payoff planner lists and
+# that may carry the interest rate the bank charges. The same two isOwed()
+# answers on the client.
+OWES: Tuple[str, ...] = ("credit", "borrowed")
+
 
 # ------------------------------------------------------------------- shapes
 
@@ -205,6 +211,19 @@ class CashbackRule:
 
     rate: Decimal  # per cent of what you spend
     category_id: Optional[int]
+
+
+@dataclass(frozen=True)
+class DebtRate:
+    """
+    REC-35. The interest a card or a loan charges, as the bank shows it - "3% a
+    month" or "24% a year" - and the same thing a year. Only the payoff
+    planner reads it, as an estimate: nothing is ever charged from it (ACC-19).
+    """
+
+    rate: Decimal  # as typed
+    per: str  # month | year
+    yearly: Decimal
 
 
 @dataclass(frozen=True)
@@ -456,6 +475,7 @@ class AccountView:
     # appears in a list or a picker, it is never counted in cash on hand or net
     # worth, and only untracked_cash() ever writes one.
     hidden: bool = False
+    debt_rate: Optional[DebtRate] = None  # REC-35 - on a card or a loan, when typed
 
 
 @dataclass(frozen=True)
@@ -1077,6 +1097,8 @@ def _view(
         view = replace(view, interest=_interest_view(data, view.balance))
     if kind in GIVES_CASHBACK:
         view = replace(view, cashback=_cashback_rule(data.get("cashback")))
+    if kind in OWES:
+        view = replace(view, debt_rate=_debt_rate_view(data.get("debt_rate")))
     due_now = view.credit.due_now if view.credit is not None else None
     if due_now is None and view.dues is not None:
         # ACC-40. The same bargain as a card with bills: what is due now is the
@@ -1670,6 +1692,19 @@ def _clean(payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) ->
     elif kind not in GIVES_CASHBACK:
         data.pop("cashback", None)
 
+    # --- the interest a card or a loan charges (REC-35), typed as the bank shows
+    #     it - per month or per year (user, 2026-09-28). Only the debt payoff
+    #     planner reads it, as an estimate; nothing is ever charged from it.
+    #     Left out keeps it, null removes it.
+    if kind in OWES and "debt_rate" in payload:
+        typed = _debt_rate(payload.get("debt_rate"))
+        if typed is None:
+            data.pop("debt_rate", None)
+        else:
+            data["debt_rate"] = typed
+    elif kind not in OWES:
+        data.pop("debt_rate", None)
+
     # --- valuation history (ACC-13), only on an investment account, and only
     #     ever appended by add_valuation() - never set from a submitted body.
     if kind == "investment":
@@ -1771,6 +1806,38 @@ def _cashback(raw: Any) -> Optional[Dict[str, Any]]:
     if not category_id:
         raise ValidationException("Choose the income category cashback lands in")
     return {"rate": str(rate), "category_id": int(category_id)}
+
+
+def _debt_rate(raw: Any) -> Optional[Dict[str, Any]]:
+    """REC-35. {"rate": "3.0000", "per": "month"} as typed; a rate of zero is none."""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValidationException("An interest rate is a rate and whether it is per month or per year")
+    per = str(raw.get("per") or "year")
+    if per not in ("month", "year"):
+        raise ValidationException("An interest rate is per month or per year")
+    try:
+        rate = rate_of(raw.get("rate") if raw.get("rate") is not None else ZERO, "An interest rate")
+    except ValueError as error:
+        raise ValidationException(str(error)) from None
+    if rate <= ZERO:
+        return None
+    if per == "month" and rate * 12 > MAX_RATE:
+        raise ValidationException(f"That is more than {MAX_RATE}% a year")
+    return {"rate": str(rate), "per": per}
+
+
+def _debt_rate_view(raw: Any) -> Optional["DebtRate"]:
+    """REC-35 as the API returns it; unreadable is none, never an error."""
+    if not isinstance(raw, Mapping) or not raw.get("rate"):
+        return None
+    try:
+        rate = Decimal(str(raw["rate"]))
+    except (TypeError, ValueError, ArithmeticError):
+        return None
+    per = "month" if raw.get("per") == "month" else "year"
+    return DebtRate(rate=rate, per=per, yearly=rate * 12 if per == "month" else rate)
 
 
 def _cashback_rule(raw: Any) -> Optional[CashbackRule]:

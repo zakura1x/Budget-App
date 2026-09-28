@@ -63,7 +63,7 @@ those bills instead - the same figures and lines as its Bills section (2026-09-1
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -146,7 +146,35 @@ class CardLookahead:
     bills: Tuple[account_service.Bill, ...] = ()  # ACC-35 - the unpaid typed bills, lines included
 
 
-def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, months: int = 12) -> Projection:
+@dataclass(frozen=True)
+class WhatIf:
+    """REC-27. The months ahead as they stand, and with one unsaved plan added. Nothing is stored."""
+
+    without: Projection
+    with_plan: Projection
+
+
+def what_if(db: Session, cipher: UserCipher, payload: Mapping[str, Any], *, today: Optional[date] = None,
+            months: int = 12) -> WhatIf:
+    """
+    REC-27. "Can I afford a phone at 3,000 x 12?" - the same projection twice,
+    the second with the plan's occurrences in it, from recurring_service.trial
+    (checked as a new rule would be, expanded through the one schedule). A
+    card's purchase still lands on its bill the way a saved one would.
+    """
+    today = today or date.today()
+    return WhatIf(without=project(db, cipher, today=today, months=months),
+                  with_plan=project(db, cipher, today=today, months=months, trial=payload))
+
+
+def project(
+    db: Session,
+    cipher: UserCipher,
+    *,
+    today: Optional[date] = None,
+    months: int = 12,
+    trial: Optional[Mapping[str, Any]] = None,
+) -> Projection:
     today = today or date.today()
     if months not in MONTH_CHOICES:
         raise ValidationException("months is 3, 6 or 12")
@@ -159,6 +187,10 @@ def project(db: Session, cipher: UserCipher, *, today: Optional[date] = None, mo
     cash = account_service.cash_on_hand(views)
     counted: Set[int] = set(cash.account_ids)
     ahead = recurring_service.upcoming(db, cipher, today + ONE_DAY, windows[-1][1])
+    if trial is not None:
+        # REC-27. From TODAY: a plan saved today posts today's occurrence at once (create_rule expands it).
+        ahead = sorted(ahead + recurring_service.trial(db, cipher, trial, today, windows[-1][1], today=today),
+                       key=lambda u: (u.on, u.rule_id))
     # ACC-35. Typed card bills enter on their own days; the charges folded into them are not counted twice.
     bill_items, billed, chains = _bill_items(views, counted, today)
     ahead = [u for u in ahead if not _lands_on_bill(u, billed)]

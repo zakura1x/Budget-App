@@ -382,6 +382,12 @@ function CashOnHandCard({ overview, colours }: { overview: Overview; colours: Th
   const first = points[0] as { on: string; amount: string };
   const last = points[points.length - 1] as { on: string; amount: string };
   const change = centavos(last.amount) - centavos(first.amount);
+  // Padded in proportion to the balance, not only to its own range: fitted to the range alone,
+  // ₱450 off ₱121,000 drew as a cliff (2026-09-28). Drawing only - never a figure.
+  const values = data.map((d) => d.value);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const pad = Math.max((high - low) * 0.25, Math.max(Math.abs(high), Math.abs(low)) * 0.05, 1);
 
   return (
     <>
@@ -401,7 +407,7 @@ function CashOnHandCard({ overview, colours }: { overview: Overview; colours: Th
             <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
               <XAxis dataKey="label" tick={{ fill: colours['ink-2'], fontSize: 10, fontFamily: MONO }} tickLine={false}
                 axisLine={{ stroke: colours.line }} interval="preserveStartEnd" minTickGap={20} />
-              <YAxis hide domain={['auto', 'auto']} />
+              <YAxis hide domain={[low - pad, high + pad]} />
               <Tooltip
                 formatter={(value) => peso(Number(value))}
                 contentStyle={{ background: colours.surface, border: `2px solid ${colours.stroke}`, borderRadius: 8, fontSize: 12, fontFamily: MONO, boxShadow: `4px 4px 0 ${colours.stroke}` }}

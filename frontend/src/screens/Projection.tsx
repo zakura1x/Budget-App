@@ -21,6 +21,11 @@
  * shows what is left of every typed bill, per card and all together. Summed in
  * centavos from the figures the server sent; nothing new is worked out here.
  *
+ * TRY A PLAN (REC-27): the rule sheet, but its button runs the plan through
+ * the months ahead instead of saving it. Every month then shows what it does -
+ * the end figure and the lowest point with the plan, beside today's - and
+ * "Save this plan" is the ordinary createRule. Stop trying puts it back.
+ *
  * Nothing here is saved or posted; it is recomputed on every view.
  */
 import { useQuery } from '@tanstack/react-query';
@@ -29,14 +34,30 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { BillSheet } from '../components/BillSheet';
+import { RuleSheet } from '../components/RuleSheet';
+import { Button } from '../components/ui/Button';
 import { Card, SectionTitle } from '../components/ui/Card';
 import { Segmented } from '../components/ui/Segmented';
 import { Sheet } from '../components/ui/Sheet';
 import { useLookups } from '../hooks/useLookups';
 import type { Bill } from '../lib/accounts';
+import { ApiError } from '../lib/api';
+import { afterWrite, MONEY } from '../lib/invalidate';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
+import { queryClient } from '../lib/queryClient';
 import { keys, STALE } from '../lib/queryKeys';
-import { getCardLookahead, getProjection, type CardLookahead, type ProjectedMonth, type Projection as Data } from '../lib/recurring';
+import {
+  createRule,
+  getCardLookahead,
+  getProjection,
+  TRIAL_RULE_ID,
+  whatIf,
+  type CardLookahead,
+  type ProjectedMonth,
+  type Projection as Data,
+  type RuleDraft,
+  type RuleKind,
+} from '../lib/recurring';
 
 const negative = (value: string) => value.startsWith('-');
 const short = (iso: string) => format(parseISO(iso), 'd MMM');
@@ -61,7 +82,40 @@ function monthLabel(month: ProjectedMonth, basis: Data['basis']): string {
   return `${short(month.start)} – ${format(parseISO(month.end), 'd MMM yyyy')}`;
 }
 
-function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Data['basis']; onOpen: () => void }) {
+/**
+ * REC-27. What the tried plan does to a month, against the same month without it -
+ * the end figure's change, and whether it takes the lowest point below zero.
+ */
+function TrialDelta({ month, before }: { month: ProjectedMonth; before: ProjectedMonth }) {
+  const change = centavos(month.closing) - centavos(before.closing);
+  const lowChange = centavos(month.low_point) - centavos(before.low_point);
+  const committed = centavos(month.committed) - centavos(before.committed);
+  if (change === 0 && lowChange === 0) {
+    if (committed <= 0) return <p className="mt-2 text-caption text-ink-3">The plan changes nothing this month.</p>;
+    // REC-23: fixed charges count inside the budget, so a plan that fits it leaves the end figure where it
+    // was - and leaves that much less of the budget for everything else. Said out loud (2026-09-28): "changes
+    // nothing" was the wrong answer to "can I afford it".
+    return (
+      <p className="mt-2 rounded-lg border-2 border-stroke px-2 py-1 text-caption text-ink-2">
+        Fits in your budget — <span className="num font-semibold text-ink">{formatPHP(fromCentavos(committed))}</span> less
+        of it left for everything else (<span className="num">{formatPHP(month.committed)}</span> of{' '}
+        <span className="num">{formatPHP(month.budget)}</span> now fixed)
+      </p>
+    );
+  }
+  const newlyBelow = negative(month.low_point) && !negative(before.low_point);
+  return (
+    <p className={`mt-2 rounded-lg border-2 px-2 py-1 text-caption ${newlyBelow ? 'border-danger text-danger' : 'border-stroke text-ink-2'}`}>
+      <span className="num font-semibold">{formatPHP(fromCentavos(Math.abs(change)))}</span>
+      {change < 0 ? ' less' : ' more'} at the end than without it (<span className="num">{formatPHP(before.closing)}</span>)
+      {newlyBelow && ' · it takes the lowest point below zero'}
+    </p>
+  );
+}
+
+function MonthCard({ month, basis, onOpen, before }: {
+  month: ProjectedMonth; basis: Data['basis']; onOpen: () => void; before?: ProjectedMonth;
+}) {
   const low = negative(month.low_point);
   return (
     <button type="button" onClick={onOpen} className="block w-full rounded-card bg-surface p-4 text-left press">
@@ -103,6 +157,7 @@ function MonthCard({ month, basis, onOpen }: { month: ProjectedMonth; basis: Dat
           <p className="text-caption text-ink-3">{short(month.low_on)}</p>
         </div>
       </div>
+      {before && <TrialDelta month={month} before={before} />}
     </button>
   );
 }
@@ -164,6 +219,7 @@ function MonthSheet({ month, basis, onClose }: { month: ProjectedMonth | null; b
                       {(item.kind === 'bill' || item.kind === 'bill_plans') && ' · card bill'}
                       {item.kind === 'bill_now' && ' · already set aside'}
                       {item.kind === 'interest' && ' · estimated at today’s balance'}
+                      {item.rule_id === TRIAL_RULE_ID && ' · the plan you are trying'}
                       {item.final && ' · last payment'}
                       {item.paused && ' · paused, not counted'}
                     </span>
@@ -240,11 +296,53 @@ function CardAhead({ card, onOpenBill }: { card: CardLookahead; onOpenBill: (bil
   );
 }
 
+const TRY_KINDS: { kind: RuleKind; label: string }[] = [
+  { kind: 'installment', label: 'An installment' },
+  { kind: 'subscription', label: 'A subscription' },
+  { kind: 'standard', label: 'A bill or income' },
+];
+
 export function Projection() {
   const navigate = useNavigate();
+  const lookups = useLookups();
   const [months, setMonths] = useState<'3' | '6' | '12'>('12');
   const [chosen, setChosen] = useState<ProjectedMonth | null>(null);
   const [bill, setBill] = useState<Bill | null>(null);
+  /** REC-27. The kind being set up in the sheet, and the plan being tried - never saved until you say so. */
+  const [trySheet, setTrySheet] = useState<RuleKind | null>(null);
+  const [trial, setTrial] = useState<RuleDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [trialError, setTrialError] = useState<string | null>(null);
+  const span = Number(months) as 3 | 6 | 12;
+
+  const { data: tried } = useQuery({
+    queryKey: keys.whatIf(span, JSON.stringify(trial)),
+    queryFn: () => whatIf(trial as RuleDraft, span),
+    staleTime: STALE.derived,
+    enabled: trial !== null,
+  });
+
+  /** The sheet's button: checked by the server first, so a plan it would refuse never shows as tried. */
+  const tryPlan = async (draft: RuleDraft) => {
+    const result = await whatIf(draft, span);
+    queryClient.setQueryData(keys.whatIf(span, JSON.stringify(draft)), result);
+    setTrialError(null);
+    setTrial(draft);
+  };
+
+  const savePlan = async () => {
+    if (!trial) return;
+    setSaving(true);
+    setTrialError(null);
+    try {
+      await createRule(trial);
+      afterWrite(...MONEY); // it may post today, and it changes every month ahead
+      setTrial(null);
+    } catch (e) {
+      setTrialError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
+    }
+    setSaving(false);
+  };
 
   // A key per span, so switching 3 / 6 / 12 months and back is instant.
   const { data, error } = useQuery({
@@ -276,14 +374,41 @@ export function Projection() {
       />
       {error && <p className="mt-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error.message}</p>}
       {!data && !error && <div className="skeleton mt-3 h-72 rounded-card" aria-hidden="true" />}
+      {data && !trial && (
+        <Card className="mt-3 space-y-2">
+          <p className="text-body font-semibold">Try a plan before committing</p>
+          <p className="text-footnote text-ink-2">“Can I afford a phone at ₱3,000 × 12?” Set it up and see every month with it — nothing is saved.</p>
+          <div className="flex flex-wrap gap-2">
+            {TRY_KINDS.map((k) => (
+              <Button key={k.kind} variant="secondary" onClick={() => setTrySheet(k.kind)}>{k.label}</Button>
+            ))}
+          </div>
+        </Card>
+      )}
+      {trial && (
+        <Card className="mt-3 space-y-3">
+          <div>
+            <p className="label text-ink-2">Trying</p>
+            <p className="text-headline">{trial.name}</p>
+            <p className="text-footnote text-ink-2">Every month below shows what it does. Nothing is saved yet.</p>
+          </div>
+          {trialError && <p className="text-footnote text-danger">{trialError}</p>}
+          <div className="grid grid-cols-2 gap-2">
+            <Button onClick={() => void savePlan()} disabled={saving}>Save this plan</Button>
+            <Button variant="secondary" onClick={() => setTrial(null)} disabled={saving}>Stop trying</Button>
+          </div>
+        </Card>
+      )}
       {data && (
         <>
           <p className="num px-1 pb-1 pt-3 text-footnote text-ink-2">
             From {formatPHP(data.cash_on_hand)} cash on hand today. Everyday spending is your budget; carry-over is not assumed.
           </p>
+          {trial && !tried && <div className="skeleton h-72 rounded-card" aria-hidden="true" />}
           <div className="space-y-3">
-            {data.months.map((month) => (
-              <MonthCard key={month.start} month={month} basis={data.basis} onOpen={() => setChosen(month)} />
+            {(trial ? tried?.with_plan.months ?? [] : data.months).map((month, index) => (
+              <MonthCard key={month.start} month={month} basis={data.basis} onOpen={() => setChosen(month)}
+                before={trial ? tried?.without.months[index] : undefined} />
             ))}
           </div>
         </>
@@ -307,6 +432,14 @@ export function Projection() {
       )}
       <MonthSheet month={chosen} basis={data?.basis ?? 'calendar'} onClose={() => setChosen(null)} />
       <BillSheet bill={bill} onClose={() => setBill(null)} />
+      <RuleSheet
+        open={trySheet !== null}
+        rule={null}
+        kind={trySheet ?? 'installment'}
+        lookups={lookups}
+        onClose={() => setTrySheet(null)}
+        onTry={tryPlan}
+      />
     </>
   );
 }

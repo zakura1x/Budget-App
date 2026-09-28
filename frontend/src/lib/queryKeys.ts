@@ -29,6 +29,8 @@ export const keys = {
   suggestion: (periods: number, step: number | undefined, trim: number, fit: boolean) =>
     ['budget', 'suggestion', localToday(), periods, step ?? 'setting', trim, fit] as const,
   calendar: (year: number, month: number) => ['calendar', year, month] as const,
+  /** CAL-06 - under `calendar`, so every write that moves money refreshes it. */
+  calendarYear: (year: number) => ['calendar', 'year', year] as const,
   /**
    * A dated slice of the ledger - the calendar's month list and its day sheet.
    * The LEDGER itself and an account's trail are not queries (plan D9): they
@@ -46,6 +48,10 @@ export const keys = {
   subscriptions: () => ['subscriptions', localToday()] as const,
   detected: () => ['detected', localToday()] as const,
   projection: (months: 3 | 6 | 12) => ['projection', localToday(), months] as const,
+  /** REC-35 - under `projection`, so a payment, a plan or a balance refreshes it. */
+  payoff: (extra: string, payments: string) => ['projection', 'payoff', localToday(), extra, payments] as const,
+  /** REC-27 - an unsaved plan's what-if, keyed by the plan itself. */
+  whatIf: (months: 3 | 6 | 12, draft: string) => ['projection', 'what-if', localToday(), months, draft] as const,
   cardLookahead: () => ['cards', 'lookahead', localToday()] as const,
   statement: (accountId: number, closes: string) => ['statement', accountId, closes] as const,
   health: () => ['health'] as const,

@@ -40,10 +40,10 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **GOA-05** | Required-per-month for a goal | deferred | 11 | S | ✅ 2026-09-28 |
 | **SUB-07** | Cancellation tracking | deferred | 11 | S | ✅ 2026-09-28 |
 | **STA-10** | Cash on hand over time | deferred | 11 | S | ✅ 2026-09-28 |
-| **CAL-07** | Upcoming bills and charges on the calendar | new (#4) | 12 | M | ⬜ |
-| **REC-27** | What-if: try a plan before committing | deferred | 12 | M | ⬜ |
-| **REC-35** | Debt payoff planner (snowball vs avalanche) | new (#5) | 12 | M | ⬜ |
-| **CAL-06** | Week and year calendar views | deferred | 12 | M | ⬜ |
+| **CAL-07** | Upcoming bills and charges on the calendar | new (#4) | 12 | M | ✅ 2026-09-28 |
+| **REC-27** | What-if: try a plan before committing | deferred | 12 | M | ✅ 2026-09-28 |
+| **REC-35** | Debt payoff planner (snowball vs avalanche) | new (#5) | 12 | M | ✅ 2026-09-28 |
+| **CAL-06** | Week and year calendar views | deferred | 12 | M | ✅ 2026-09-28 |
 | **GOA-09** | Sinking funds for once-a-year costs | new (#6) | 13 | M | ⬜ |
 | **GOA-10** | Emergency-fund cover ("X months") | new (#7) | 13 | S | ⬜ |
 | **GOA-11** | Emergency-fund advisor — rule-based target | new (#7) | 13 | M | ⬜ |
@@ -257,12 +257,36 @@ past day's typed-bill state cannot be reconstructed.
 
 ### 🎯 Objective: The schedule the app already knows, shown where you plan
 
+> **Decided by the user, 2026-09-28, before the build:**
+> - **REC-35's rate is typed as the bank shows it** — a per month / per year
+>   switch on each card and loan (Philippine cards print "3% a month"), stored
+>   as a yearly rate underneath. Optional: a debt with no rate is ordered only
+>   by the smallest-balance-first plan.
+> - **Extra money on an installment plan FINISHES IT SOONER** (REC-32's
+>   `shorten`) — the monthly payment stays and the last payments drop.
+> - **Phase 11's three rough edges are fixed in this phase:** the Cashback tile
+>   wrapping in the add sheet, Pause shown on a cancelled subscription, and
+>   the cash-on-hand chart zooming a small change into a cliff.
+>
+> **✅ Built 2026-09-28** — all four and the three fixes; 21 new tests (867 in
+> all, 0 failed), checked in the browser on a local in-memory copy, screenshots
+> in misc/screenshots/phase-12/. Where the build differed from the plan below:
+> - **CAL-07** totals only what leaves cash on hand (each item's `effect`, as
+>   Months ahead does): a loan's installment charge and a card payment between
+>   counted accounts are listed, never counted as money going out.
+> - **REC-27** says out loud when a plan fits inside the budget (REC-23) —
+>   "changes nothing" was the wrong answer to "can I afford it".
+> - **REC-35**'s payment is the debt's repeating transfer in, else its
+>   installments' next payment, and can be typed on the planner for a try.
+> - **CAL-06**'s year is one request that runs the month code twelve times, so
+>   the two views can never disagree.
+
 | ID | Feature | Status |
 |---|---|---|
-| CAL-07 | Upcoming on the calendar | ⬜ |
-| REC-27 | What-if | ⬜ |
-| REC-35 | Debt payoff planner | ⬜ |
-| CAL-06 | Week and year views | ⬜ |
+| CAL-07 | Upcoming on the calendar | ✅ 2026-09-28 |
+| REC-27 | What-if | ✅ 2026-09-28 |
+| REC-35 | Debt payoff planner | ✅ 2026-09-28 |
+| CAL-06 | Week and year views | ✅ 2026-09-28 |
 
 ### CAL-07 · Upcoming bills and charges on the calendar
 Days after today show what is scheduled, faded: recurring charges and income,

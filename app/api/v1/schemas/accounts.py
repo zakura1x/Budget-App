@@ -59,6 +59,21 @@ class CashbackRuleOut(BaseModel):
     category_id: Optional[int] = None
 
 
+class DebtRateIn(BaseModel):
+    """REC-35 - the interest a card or a loan charges, typed as the bank shows it."""
+
+    rate: Rate
+    per: Literal["month", "year"] = "year"
+
+
+class DebtRateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    rate: Rate
+    per: Literal["month", "year"]
+    yearly: Rate
+
+
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     type: AccountType
@@ -90,6 +105,8 @@ class AccountIn(BaseModel):
     interest: Optional[InterestIn] = None
     # ACC-38, on anything you spend from. Same rule: left out keeps it, null removes it.
     cashback: Optional[CashbackRuleIn] = None
+    # REC-35, on a card or a loan - only the payoff planner reads it. Same rule.
+    debt_rate: Optional[DebtRateIn] = None
 
 
 class ArchiveIn(BaseModel):
@@ -294,6 +311,7 @@ class AccountOut(BaseModel):
     # ACC-39 - untracked cash. Sent so the client can keep it out of every list
     # and find it for a loan; there is no way to set it from a request.
     hidden: bool = False
+    debt_rate: Optional[DebtRateOut] = None  # REC-35
 
 
 class NetWorthOut(BaseModel):

@@ -2,13 +2,13 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.schemas.accounts import BillOut
 from app.api.v1.schemas.budgets import Ratio
-from app.api.v1.schemas.common import Money
+from app.api.v1.schemas.common import Money, Rate
 from app.api.v1.schemas.transactions import TransactionIn
 
 Kind = Literal["standard", "subscription", "installment"]
@@ -148,6 +148,7 @@ class RuleOut(BaseModel):
     next_amount: Optional[Money] = None
     problem: Optional[str] = None
     reminder_days: Optional[int] = None
+    cancelled_on: Optional[date] = None  # SUB-07
     installment: Optional[InstallmentOut] = None
     from_transaction: Optional[int] = None  # REC-34 - the purchase this plan replaced
     receipt_id: Optional[int] = None
@@ -264,6 +265,69 @@ class ProjectionOut(BaseModel):
     basis: Literal["budget", "calendar"]
     cash_on_hand: Money
     months: List[ProjectedMonthOut]
+
+
+class WhatIfOut(BaseModel):
+    """REC-27 - the months ahead as they stand, and with the unsaved plan. Its items carry rule_id -1."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    without: ProjectionOut
+    with_plan: ProjectionOut
+
+
+class PayoffIn(BaseModel):
+    """REC-35 - an extra a month, and payments typed on the planner for this run only (never stored)."""
+
+    extra: Money = Decimal("0.00")
+    payments: Dict[int, Money] = Field(default_factory=dict, max_length=100)
+
+
+class PayoffDebtOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    account_id: int
+    name: str
+    type: Literal["credit", "borrowed"]
+    owed: Money
+    payment: Money
+    payment_source: Literal["rule", "plan", "yours", "none"]
+    yearly_rate: Optional[Rate] = None
+    rate: Optional[Rate] = None
+    rate_per: Optional[Literal["month", "year"]] = None
+
+
+class PayoffOutcomeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    position: int
+    months: Optional[int] = None
+    paid_off: Optional[date] = None
+    interest: Money
+
+
+class PayoffPlanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    strategy: Literal["snowball", "avalanche", "as_is"]
+    extra: Money
+    outcomes: List[PayoffOutcomeOut]
+    months: Optional[int] = None
+    debt_free: Optional[date] = None
+    interest: Money
+
+
+class PayoffOut(BaseModel):
+    """REC-35 - as you pay now, smallest balance first, and highest rate first (only with a rate)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    start: date
+    debts: List[PayoffDebtOut]
+    as_is: PayoffPlanOut
+    snowball: PayoffPlanOut
+    avalanche: Optional[PayoffPlanOut] = None
 
 
 class CardStatementOut(BaseModel):

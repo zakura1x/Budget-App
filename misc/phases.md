@@ -1741,7 +1741,7 @@ scripts/
 
 ### Phases 11–15 · proposed 2026-09-28 — see [ROADMAP.md](ROADMAP.md)
 - ✅ Phase 11 · Quick wins: TXN-24, TXN-25, BUD-17, GOA-05, SUB-07, STA-10 — built 2026-09-28 (846 backend tests, 0 failed)
-- ☐ Phase 12 · Looking ahead: CAL-07, REC-27, REC-35, CAL-06
+- ✅ Phase 12 · Looking ahead: CAL-07, REC-27, REC-35, CAL-06, plus Phase 11's three fixes — built 2026-09-28 (867 backend tests, 0 failed)
 - ☐ Phase 13 · Set aside & safety net: GOA-09, GOA-10, GOA-11, GOA-12
 - ☐ Phase 14 · Checking, review & security: ACC-41, STA-12, SEC-32, SEC-12
 - ☐ Phase 15 · Needs a decision first: DAT-09, DAT-20, UX-13, UX-14, UX-15

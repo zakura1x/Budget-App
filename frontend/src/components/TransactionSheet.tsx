@@ -929,14 +929,16 @@ export function TransactionSheet() {
           </>
         )}
 
+        {/* The date on a line of its own, and the extras on the next (2026-09-28): with the Merchant tile
+            (TXN-24) the row no longer fitted a phone, and Cashback dropped to a second line on its own. */}
+        <input
+          type="date"
+          value={txnDate}
+          onChange={(e) => e.target.value && setTxnDate(e.target.value)}
+          aria-label="Date"
+          className="block min-h-tap w-full rounded-xl border-2 border-stroke bg-surface px-3 text-footnote font-medium text-ink"
+        />
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
-            value={txnDate}
-            onChange={(e) => e.target.value && setTxnDate(e.target.value)}
-            aria-label="Date"
-            className="min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-footnote font-medium text-ink"
-          />
           {kind !== 'transfer' && !showMerchant && (
             <SheetAction
               label="Merchant"

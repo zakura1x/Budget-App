@@ -28,3 +28,13 @@ export interface CalendarMonth {
 
 export const getMonth = (year: number, month: number, signal?: AbortSignal) =>
   api<CalendarMonth>(`/calendar/${year}/${month}`, { signal });
+
+/** CAL-06 - twelve months, each exactly as getMonth gives it. */
+export interface CalendarYear {
+  year: number;
+  spent: string;
+  earned: string;
+  months: CalendarMonth[];
+}
+
+export const getYear = (year: number, signal?: AbortSignal) => api<CalendarYear>(`/calendar/${year}`, { signal });

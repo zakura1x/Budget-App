@@ -86,9 +86,15 @@ export interface RuleSheetProps {
   onClose: () => void;
   /** Optional: the sheet already calls `afterWrite`, so a screen rarely needs this. */
   onSaved?: () => void;
+  /**
+   * REC-27. A what-if: the button runs the plan through the months ahead
+   * instead of saving it. Only for a NEW rule; the screen that asked shows the
+   * result and saves it through the ordinary createRule if you choose to.
+   */
+  onTry?: (draft: RuleDraft) => Promise<void>;
 }
 
-export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose, onSaved }: RuleSheetProps) {
+export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose, onSaved, onTry }: RuleSheetProps) {
   const kind = rule?.kind ?? newKind;
   const [type, setType] = useState<RuleType>('expense');
   const [name, setName] = useState('');
@@ -246,8 +252,24 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
     }
   };
 
-  const save = () =>
-    run(() => (rule ? updateRule(rule.id, { ...draft(), post_past: undefined }) : createRule({ ...draft(), post_past: postPast })));
+  const trying = Boolean(onTry) && !rule;
+
+  const save = async () => {
+    if (trying && onTry) {
+      // REC-27. Nothing is written: the screen shows the months ahead with this plan in them.
+      setBusy(true);
+      setError(null);
+      try {
+        await onTry({ ...draft(), post_past: postPast });
+        onClose();
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : 'That could not be tried. Check it and try again.');
+      }
+      setBusy(false);
+      return;
+    }
+    await run(() => (rule ? updateRule(rule.id, { ...draft(), post_past: undefined }) : createRule({ ...draft(), post_past: postPast })));
+  };
 
   const plan = rule?.installment;
   const startsInPast = !rule && start < localToday();
@@ -452,16 +474,17 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
         ) : (
           <>
             <Button block size="lg" onClick={() => void save()} disabled={busy || problem !== null}>
-              {problem ?? (rule ? 'Save changes' : 'Save')}
+              {problem ?? (rule ? 'Save changes' : trying ? 'See what it does' : 'Save')}
             </Button>
             {rule && (
               <div className="grid grid-cols-2 gap-2">
-                {kind !== 'installment' && (
+                {/* SUB-07. A cancelled subscription has nothing to pause or skip - Resume lives above, in its own words. */}
+                {kind !== 'installment' && !rule.cancelled_on && (
                   <Button variant="secondary" disabled={busy} onClick={() => void run(() => pauseRule(rule.id, !rule.paused))}>
                     {rule.paused ? 'Resume' : 'Pause'}
                   </Button>
                 )}
-                {rule.next_on && (
+                {rule.next_on && !rule.cancelled_on && (
                   <Button variant="secondary" disabled={busy} onClick={() => void run(() => skipOccurrence(rule.id, rule.next_on as string))}>
                     Skip {format(parseISO(rule.next_on), 'd MMM')}
                   </Button>

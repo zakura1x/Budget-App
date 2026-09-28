@@ -93,6 +93,8 @@ export interface Rule {
   /** REC-34 - the purchase this plan replaced (hidden until converted back). Optional: an older server sends none. */
   from_transaction?: number | null;
   receipt_id?: number | null;
+  /** SUB-07 - a subscription cancelled with the service: Pause and Skip mean nothing then. */
+  cancelled_on?: string | null;
 }
 
 export interface RuleDraft {
@@ -297,6 +299,55 @@ export const resumeSubscription = (id: number) =>
 /** SUB-07 - remind me to cancel by `on` (null clears it). A reminder only - nothing is cancelled for you. */
 export const setCancelBy = (id: number, on: string | null) =>
   api<Rule>(`/subscriptions/${id}/cancel-by?${today()}`, { method: 'POST', body: { on } });
+
+/** REC-27 - the unsaved plan's items carry this rule id. */
+export const TRIAL_RULE_ID = -1;
+
+export interface WhatIf {
+  without: Projection;
+  with_plan: Projection;
+}
+
+/**
+ * REC-27 - the months ahead with an UNSAVED plan in them, beside the months as
+ * they are. A POST only to carry the plan; nothing is written. Saving it is createRule.
+ */
+export const whatIf = (body: RuleDraft, months: 3 | 6 | 12) =>
+  api<WhatIf>(`/projection/what-if?${today()}&months=${months}`, { method: 'POST', body });
+
+export interface PayoffDebt {
+  account_id: number;
+  name: string;
+  type: 'credit' | 'borrowed';
+  owed: string;
+  payment: string;
+  /** rule: repeating transfers into it · plan: its installments' next payment · yours: typed here · none */
+  payment_source: 'rule' | 'plan' | 'yours' | 'none';
+  yearly_rate: string | null;
+  rate: string | null;
+  rate_per: 'month' | 'year' | null;
+}
+
+export interface PayoffPlan {
+  strategy: 'snowball' | 'avalanche' | 'as_is';
+  extra: string;
+  outcomes: { id: number; position: number; months: number | null; paid_off: string | null; interest: string }[];
+  months: number | null;
+  debt_free: string | null;
+  interest: string;
+}
+
+export interface Payoff {
+  start: string;
+  debts: PayoffDebt[];
+  as_is: PayoffPlan;
+  snowball: PayoffPlan;
+  avalanche: PayoffPlan | null;
+}
+
+/** REC-35 - the debt payoff planner. A POST only to carry typed payments; nothing is written or stored. */
+export const getPayoff = (extra: string, payments: Record<number, string>, signal?: AbortSignal) =>
+  api<Payoff>(`/projection/payoff?${today()}`, { method: 'POST', body: { extra, payments }, signal });
 
 export const getProjection = (months: 3 | 6 | 12, signal?: AbortSignal) =>
   api<Projection>(`/projection?${today()}&months=${months}`, { signal });

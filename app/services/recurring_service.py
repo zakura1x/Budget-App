@@ -212,6 +212,7 @@ class RuleView:
     installment: Optional[InstallmentStatus] = None
     from_transaction: Optional[int] = None  # REC-34 - the purchase this plan replaced
     receipt_id: Optional[int] = None  # that purchase's receipt, shown on the plan
+    cancelled_on: Optional[date] = None  # SUB-07 - a subscription cancelled with the service
 
 
 @dataclass(frozen=True)
@@ -532,6 +533,26 @@ def upcoming(db: Session, cipher: UserCipher, start: date, end: date) -> List[Up
             found.append(Upcoming(occurrence, record.id, str(data.get("name", "")), str(data.get("kind")),
                                   str(data.get("type")), int(data["account_id"]), data.get("counter_account_id")))
     return sorted(found, key=lambda u: (u.on, u.rule_id))
+
+
+TRIAL_RULE_ID = -1  # REC-27 - an unsaved plan in a what-if; no stored rule has it
+
+
+def trial(db: Session, cipher: UserCipher, payload: Mapping[str, Any], start: date, end: date, *,
+          today: date) -> List[Upcoming]:
+    """
+    REC-27. The occurrences an UNSAVED plan would have in [start, end] - checked
+    exactly as create_rule checks one (accounts, categories, terms), expanded
+    through THE schedule (occurrences), and written nowhere. Its rule id is
+    TRIAL_RULE_ID, so a reader can tell it from every stored rule.
+    """
+    data = _clean(db, cipher, payload, None, today, posted_count=0)
+    data.update({"pauses": [], "skips": [], "closed_on": None})
+    return [
+        Upcoming(occurrence, TRIAL_RULE_ID, str(data.get("name", "")), str(data.get("kind")), str(data.get("type")),
+                 int(data["account_id"]), data.get("counter_account_id"))
+        for occurrence in occurrences(TRIAL_RULE_ID, data, start, end)
+    ]
 
 
 def unpaid_by_account(db: Session, cipher: UserCipher) -> Dict[int, Decimal]:
@@ -1241,6 +1262,7 @@ class _Context:
     posted_days: Dict[int, Set[date]]  # the occurrence dates already posted
     reminders: Dict[int, int]
     receipts: Dict[int, int] = field(default_factory=dict)  # REC-34 - a converted purchase's receipt
+    cancelled: Dict[int, date] = field(default_factory=dict)  # SUB-07 - a subscription's cancelled day
 
     @classmethod
     def load(cls, db: Session, cipher: UserCipher) -> "_Context":
@@ -1252,10 +1274,13 @@ class _Context:
             posted.setdefault(view.recurring_id, []).append(view)
             if view.recurring_on is not None:
                 days.setdefault(view.recurring_id, set()).add(view.recurring_on)
+        subs = SubscriptionRepository(db, cipher).list()
         reminders = {
             int(sub.data["recurring_rule_id"]): int(sub.data.get("reminder_days", REMINDER_DAYS_DEFAULT))
-            for sub in SubscriptionRepository(db, cipher).list()
+            for sub in subs
         }
+        cancelled = {int(sub.data["recurring_rule_id"]): _as_date(sub.data["cancelled_on"])
+                     for sub in subs if sub.data.get("cancelled_on")}
         rules = RecurringRuleRepository(db, cipher).list()
         receipts: Dict[int, int] = {}
         hidden = TransactionRepository(db, cipher)
@@ -1265,7 +1290,7 @@ class _Context:
                 original = hidden.get(int(rule.data["from_transaction"]), include_deleted=True)
                 if original is not None and original.data.get("attachment_id"):
                     receipts[rule.id] = int(original.data["attachment_id"])
-        return cls(rules, posted, days, reminders, receipts)
+        return cls(rules, posted, days, reminders, receipts, cancelled)
 
 
 def _expand(db: Session, cipher: UserCipher, records: Sequence[Any], today: date) -> Expansion:
@@ -1389,6 +1414,7 @@ def _view(rule_id: int, data: Mapping[str, Any], context: _Context, today: date)
         next_on=nxt.on if nxt and not (installment and installment.closed) else None,
         next_amount=nxt.amount if nxt and not (installment and installment.closed) else None,
         reminder_days=context.reminders.get(rule_id) if data.get("kind") == "subscription" else None,
+        cancelled_on=context.cancelled.get(rule_id),
         installment=installment,
         from_transaction=data.get("from_transaction"),
         receipt_id=context.receipts.get(rule_id),

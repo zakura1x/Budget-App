@@ -564,6 +564,23 @@ auto-lock); they are never persisted in the browser.
   TODAY (`account_service.balance_on` / `cash_history`) - never try to rebuild
   bills, dues or set-aside money for a past day.
 
+**Phase 12** (2026-09-28) - rules worth keeping:
+
+- **The calendar's scheduled days (CAL-07)** come from the Months ahead
+  projection on the client (`keys.projection(12)`), never a date rule of their
+  own; `calendar_service` must not import `projection_service`. Money "going
+  out" is an item's `effect`, as Months ahead counts it.
+- **A what-if (REC-27)** is `recurring_service.trial` - checked like a new
+  rule, expanded through `occurrences()`, rule id `TRIAL_RULE_ID` (-1) - fed to
+  `projection_service.project(trial=...)`. It writes nothing; saving is the
+  ordinary createRule.
+- **The payoff planner (REC-35)** is pure in `app/core/utils/payoff.py` and read
+  by `payoff_service`, which nothing but its endpoint imports. `debt_rate` (a
+  card's or loan's rate, typed per month or per year) is read ONLY by it - an
+  estimate; nothing is ever charged from it. It is a RATE: four places, never
+  the money helpers. `/projection/payoff` and `/projection/what-if` are POSTs
+  that write nothing (writePaths.test.ts exempts screens/Payoff.tsx for that).
+
 There is no "copy last period's budget" action,
 because allocations persist across periods - confirmed by the user on
 2026-09-14, along with every other proposed default in FEATURES.md §13 and

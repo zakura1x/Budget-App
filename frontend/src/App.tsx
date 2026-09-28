@@ -59,6 +59,7 @@ const AboutEncryption = lazy(() => lazyScreens.loadAboutEncryption().then((m) =>
 const Admin = lazy(() => lazyScreens.loadAdmin().then((m) => ({ default: m.Admin })));
 const Backup = lazy(() => lazyScreens.loadBackup().then((m) => ({ default: m.Backup })));
 const Goals = lazy(() => lazyScreens.loadGoals().then((m) => ({ default: m.Goals })));
+const Payoff = lazy(() => lazyScreens.loadPayoff().then((m) => ({ default: m.Payoff })));
 const Projection = lazy(() => lazyScreens.loadProjection().then((m) => ({ default: m.Projection })));
 const Recurring = lazy(() => lazyScreens.loadRecurring().then((m) => ({ default: m.Recurring })));
 const RecentlyDeleted = lazy(() => lazyScreens.loadRecentlyDeleted().then((m) => ({ default: m.RecentlyDeleted })));
@@ -97,6 +98,7 @@ function AppTabs() {
             <Route path="/tags" element={<Tags />} />
             <Route path="/recurring" element={<Recurring />} />
             <Route path="/projection" element={<Projection />} />
+            <Route path="/payoff" element={<Payoff />} />
             <Route path="/backup" element={<Backup />} />
             <Route path="/goals" element={<Goals />} />
             <Route path="/about-encryption" element={<AboutEncryption />} />

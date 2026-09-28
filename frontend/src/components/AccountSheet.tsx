@@ -47,6 +47,7 @@ import { centavos, formatPHP, fromCentavos, toDecimalString, toRateString } from
 import { ColourPicker, GlyphTile, IconPicker } from './StylePicker';
 import { ACCOUNT_GLYPHS } from './Glyph';
 import { Button } from './ui/Button';
+import { Segmented } from './ui/Segmented';
 import { Sheet } from './ui/Sheet';
 import { TextField } from './ui/TextField';
 import { Toggle } from './ui/Toggle';
@@ -147,6 +148,9 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
   /** ACC-38 - what this account usually pays back, and where it lands. */
   const [cashbackRate, setCashbackRate] = useState('');
   const [cashbackCategory, setCashbackCategory] = useState<number | null>(null);
+  /** REC-35. The interest a card or a loan charges, typed as the bank shows it (user, 2026-09-28). */
+  const [debtRate, setDebtRate] = useState('');
+  const [debtPer, setDebtPer] = useState<'month' | 'year'>('month');
   /** The income categories both blocks pick from - fetched once, here. */
   const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +224,8 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
         : null);
       setCashbackRate(account.cashback ? account.cashback.rate.replace(/0+$/, '').replace(/\.$/, '') : '');
       setCashbackCategory(account.cashback?.category_id ?? null);
+      setDebtRate(account.debt_rate ? account.debt_rate.rate.replace(/0+$/, '').replace(/\.$/, '') : '');
+      setDebtPer(account.debt_rate?.per ?? 'month');
     } else {
       setType('cash');
       setName('');
@@ -236,6 +242,8 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       setInterest(null);
       setCashbackRate('');
       setCashbackCategory(null);
+      setDebtRate('');
+      setDebtPer('month');
     }
   }, [open, account]);
 
@@ -283,6 +291,10 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
                 ? { rate: toRateString(cashbackRate), category_id: cashbackCategory }
                 : null,
             }
+          : {}),
+        // REC-35. As the bank shows it, or null for none.
+        ...(isOwed(type)
+          ? { debt_rate: debtRate.trim() ? { rate: toRateString(debtRate), per: debtPer } : null }
           : {}),
       };
       if (!account) {
@@ -592,6 +604,36 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
             </div>
             <p className="text-footnote text-ink-3">
               Only a suggestion: every purchase on this account offers this much back, and you can change or clear it there.
+            </p>
+          </div>
+        )}
+
+        {isOwed(type) && (
+          <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 p-4">
+            <p className="text-footnote font-semibold text-ink-2">Interest it charges</p>
+            <div className="flex items-end gap-2">
+              <TextField
+                className="w-28"
+                label="Rate"
+                value={debtRate}
+                onChange={(e) => setDebtRate(clean(e.target.value).replace('-', ''))}
+                inputMode="decimal"
+                placeholder={debtPer === 'month' ? '3' : '24'}
+                trailing={<span className="pr-3.5 text-footnote text-ink-3">%</span>}
+              />
+              <div className="min-w-0 flex-1">
+                <Segmented<'month' | 'year'>
+                  label="Rate per"
+                  value={debtPer}
+                  onChange={setDebtPer}
+                  options={[{ value: 'month', label: 'a month' }, { value: 'year', label: 'a year' }]}
+                />
+              </div>
+            </div>
+            <p className="text-footnote text-ink-3">
+              As the bank shows it. Only Pay off debts reads it, to put the dearest debt first and estimate the
+              interest — nothing is ever charged from it. Leave it empty on an installment plan whose interest is
+              already in its payments.
             </p>
           </div>
         )}

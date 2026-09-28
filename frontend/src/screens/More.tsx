@@ -65,6 +65,8 @@ export function More() {
           chevron onClick={() => navigate('/goals')} />
         <ListRow icon={<CalendarIcon size={20} />} title="Months ahead" subtitle="Cash on hand by month, card statements"
           chevron onClick={() => navigate('/projection')} />
+        <ListRow icon={<CalendarIcon size={20} />} title="Pay off debts" subtitle="When each card and loan clears, and in which order"
+          chevron onClick={() => navigate('/payoff')} />
         <ListRow icon={<TrashIcon size={20} />} title="Recently deleted" subtitle="Bring back an entry from the last 30 days"
           chevron onClick={() => navigate('/deleted')} />
       </ListGroup>

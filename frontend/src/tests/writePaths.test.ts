@@ -46,6 +46,8 @@ const EXEMPT: Record<string, string> = {
     'a password change, a DEK rotation and account deletion end the session - App.tsx clears every cache on the way out',
   'screens/Admin.tsx':
     'activating or deleting another user touches no figure this account can see',
+  'screens/Payoff.tsx':
+    'the payoff planner (REC-35) is a POST only to carry the typed payments - it writes nothing',
 };
 
 /**

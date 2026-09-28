@@ -207,6 +207,15 @@ export interface Account {
    * every list; only a loan's From / To row offers it, by name.
    */
   hidden: boolean;
+  /** REC-35 - the interest a card or a loan charges, as typed; only the payoff planner reads it. */
+  debt_rate?: DebtRate | null;
+}
+
+/** REC-35. "3% a month" or "24% a year", and the same thing a year. Rates carry four places - never money helpers. */
+export interface DebtRate {
+  rate: string;
+  per: 'month' | 'year';
+  yearly: string;
 }
 
 /**
@@ -285,6 +294,8 @@ export interface AccountDraft {
   interest?: InterestDraft | null;
   /** ACC-38. Same rule: left out keeps it, null removes it. */
   cashback?: { rate: string; category_id: number } | null;
+  /** REC-35. Same rule: left out keeps it, null removes it. */
+  debt_rate?: { rate: string; per: 'month' | 'year' } | null;
 }
 
 export interface InterestDraft {

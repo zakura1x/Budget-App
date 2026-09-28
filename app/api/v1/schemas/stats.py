@@ -33,6 +33,17 @@ class CalendarMonthOut(BaseModel):
     days: List[CalendarDayOut]
 
 
+class CalendarYearOut(BaseModel):
+    """CAL-06 - twelve months, each exactly as GET /calendar/{year}/{month} gives it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    year: int
+    spent: Money
+    earned: Money
+    months: List[CalendarMonthOut]
+
+
 class TotalsOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

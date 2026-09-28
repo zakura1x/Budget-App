@@ -63,6 +63,33 @@ class CalendarMonth:
     days: List[CalendarDay]
 
 
+@dataclass(frozen=True)
+class CalendarYear:
+    """CAL-06. Twelve months, each exactly as month() gives it - the same days, levels and totals."""
+
+    year: int
+    spent: Decimal
+    earned: Decimal
+    months: List[CalendarMonth]
+
+
+def year(db: Session, cipher: UserCipher, year_number: int) -> CalendarYear:
+    """
+    CAL-06. A year at a glance: twelve small heatmaps. Each month is month()
+    itself, so a day's shade and a month's total can never differ between the
+    year view and the month view.
+    """
+    if not 2000 <= year_number <= 2100:
+        raise ValidationException("That year is outside what this app records")
+    months = [month(db, cipher, year_number, number) for number in range(1, 13)]
+    return CalendarYear(
+        year=year_number,
+        spent=sum((m.spent for m in months), ZERO),
+        earned=sum((m.earned for m in months), ZERO),
+        months=months,
+    )
+
+
 def heat_level(spent: Decimal, reference: Optional[Decimal]) -> int:
     """Pure: how dark a day is. With nothing to measure against, any spending is level 2."""
     if spent <= ZERO:
