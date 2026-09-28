@@ -72,7 +72,8 @@ REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
         ("category_shares[].category_id", "categories"),
     ),
     "subscriptions": (("recurring_rule_id", "recurring_rules"),),
-    "savings_goals": (("account_id", "accounts"),),
+    # GOA-09. The yearly bill a sinking fund follows.
+    "savings_goals": (("account_id", "accounts"), ("rule_id", "recurring_rules")),
     "user_preferences": (),
     "transactions": (
         ("account_id", "accounts"),

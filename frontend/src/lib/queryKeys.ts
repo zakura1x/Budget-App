@@ -23,6 +23,10 @@ export const keys = {
   categories: () => ['categories'] as const,
   tags: () => ['tags'] as const,
   goals: () => ['goals', localToday()] as const,
+  /** Phase 13 - under `goals`, so a goal or a set-aside refreshes them; the emergency advice reads money too. */
+  yearlyBills: () => ['goals', 'yearly-bills', localToday()] as const,
+  emergency: () => ['goals', 'emergency', localToday()] as const,
+  payday: () => ['goals', 'payday', localToday()] as const,
   /** GET /budgets - the budget's shape and allocations, the Budget screen's editor. */
   budgetShape: () => ['budget', 'shape', localToday()] as const,
   /** BUD-17 - under `budget`, so a saved budget or a posted entry asks for it again. */

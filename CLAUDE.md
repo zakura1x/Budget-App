@@ -447,6 +447,17 @@ account_service, which goal_service imports), and `cash_amount` - so cash on
 hand and Months ahead - counts what is available. Net worth still counts the
 full balance. Several goals may share an account.
 
+A goal has a KIND (Phase 13, 2026-09-28): saving, sinking or emergency, and at
+most one emergency fund. A sinking fund following a yearly bill (`rule_id`, in
+references.py) takes its target and date from `recurring_service.occurrences()`
+- never its own date logic. The emergency advisor's rules are pure, in
+`app/core/utils/emergency.py`; `safety_service` feeds them and is imported only
+by its endpoint. "Essential" is `category_service.essential_ids()` - the
+category's switch, else its name, else its parent - and nothing else decides
+it. The payday prompt (GOA-12) SUGGESTS: `goal_service.set_aside_payday` adds
+to the goals and marks the income `set_aside_prompted` in one commit, and only
+`transaction_service.mark_set_aside_prompted` writes that marker.
+
 An INVESTMENT account's balance (ACC-08/12) is the value last typed plus every
 posting dated AFTER that valuation - money moved in or out is not market
 movement, and a transfer into a fund must move it. Postings before the

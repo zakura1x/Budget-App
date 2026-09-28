@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,6 +42,10 @@ class GoalIn(BaseModel):
     account_id: Optional[int] = None
     colour: Optional[Colour] = None
     icon: Optional[IconName] = None
+    # Phase 13: saving | sinking (GOA-09) | emergency (GOA-10); a sinking fund may repeat or follow a bill.
+    kind: Optional[Literal["saving", "sinking", "emergency"]] = None
+    repeats_yearly: Optional[bool] = None
+    rule_id: Optional[int] = None  # 0 stops following a bill
 
 
 class GoalMoneyIn(BaseModel):
@@ -72,6 +76,87 @@ class GoalOut(BaseModel):
     per_month: Optional[Money] = None  # GOA-05 - to set aside each month to be on time
     months_left: Optional[int] = None  # this month and the target's included
     overdue: bool = False
+    kind: Literal["saving", "sinking", "emergency"] = "saving"
+    repeats_yearly: bool = False
+    rule_id: Optional[int] = None
+    month_need: Optional[Money] = None  # GOA-09 - what this month asks for to stay on time
+    month_added: Money = Decimal("0.00")
+    month_done: bool = False
+
+
+class YearlyBillOut(BaseModel):
+    """GOA-09 - a bill that comes once a year with no sinking fund following it yet."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    rule_id: int
+    name: str
+    amount: Money
+    on: date
+
+
+class PaydaySuggestionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    goal_id: int
+    name: str
+    kind: str
+    amount: Money
+
+
+class PaydayOut(BaseModel):
+    """GOA-12 - "your PHP 25,000 arrived - set some aside?"; null when there is nothing to ask."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    transaction_id: int
+    amount: Money
+    on: date
+    name: str
+    suggestions: List[PaydaySuggestionOut]
+    total: Money
+
+
+class PaydayIn(BaseModel):
+    amounts: Dict[int, Money] = Field(max_length=50)
+
+
+class FiredOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    text: str
+    months: int
+
+
+class EssentialsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    monthly: Money
+    months: int
+    guessing: bool
+
+
+class AdviceOut(BaseModel):
+    """GOA-10/11 - how long the emergency money lasts, and what it should be, with every reason."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    essentials: EssentialsOut
+    money: Money
+    source: Literal["goal", "cash"]
+    goal_id: Optional[int] = None
+    cover_months: Decimal
+    measurable: bool
+    target_months: int
+    target: Money
+    fired: List[FiredOut]
+    short_history: bool
+    per_month: Money
+    answered: bool
+    work: str
+    dependents: str
+    earners: str
 
 
 class AdminUserOut(BaseModel):

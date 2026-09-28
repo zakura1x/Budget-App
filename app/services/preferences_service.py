@@ -19,6 +19,7 @@ from app.services import audit_service
 from app.services.auth_service.registration_service import default_preferences
 from app.services.budget_service.allowance import MODES
 from app.services.budget_service.suggest import STEPS
+from app.core.utils.emergency import DEPENDENTS, EARNERS, WORK
 
 EDITABLE = (
     "carry_over", "daily_allowance_mode", "alert_warn_threshold_pct", "alert_pace_enabled",
@@ -28,6 +29,8 @@ EDITABLE = (
     "palette",
     # BUD-17, 2026-09-28: the suggested budget's rounding step, and its period-start reminder
     "budget_round_step", "budget_suggestion_nudge",
+    # Phase 13, 2026-09-28: the payday prompt's amount (GOA-12) and the emergency advisor's three answers (GOA-11)
+    "payday_prompt_min", "safety_work", "safety_dependents", "safety_earners",
 )
 THEMES = ("system", "light", "dark")
 # UX-05: the colour palette, independent of light/dark (every palette has both).
@@ -52,6 +55,13 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         cleaned["alert_pace_enabled"] = _bool(changes["alert_pace_enabled"], "alert_pace_enabled")
     if "budget_suggestion_nudge" in changes:
         cleaned["budget_suggestion_nudge"] = _bool(changes["budget_suggestion_nudge"], "budget_suggestion_nudge")
+    if "payday_prompt_min" in changes:
+        cleaned["payday_prompt_min"] = _int(changes["payday_prompt_min"], "payday_prompt_min", 0, 10_000_000)
+    for key, allowed in (("safety_work", WORK), ("safety_dependents", DEPENDENTS), ("safety_earners", EARNERS)):
+        if key in changes:
+            if changes[key] not in allowed:
+                raise ValidationException(f"{key} must be one of: {', '.join(allowed)}")
+            cleaned[key] = changes[key]
     if "budget_round_step" in changes:
         step = changes["budget_round_step"]
         if isinstance(step, bool) or step not in STEPS:

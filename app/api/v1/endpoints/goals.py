@@ -12,10 +12,18 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas.settings import GoalIn, GoalMoneyIn, GoalOut
+from app.api.v1.schemas.settings import (
+    AdviceOut,
+    GoalIn,
+    GoalMoneyIn,
+    GoalOut,
+    PaydayIn,
+    PaydayOut,
+    YearlyBillOut,
+)
 from app.core.deps import UnlockedContext, get_unlocked_context
 from app.db.session import get_db
-from app.services import goal_service
+from app.services import goal_service, safety_service
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -26,6 +34,45 @@ TODAY = Query(default=None, description="the client's date")
 def list_goals(today: Optional[date] = TODAY, ctx: UnlockedContext = Depends(get_unlocked_context),
                db: Session = Depends(get_db)) -> List[GoalOut]:
     return [GoalOut.model_validate(g) for g in goal_service.list_goals(db, ctx.cipher, today=today)]
+
+
+# Phase 13 - declared before /{goal_id} so their names are never read as an id.
+@router.get("/yearly-bills", response_model=List[YearlyBillOut])
+def yearly_bills(today: Optional[date] = TODAY, ctx: UnlockedContext = Depends(get_unlocked_context),
+                 db: Session = Depends(get_db)) -> List[YearlyBillOut]:
+    """GOA-09 - bills that come once a year with no sinking fund following them yet."""
+    return [YearlyBillOut.model_validate(b) for b in goal_service.yearly_bills(db, ctx.cipher, today=today)]
+
+
+@router.get("/emergency", response_model=AdviceOut)
+def emergency(today: Optional[date] = TODAY, ctx: UnlockedContext = Depends(get_unlocked_context),
+              db: Session = Depends(get_db)) -> AdviceOut:
+    """GOA-10/11 - how long the emergency money lasts, and what it should be. Reads only."""
+    return AdviceOut.model_validate(safety_service.advice(db, ctx.cipher, today=today))
+
+
+@router.get("/payday", response_model=Optional[PaydayOut])
+def payday(today: Optional[date] = TODAY, ctx: UnlockedContext = Depends(get_unlocked_context),
+           db: Session = Depends(get_db)) -> Optional[PaydayOut]:
+    """GOA-12 - the income worth offering to set aside from, or null."""
+    found = goal_service.payday(db, ctx.cipher, today=today)
+    return PaydayOut.model_validate(found) if found else None
+
+
+@router.post("/payday/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+def set_aside_payday(transaction_id: int, body: PaydayIn, today: Optional[date] = TODAY,
+                     ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = Depends(get_db)) -> Response:
+    """GOA-12 - set each amount aside for its goal; the income is answered. One commit."""
+    goal_service.set_aside_payday(db, ctx.cipher, transaction_id, body.amounts, today=today)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/payday/{transaction_id}/dismiss", status_code=status.HTTP_204_NO_CONTENT)
+def dismiss_payday(transaction_id: int, ctx: UnlockedContext = Depends(get_unlocked_context),
+                   db: Session = Depends(get_db)) -> Response:
+    """GOA-12 - "Not now": this income is never asked about again."""
+    goal_service.dismiss_payday(db, ctx.cipher, transaction_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("", response_model=GoalOut, status_code=status.HTTP_201_CREATED)

@@ -44,10 +44,10 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **REC-27** | What-if: try a plan before committing | deferred | 12 | M | ✅ 2026-09-28 |
 | **REC-35** | Debt payoff planner (snowball vs avalanche) | new (#5) | 12 | M | ✅ 2026-09-28 |
 | **CAL-06** | Week and year calendar views | deferred | 12 | M | ✅ 2026-09-28 |
-| **GOA-09** | Sinking funds for once-a-year costs | new (#6) | 13 | M | ⬜ |
-| **GOA-10** | Emergency-fund cover ("X months") | new (#7) | 13 | S | ⬜ |
-| **GOA-11** | Emergency-fund advisor — rule-based target | new (#7) | 13 | M | ⬜ |
-| **GOA-12** | Payday prompt — set money aside when income lands | new (#8) | 13 | M | ⬜ |
+| **GOA-09** | Sinking funds for once-a-year costs | new (#6) | 13 | M | ✅ 2026-09-28 |
+| **GOA-10** | Emergency-fund cover ("X months") | new (#7) | 13 | S | ✅ 2026-09-28 |
+| **GOA-11** | Emergency-fund advisor — rule-based target | new (#7) | 13 | M | ✅ 2026-09-28 |
+| **GOA-12** | Payday prompt — set money aside when income lands | new (#8) | 13 | M | ✅ 2026-09-28 |
 | **ACC-41** | Check a debit / savings account against the bank | new (#9) | 14 | M | ⬜ |
 | **STA-12** | Monthly review | new (#12) | 14 | M | ⬜ |
 | **SEC-32** | Sign-in activity and open sessions | new (#11) | 14 | M | ⬜ |
@@ -333,12 +333,41 @@ month (expense and income splits only).
 
 ### 🎯 Objective: Goals that plan ahead, built on GOA-08's set-aside money
 
+> **Decided by the user, 2026-09-28, before the build:**
+> - **GOA-11's rules as drafted below** — base 3 / 6 / 6 months, the six
+>   adjustments, clamped to 3–12, every fired rule listed with its reason.
+> - **GOA-10's emergency money** is the goal marked *emergency fund* if one
+>   exists, otherwise cash on hand — and the screen says which it used.
+> - **Essential categories are pre-marked by name** (rent, utilities, bills,
+>   groceries, food, transport, health, education…) with an *Essential* switch
+>   on every category to change any; repeating bills and plan payments always
+>   count.
+> - **GOA-12 fires for any income over an amount set in Settings** (default
+>   ₱5,000), so cashback and small refunds never trigger it.
+>
+> **✅ Built 2026-09-28** — all four; 25 new tests (892 in all, 0 failed),
+> checked in the browser on a local in-memory copy, screenshots in
+> misc/screenshots/phase-13/. Where the build differed from the plan below:
+> - **A goal has a kind** — saving, sinking or emergency — and there is at most
+>   ONE emergency fund. A sinking fund may *follow* a yearly bill (`rule_id`,
+>   an expense rule): its target and date come from the bill's next occurrence
+>   through `recurring_service.occurrences()`, never its own date logic.
+> - **"This month"** on every dated goal is measured from where the goal stood
+>   when the month began, so money added on the 1st counts toward it.
+> - **Essential** is the category's own switch, else its name, else its
+>   parent's answer (`category_service.essential_ids`). With no essential
+>   spending at all, 70% of spending stands in for it, and the screen says so.
+> - **The payday card** looks back 7 days, fills the emergency fund first, then
+>   sinking funds, then other goals — each capped at its month's part, what is
+>   left of the income, and what its account has available. Set aside and
+>   *Not now* are both kept on the income itself, on the server.
+
 | ID | Feature | Status |
 |---|---|---|
-| GOA-09 | Sinking funds | ⬜ |
-| GOA-10 | Emergency-fund cover | ⬜ |
-| GOA-11 | Emergency-fund advisor | ⬜ |
-| GOA-12 | Payday prompt | ⬜ |
+| GOA-09 | Sinking funds | ✅ |
+| GOA-10 | Emergency-fund cover | ✅ |
+| GOA-11 | Emergency-fund advisor | ✅ |
+| GOA-12 | Payday prompt | ✅ |
 
 ### GOA-09 · Sinking funds
 For costs that come once a year — insurance, vehicle registration, school fees,

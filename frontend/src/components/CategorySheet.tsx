@@ -23,6 +23,7 @@ import { ColourPicker, DEFAULT_COLOUR, GlyphTile, IconPicker } from './StylePick
 import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
 import { TextField } from './ui/TextField';
+import { Toggle } from './ui/Toggle';
 
 export interface CategorySheetProps {
   open: boolean;
@@ -46,6 +47,8 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
   const [busy, setBusy] = useState(false);
   const [pendingUsage, setPendingUsage] = useState<number | null>(null);
   const [moveTo, setMoveTo] = useState<number | null>(null);
+  /** GOA-10. Null until the switch is used: then the category's name decides (rent, bills, food, transport...). */
+  const [essential, setEssential] = useState<boolean | null>(null);
 
   const hasChildren = Boolean(category && category.children.length > 0);
 
@@ -59,6 +62,7 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
     setColour(category?.colour ?? DEFAULT_COLOUR);
     setIcon(category?.icon ?? 'tag');
     setParent(category ? category.parent_id : parentId);
+    setEssential(null);
   }, [open, category, parentId]);
 
   const parents = tree.filter((c) => c.kind === kind && c.id !== category?.id);
@@ -69,7 +73,10 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
     setBusy(true);
     setError(null);
     try {
-      const draft = { name: name.trim(), kind, parent_id: parent, icon, colour };
+      const draft = {
+        name: name.trim(), kind, parent_id: parent, icon, colour,
+        ...(essential !== null ? { essential } : {}),
+      };
       if (category) await updateCategory(category.id, draft);
       else await createCategory(draft);
       // A name, a colour or an icon is printed on every transaction row, on Home's
@@ -124,6 +131,15 @@ export function CategorySheet({ open, category, parentId, kind, tree, onClose, o
             autoComplete="off"
           />
         </div>
+
+        {kind === 'expense' && (
+          <Toggle
+            checked={essential ?? category?.essential ?? false}
+            onChange={setEssential}
+            label="Essential"
+            hint="What an emergency fund has to cover — rent, bills, food, transport. Categories named like those start switched on; this switch overrides the name."
+          />
+        )}
 
         {!editing && parents.length > 0 && (
           <div>

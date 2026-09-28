@@ -20,6 +20,8 @@ export interface Category {
   sort_order: number;
   archived: boolean;
   usage: number;
+  /** GOA-10 - counts in what an emergency fund must cover: its own switch, else its name, else its parent. */
+  essential?: boolean;
   children: Category[];
 }
 
@@ -29,6 +31,8 @@ export interface CategoryDraft {
   parent_id?: number | null;
   icon?: string;
   colour?: string;
+  /** GOA-10. Sent only when the switch was used; left out, the name decides. */
+  essential?: boolean;
 }
 
 export interface Deleted {

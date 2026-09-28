@@ -53,6 +53,8 @@ def default_preferences() -> dict:
         # BUD-17 (user, 2026-09-28): round suggestions up to PHP 100, and remind when spending drifts.
         "budget_round_step": 100,
         "budget_suggestion_nudge": True,
+        # GOA-12 (user, 2026-09-28): offer to set money aside when income of PHP 5,000 or more lands.
+        "payday_prompt_min": 5000,
     }
 
 

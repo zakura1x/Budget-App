@@ -174,6 +174,12 @@ export interface Preferences {
   budget_round_step?: number;
   /** BUD-17 - the period-start "your spending has changed" reminder. */
   budget_suggestion_nudge?: boolean;
+  /** GOA-12 - offer to set money aside when income of at least this many pesos lands; 0 is off. */
+  payday_prompt_min?: number;
+  /** GOA-11 - the emergency advisor's three answers. */
+  safety_work?: 'employee' | 'contract' | 'self';
+  safety_dependents?: '0' | '1-2' | '3+';
+  safety_earners?: '1' | '2+';
   [key: string]: unknown;
 }
 

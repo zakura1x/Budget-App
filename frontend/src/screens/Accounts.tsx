@@ -27,7 +27,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { isOwed, listAccounts, owedWithPlans, visible, type Account, type AccountType } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
-import { listGoals, type Goal } from '../lib/security';
+import { getEmergency, listGoals, type Goal } from '../lib/security';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { useUiStore } from '../stores/uiStore';
@@ -171,6 +171,12 @@ export function Accounts() {
   const cardsInCredit = onCards.startsWith('-');
   const owedWhere = counted.some((a) => a.type === 'borrowed') ? 'cards & loans' : 'cards';
   const billed = counted.some((a) => a.credit?.due_now != null);
+  // GOA-10. Asked for once and cached with the goals; a figure beside the headline, never part of it.
+  const { data: emergency } = useQuery({
+    queryKey: keys.emergency(),
+    queryFn: ({ signal }) => getEmergency(signal),
+    staleTime: STALE.derived,
+  });
   const headline = useUiStore((s) => s.headline);
   const setHeadline = useUiStore((s) => s.setHeadline);
   const net = headline === 'net';
@@ -249,6 +255,17 @@ export function Accounts() {
                 <span>Months ahead — cash on hand by month</span>
                 <ChevronRightIcon size={16} />
               </button>
+              {/* GOA-10. How long the emergency money lasts, beside cash on hand; the screen says why. */}
+              {emergency?.measurable && (
+                <button type="button" onClick={() => navigate('/emergency')}
+                  className="press mt-2 flex min-h-tap w-full items-center justify-between rounded-xl bg-surface px-4 text-footnote font-bold text-ink">
+                  <span className="text-left">
+                    Emergency money lasts <span className="num">{emergency.cover_months}</span> months
+                    <span className="whitespace-nowrap font-normal text-ink-2"> · aim for {emergency.target_months}</span>
+                  </span>
+                  <ChevronRightIcon size={16} />
+                </button>
+              )}
             </>
           )}
         </section>

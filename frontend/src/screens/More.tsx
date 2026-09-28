@@ -61,8 +61,10 @@ export function More() {
           chevron onClick={() => navigate('/tags')} />
         <ListRow icon={<RepeatIcon size={20} />} title="Recurring" subtitle="Bills, pay, subscriptions, installments"
           chevron onClick={() => navigate('/recurring')} />
-        <ListRow icon={<WalletIcon size={20} />} title="Savings goals" subtitle="Targets that follow an account's balance"
+        <ListRow icon={<WalletIcon size={20} />} title="Savings goals" subtitle="Money set aside, sinking funds for yearly bills"
           chevron onClick={() => navigate('/goals')} />
+        <ListRow icon={<ShieldIcon size={20} />} title="Emergency fund" subtitle="How long your money lasts, and what to aim for"
+          chevron onClick={() => navigate('/emergency')} />
         <ListRow icon={<CalendarIcon size={20} />} title="Months ahead" subtitle="Cash on hand by month, card statements"
           chevron onClick={() => navigate('/projection')} />
         <ListRow icon={<CalendarIcon size={20} />} title="Pay off debts" subtitle="When each card and loan clears, and in which order"

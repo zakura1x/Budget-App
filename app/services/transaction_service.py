@@ -877,6 +877,19 @@ def import_entries(db: Session, cipher: UserCipher, payloads: Sequence[Mapping[s
     return len(payloads)
 
 
+def mark_set_aside_prompted(db: Session, cipher: UserCipher, transaction_id: int) -> None:
+    """
+    GOA-12. The payday prompt has been answered for this income - set aside or
+    "not now" - so it is never offered again. Kept on the entry itself (the
+    browser may store nothing, invariant 10), so it goes with the entry if it
+    is deleted. The caller commits (goal_service).
+    """
+    record = _record(db, cipher, transaction_id)
+    if record.data.get("type") != "income":
+        raise BusinessRuleException("Only income is set aside from")
+    TransactionRepository(db, cipher).update(transaction_id, {**record.data, "set_aside_prompted": True})
+
+
 def set_card_posted_on(db: Session, cipher: UserCipher, transaction_id: int, day: date) -> TransactionView:
     """
     ACC-26. Record that the bank posted this purchase on `day`, moving it to a
@@ -969,6 +982,9 @@ def _clean(
         "cashback_id": (existing or {}).get("cashback_id"),
         "cashback_of": (existing or {}).get("cashback_of"),
         "attachment_id": (existing or {}).get("attachment_id"),
+        # GOA-12. The payday prompt was answered for this income - kept through
+        # an edit, so it is never asked twice. Only mark_set_aside_prompted writes it.
+        "set_aside_prompted": (existing or {}).get("set_aside_prompted"),
     }
     # ACC-26. A late posting date belongs to one purchase on one card on one
     # day; moving the purchase to another day or card makes it meaningless.

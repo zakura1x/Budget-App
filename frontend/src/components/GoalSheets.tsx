@@ -7,6 +7,12 @@
  * moves, so the balance still matches the bank, while what is set aside comes
  * off what the account has available and off cash on hand. Several goals can
  * share one account, each claiming only its own part.
+ *
+ * Phase 13 (2026-09-28): a goal has a KIND. A sinking fund (GOA-09) puts money
+ * by for a cost that comes back - it can repeat every year, or follow a yearly
+ * bill whose next occurrence sets its amount and date. The emergency fund
+ * (GOA-10) is the one goal the emergency cover reads. Every card shows this
+ * month's part: what the month asks for, and what is set aside in it already.
  */
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
@@ -14,13 +20,30 @@ import { useLookups } from '../hooks/useLookups';
 import { ApiError } from '../lib/api';
 import { afterWrite } from '../lib/invalidate';
 import { centavos, formatPHP, toDecimalString } from '../lib/money';
-import { addToGoal, createGoal, deleteGoal, releaseFromGoal, updateGoal, type Goal } from '../lib/security';
+import {
+  addToGoal,
+  createGoal,
+  deleteGoal,
+  releaseFromGoal,
+  updateGoal,
+  type Goal,
+  type GoalDraft,
+  type GoalKind,
+} from '../lib/security';
 import { localToday } from '../lib/transactions';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { MoneyField } from './ui/MoneyField';
+import { Segmented } from './ui/Segmented';
 import { Sheet } from './ui/Sheet';
 import { TextField } from './ui/TextField';
+import { Toggle } from './ui/Toggle';
+
+export const KIND_LABEL: Record<GoalKind, string> = {
+  saving: 'Saving',
+  sinking: 'Sinking fund',
+  emergency: 'Emergency fund',
+};
 
 const HOLDS_MONEY = ['cash', 'debit', 'savings'];
 const typed = (amount: string) => (amount.endsWith('.00') ? amount.slice(0, -3) : amount);
@@ -47,25 +70,36 @@ function Chip({ selected, onClick, children }: { selected: boolean; onClick: () 
   );
 }
 
-export function GoalSheet({ goal, open, onClose, onSaved }: {
+export function GoalSheet({ goal, open, onClose, onSaved, preset }: {
   goal: Goal | null; open: boolean; goals?: Goal[]; onClose: () => void; onSaved?: () => void;
+  /** A NEW goal set up by the screen that opened it - a sinking fund for a yearly bill, the emergency fund's target. */
+  preset?: Partial<GoalDraft> | null;
 }) {
   const lookups = useLookups();
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
   const [date, setDate] = useState('');
   const [accountId, setAccountId] = useState<number | null>(null);
+  const [kind, setKind] = useState<GoalKind>('saving');
+  const [repeats, setRepeats] = useState(false);
+  const [ruleId, setRuleId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
-    setName(goal?.name ?? '');
-    setTarget(goal ? typed(goal.target) : '');
-    setDate(goal?.target_date ?? '');
-    setAccountId(goal?.account_id ?? null);
+    const start = goal ?? preset;
+    setName(start?.name ?? '');
+    setTarget(start?.target ? typed(start.target) : '');
+    setDate(start?.target_date ?? '');
+    setAccountId(start?.account_id ?? null);
+    setKind(start?.kind ?? 'saving');
+    setRepeats(Boolean(start?.repeats_yearly));
+    setRuleId(start?.rule_id ?? null);
     setError(null);
     setBusy(false);
-  }, [open, goal]);
+  }, [open, goal, preset]);
+  // GOA-09. Following a bill, its next occurrence IS the amount and the date - there is nothing to type.
+  const following = kind === 'sinking' && ruleId !== null;
 
   // GOA-08: several goals may share an account, so every account that holds money is a choice.
   const choices = lookups.accounts.filter((a) => HOLDS_MONEY.includes(a.type) && (!a.archived || a.id === goal?.account_id));
@@ -87,13 +121,48 @@ export function GoalSheet({ goal, open, onClose, onSaved }: {
   return (
     <Sheet open={open} onClose={onClose} title={goal ? 'Edit goal' : 'New goal'}>
       <div className="space-y-4 pb-2">
-        <TextField label="Name" value={name} maxLength={60} placeholder="Emergency fund" onChange={(e) => setName(e.target.value)} />
-        <MoneyField label="Target" value={target} placeholder="30000" onChange={setTarget} />
-        <label className="block text-footnote font-semibold text-ink-2">
-          By (optional)
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
-        </label>
+        <Segmented<GoalKind>
+          label="Kind of goal"
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: 'saving', label: 'Saving' },
+            { value: 'sinking', label: 'Sinking fund' },
+            { value: 'emergency', label: 'Emergency' },
+          ]}
+        />
+        <p className="-mt-2 text-footnote text-ink-3">
+          {kind === 'sinking'
+            ? 'Money put by for a cost that comes back — insurance, registration, school fees, Christmas.'
+            : kind === 'emergency'
+              ? 'Money for when something goes wrong. Its cover shows under More → Emergency fund; there is one.'
+              : 'Something you are saving up for — a laptop, a trip.'}
+        </p>
+        <TextField label="Name" value={name} maxLength={60} placeholder={kind === 'sinking' ? 'Car insurance' : 'Emergency fund'}
+          onChange={(e) => setName(e.target.value)} />
+        {following ? (
+          <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 px-4 py-3">
+            <p className="text-footnote text-ink-2">
+              Follows a yearly bill: <span className="num font-semibold text-ink">{formatPHP(toDecimalString(target || '0'))}</span>
+              {date && <> due <span className="num">{format(parseISO(date), 'd MMM yyyy')}</span></>} — its amount and date
+              come from the bill, and move on with it each year.
+            </p>
+            <Button variant="secondary" onClick={() => setRuleId(0)}>Stop following it</Button>
+          </div>
+        ) : (
+          <>
+            <MoneyField label="Target" value={target} placeholder="30000" onChange={setTarget} />
+            <label className="block text-footnote font-semibold text-ink-2">
+              {kind === 'sinking' ? 'Due' : 'By (optional)'}
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+                className="mt-1.5 block min-h-12 w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-normal text-ink" />
+            </label>
+            {kind === 'sinking' && (
+              <Toggle checked={repeats} onChange={setRepeats} label="Every year"
+                hint="Once the date has passed, it moves on a year — the fund starts again for next time." />
+            )}
+          </>
+        )}
         <div>
           <p className="mb-2 text-footnote font-semibold text-ink-2">Saved in</p>
           <div className="flex flex-wrap gap-2">
@@ -110,7 +179,11 @@ export function GoalSheet({ goal, open, onClose, onSaved }: {
         {error && <p className="text-footnote text-danger">{error}</p>}
         <Button block size="lg" disabled={busy || !name.trim() || !valid(target) || accountId === null}
           onClick={() => void run(() => {
-            const body = { name: name.trim(), target: toDecimalString(target), target_date: date || null, account_id: accountId as number };
+            const body: GoalDraft = {
+              name: name.trim(), target: toDecimalString(target), target_date: date || null, account_id: accountId as number,
+              kind, repeats_yearly: kind === 'sinking' && repeats,
+              ...(kind === 'sinking' && ruleId !== null ? { rule_id: ruleId } : goal?.rule_id ? { rule_id: 0 } : {}),
+            };
             return goal ? updateGoal(goal.id, body) : createGoal(body);
           })}>
           {goal ? 'Save changes' : 'Add goal'}
@@ -205,9 +278,16 @@ export function GoalCard({ goal, accountName, onEdit, onAdd, onUse, compact = fa
 }) {
   // An older server sends no shortfall; that is not a shortfall.
   const short = (goal.short_by ?? '0.00') !== '0.00';
+  const kind = goal.kind ?? 'saving';
   return (
     <Card>
       <button type="button" onClick={onEdit} className="block w-full text-left">
+        {kind !== 'saving' && (
+          <p className="label text-ink-2">
+            {KIND_LABEL[kind]}
+            {goal.rule_id ? ' · follows a yearly bill' : goal.repeats_yearly ? ' · every year' : ''}
+          </p>
+        )}
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-headline">{goal.name}</span>
           {goal.reached && <span className="shrink-0 text-caption font-semibold text-ok">Reached</span>}
@@ -234,6 +314,14 @@ export function GoalCard({ goal, accountName, onEdit, onAdd, onUse, compact = fa
         )}
         {goal.overdue && (
           <p className="mt-1 text-footnote text-ink-2">The target date has passed — move it, or keep adding when you can.</p>
+        )}
+        {/* GOA-09. This month's part, ticked off as it is set aside - worked out from where the month began. */}
+        {goal.month_need && !goal.reached && (
+          <p className="mt-1 text-footnote text-ink-2">
+            This month: <span className="num font-semibold text-ink">{formatPHP(goal.month_added ?? '0.00')}</span> of{' '}
+            <span className="num">{formatPHP(goal.month_need)}</span> set aside
+            {goal.month_done && <span className="font-semibold text-ok"> ✓ done</span>}
+          </p>
         )}
         {short && (
           <p className="mt-1 text-footnote font-semibold text-warn">

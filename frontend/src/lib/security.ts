@@ -40,13 +40,64 @@ export interface Goal {
   /** This month and the target's own included. */
   months_left?: number | null;
   overdue?: boolean;
+  /** Phase 13. saving · sinking (GOA-09, repeats or follows a yearly bill) · emergency (GOA-10, at most one). */
+  kind?: GoalKind;
+  repeats_yearly?: boolean;
+  rule_id?: number | null;
+  /** GOA-09. This month's part: what it asks for to stay on time, and what is set aside in it already. */
+  month_need?: string | null;
+  month_added?: string;
+  month_done?: boolean;
 }
+
+export type GoalKind = 'saving' | 'sinking' | 'emergency';
 
 export interface GoalDraft {
   name: string;
   target: string;
   target_date?: string | null;
   account_id: number;
+  kind?: GoalKind;
+  repeats_yearly?: boolean;
+  /** A yearly bill to follow; 0 stops following one. */
+  rule_id?: number | null;
+}
+
+/** GOA-09. A bill that comes once a year with no sinking fund following it yet. */
+export interface YearlyBill {
+  rule_id: number;
+  name: string;
+  amount: string;
+  on: string;
+}
+
+/** GOA-10/11. How long the emergency money lasts, what it should be, and every reason. */
+export interface EmergencyAdvice {
+  essentials: { monthly: string; months: number; guessing: boolean };
+  money: string;
+  source: 'goal' | 'cash';
+  goal_id: number | null;
+  cover_months: string;
+  measurable: boolean;
+  target_months: number;
+  target: string;
+  fired: { code: string; text: string; months: number }[];
+  short_history: boolean;
+  per_month: string;
+  answered: boolean;
+  work: 'employee' | 'contract' | 'self';
+  dependents: '0' | '1-2' | '3+';
+  earners: '1' | '2+';
+}
+
+/** GOA-12. "Your ₱25,000 arrived - set some aside?" */
+export interface Payday {
+  transaction_id: number;
+  amount: string;
+  on: string;
+  name: string;
+  suggestions: { goal_id: number; name: string; kind: string; amount: string }[];
+  total: string;
 }
 
 const today = () => `today=${localToday()}`;
@@ -56,6 +107,15 @@ export const createGoal = (body: GoalDraft) => api<Goal>(`/goals?${today()}`, { 
 export const updateGoal = (id: number, body: Partial<GoalDraft>) =>
   api<Goal>(`/goals/${id}?${today()}`, { method: 'PATCH', body });
 export const deleteGoal = (id: number) => api<null>(`/goals/${id}`, { method: 'DELETE' });
+export const getYearlyBills = (signal?: AbortSignal) => api<YearlyBill[]>(`/goals/yearly-bills?${today()}`, { signal });
+export const getEmergency = (signal?: AbortSignal) => api<EmergencyAdvice>(`/goals/emergency?${today()}`, { signal });
+export const getPayday = (signal?: AbortSignal) => api<Payday | null>(`/goals/payday?${today()}`, { signal });
+/** GOA-12. Set each amount aside for its goal; the income is answered. One commit on the server. */
+export const setAsidePayday = (transactionId: number, amounts: Record<number, string>) =>
+  api<null>(`/goals/payday/${transactionId}?${today()}`, { method: 'POST', body: { amounts } });
+/** GOA-12. "Not now" - this income is never asked about again. */
+export const dismissPayday = (transactionId: number) =>
+  api<null>(`/goals/payday/${transactionId}/dismiss`, { method: 'POST' });
 /** GOA-08. Money set aside for a goal, or released from it. Nothing moves; the balance is unchanged. */
 export interface GoalMoney {
   amount: string;

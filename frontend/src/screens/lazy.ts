@@ -9,6 +9,7 @@
 export const loadAboutEncryption = () => import('./AboutEncryption');
 export const loadAdmin = () => import('./Admin');
 export const loadBackup = () => import('./Backup');
+export const loadEmergency = () => import('./Emergency');
 export const loadGoals = () => import('./Goals');
 export const loadPayoff = () => import('./Payoff');
 export const loadProjection = () => import('./Projection');
@@ -23,6 +24,7 @@ export const LAZY_SCREENS = [
   loadProjection,
   loadPayoff,
   loadGoals,
+  loadEmergency,
   loadBackup,
   loadRecentlyDeleted,
   loadAboutEncryption,

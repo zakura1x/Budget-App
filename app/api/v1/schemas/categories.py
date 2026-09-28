@@ -17,6 +17,7 @@ class CategoryIn(BaseModel):
     colour: Optional[Colour] = None
     sort_order: Optional[int] = Field(default=None, ge=0, le=9999)
     archived: bool = False
+    essential: Optional[bool] = None  # GOA-10 - left out, the category's name decides
 
 
 class ReorderIn(BaseModel):
@@ -37,6 +38,7 @@ class CategoryOut(BaseModel):
     sort_order: int
     archived: bool
     usage: int = 0
+    essential: bool = False  # GOA-10
     children: List["CategoryOut"] = []
 
 

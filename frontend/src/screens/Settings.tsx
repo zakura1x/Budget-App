@@ -37,12 +37,16 @@ const WEEKDAYS = [
 const LOCK_CHOICES = [1, 2, 5, 10, 15, 30];
 /** BUD-17 - what a suggested budget rounds up to, in pesos (the server's STEPS). */
 const ROUND_STEPS = [1, 10, 50, 100, 500, 1000];
+/** GOA-12 - income of at least this many pesos offers to set some aside; 0 is off. */
+const PAYDAY_CHOICES = [0, 1000, 2000, 5000, 10000, 20000, 50000];
 /** The preferences that change a figure rather than how the app looks or locks. */
 const MOVES_FIGURES = [
   'carry_over', 'daily_allowance_mode', 'alert_warn_threshold_pct',
   'alert_pace_enabled', 'budget_period', 'month_start_day', 'week_start_day',
   // BUD-17 - the suggestion and the reminder in the budget status
   'budget_round_step', 'budget_suggestion_nudge',
+  // GOA-12 - whether Home asks to set money aside
+  'payday_prompt_min',
 ] as const;
 
 export function Settings() {
@@ -171,6 +175,16 @@ export function Settings() {
                   className="num min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-body text-ink"
                 >
                   {ROUND_STEPS.map((step) => <option key={step} value={step}>{formatPHP(`${step}.00`).replace('.00', '')}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-3 text-body">
+                <span>Offer to set money aside when income is at least</span>
+                <select
+                  value={Number(prefs.payday_prompt_min ?? 5000)}
+                  onChange={(e) => void change({ payday_prompt_min: Number(e.target.value) })}
+                  className="num min-h-tap shrink-0 rounded-xl border-2 border-stroke bg-surface px-3 text-body text-ink"
+                >
+                  {PAYDAY_CHOICES.map((v) => <option key={v} value={v}>{v === 0 ? 'Never' : formatPHP(`${v}.00`).replace('.00', '')}</option>)}
                 </select>
               </label>
               <Toggle

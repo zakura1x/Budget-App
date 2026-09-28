@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "file": "assets/index-SCZKpcZr.js",
+    "file": "assets/index-llAIuIjT.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -8,6 +8,7 @@
       "src/screens/AboutEncryption.tsx",
       "src/screens/Admin.tsx",
       "src/screens/Backup.tsx",
+      "src/screens/Emergency.tsx",
       "src/screens/Goals.tsx",
       "src/screens/Payoff.tsx",
       "src/screens/Projection.tsx",
@@ -16,7 +17,7 @@
       "src/screens/Stats.tsx"
     ],
     "css": [
-      "assets/index-rN8uLSWr.css"
+      "assets/index-Bov5w56k.css"
     ],
     "assets": [
       "assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
@@ -24,7 +25,7 @@
     ]
   },
   "src/screens/AboutEncryption.tsx": {
-    "file": "assets/AboutEncryption-BW6oONfn.js",
+    "file": "assets/AboutEncryption-ByHxg04K.js",
     "name": "AboutEncryption",
     "src": "src/screens/AboutEncryption.tsx",
     "isDynamicEntry": true,
@@ -33,7 +34,7 @@
     ]
   },
   "src/screens/Admin.tsx": {
-    "file": "assets/Admin-CgwP5ctH.js",
+    "file": "assets/Admin-DLQbssSV.js",
     "name": "Admin",
     "src": "src/screens/Admin.tsx",
     "isDynamicEntry": true,
@@ -42,7 +43,7 @@
     ]
   },
   "src/screens/Backup.tsx": {
-    "file": "assets/Backup-BXOTamEK.js",
+    "file": "assets/Backup-CGR27R6t.js",
     "name": "Backup",
     "src": "src/screens/Backup.tsx",
     "isDynamicEntry": true,
@@ -50,8 +51,17 @@
       "index.html"
     ]
   },
+  "src/screens/Emergency.tsx": {
+    "file": "assets/Emergency-CljRTgWv.js",
+    "name": "Emergency",
+    "src": "src/screens/Emergency.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
   "src/screens/Goals.tsx": {
-    "file": "assets/Goals-CLlPInAH.js",
+    "file": "assets/Goals-CO_PoOLH.js",
     "name": "Goals",
     "src": "src/screens/Goals.tsx",
     "isDynamicEntry": true,
@@ -60,7 +70,7 @@
     ]
   },
   "src/screens/Payoff.tsx": {
-    "file": "assets/Payoff-BKNpbJqR.js",
+    "file": "assets/Payoff-C6JVkpbi.js",
     "name": "Payoff",
     "src": "src/screens/Payoff.tsx",
     "isDynamicEntry": true,
@@ -69,7 +79,7 @@
     ]
   },
   "src/screens/Projection.tsx": {
-    "file": "assets/Projection-B_obzfoe.js",
+    "file": "assets/Projection-DjUO3Usf.js",
     "name": "Projection",
     "src": "src/screens/Projection.tsx",
     "isDynamicEntry": true,
@@ -78,7 +88,7 @@
     ]
   },
   "src/screens/RecentlyDeleted.tsx": {
-    "file": "assets/RecentlyDeleted-D8XxuJul.js",
+    "file": "assets/RecentlyDeleted-BTnbclfm.js",
     "name": "RecentlyDeleted",
     "src": "src/screens/RecentlyDeleted.tsx",
     "isDynamicEntry": true,
@@ -87,7 +97,7 @@
     ]
   },
   "src/screens/Recurring.tsx": {
-    "file": "assets/Recurring-B_9KuKNz.js",
+    "file": "assets/Recurring-qSK9jPdN.js",
     "name": "Recurring",
     "src": "src/screens/Recurring.tsx",
     "isDynamicEntry": true,
@@ -96,7 +106,7 @@
     ]
   },
   "src/screens/Stats.tsx": {
-    "file": "assets/Stats-DJKedkH4.js",
+    "file": "assets/Stats-DElDsguK.js",
     "name": "Stats",
     "src": "src/screens/Stats.tsx",
     "isDynamicEntry": true,

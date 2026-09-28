@@ -26,10 +26,19 @@ takes the balance below what is set aside, every goal on that account reports
 what it held. A goal needs a cash, debit or savings account - a card's balance
 is a debt and an investment's is a valuation, and neither is money you can set
 aside.
+
+THREE KINDS (Phase 13, 2026-09-28). A `saving` goal is the above. A `sinking`
+fund is money put by for a cost that comes back - insurance, registration,
+school fees: it can REPEAT EVERY YEAR (its date rolls on once passed), or
+FOLLOW A YEARLY BILL, whose next occurrence (THE schedule, occurrences())
+gives its amount and date (GOA-09). An `emergency` fund is the one goal the
+emergency-fund cover and advisor read (GOA-10/11) - at most one. Every kind
+shows THIS MONTH'S PART: what the month asks for to stay on time, and how much
+of it is set aside already.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -50,6 +59,8 @@ MAX_GOALS = 50
 MAX_ENTRIES = 1000  # a goal's own history; far beyond years of weekly saving
 RATIO = Decimal("0.0001")
 ENTRY_KINDS = ("add", "use")
+KINDS = ("saving", "sinking", "emergency")  # Phase 13
+YEARLY_HORIZON_DAYS = 800  # how far ahead a yearly bill's next occurrence is looked for
 
 
 class GoalRepository(EncryptedRepository):
@@ -77,6 +88,14 @@ class GoalView:
     per_month: Optional[Decimal] = None
     months_left: Optional[int] = None
     overdue: bool = False  # the target date has passed and it is not reached
+    # Phase 13. What kind of goal, and - for a sinking fund - what it follows.
+    kind: str = "saving"  # saving | sinking | emergency
+    repeats_yearly: bool = False  # GOA-09 - the date rolls on a year once it has passed
+    rule_id: Optional[int] = None  # GOA-09 - a yearly bill whose next occurrence sets amount and date
+    # THIS MONTH'S PART (GOA-09): what the month asks for to stay on time, and what is set aside in it already.
+    month_need: Optional[Decimal] = None
+    month_added: Decimal = ZERO
+    month_done: bool = False
 
 
 def monthly_need(remaining: Decimal, today: date, target_date: Optional[date]) -> Tuple[Optional[Decimal], Optional[int]]:
@@ -100,7 +119,8 @@ def list_goals(db: Session, cipher: UserCipher, *, today: Optional[date] = None)
     records = GoalRepository(db, cipher).list()
     balances = _balances(db, cipher, today)
     held = _held_by_account(records)
-    views = [_view(r.id, r.data, balances, held, today or date.today()) for r in records]
+    rules = _rules(db, cipher)
+    views = [_view(r.id, r.data, balances, held, today or date.today(), rules) for r in records]
     return sorted(views, key=lambda v: (v.reached, v.target_date or date.max, v.name.casefold()))
 
 
@@ -110,7 +130,140 @@ def get_goal(db: Session, cipher: UserCipher, goal_id: int, *, today: Optional[d
     if record is None:
         raise NotFoundException("Goal not found")
     return _view(record.id, record.data, _balances(db, cipher, today), _held_by_account(repo.list()),
-                 today or date.today())
+                 today or date.today(), _rules(db, cipher))
+
+
+@dataclass(frozen=True)
+class YearlyBill:
+    """GOA-09. A repeating bill no sinking fund is putting money by for yet."""
+
+    rule_id: int
+    name: str
+    amount: Decimal
+    on: date
+
+
+def yearly_bills(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> List[YearlyBill]:
+    """
+    GOA-09. Bills that come ONCE A YEAR (or less often) with no sinking fund
+    following them - offered as "Set aside for it" on the Goals screen. Their
+    next occurrence comes from THE schedule. Reads only.
+    """
+    today = today or date.today()
+    followed = {r.data.get("rule_id") for r in GoalRepository(db, cipher).list() if r.data.get("rule_id")}
+    found: List[YearlyBill] = []
+    for rule_id, rule in _rules(db, cipher).items():
+        yearly = rule.get("frequency") == "yearly" or (rule.get("frequency") == "monthly"
+                                                        and int(rule.get("interval") or 1) >= 12)
+        if not yearly or rule.get("type") != "expense" or rule_id in followed:
+            continue
+        nxt = _next_bill(rule_id, rule, today)
+        if nxt is not None:
+            found.append(YearlyBill(rule_id, str(rule.get("name") or "Bill"), nxt[0], nxt[1]))
+    return sorted(found, key=lambda b: (b.on, b.name.casefold()))
+
+
+# ------------------------------------------------------------ the payday prompt
+
+
+PAYDAY_LOOKBACK_DAYS = 7
+PAYDAY_DEFAULT_MIN = 5000  # pesos - the user's choice, 2026-09-28; 0 turns the prompt off
+
+
+@dataclass(frozen=True)
+class PaydaySuggestion:
+    goal_id: int
+    name: str
+    kind: str
+    amount: Decimal
+
+
+@dataclass(frozen=True)
+class Payday:
+    """GOA-12. "Your ₱25,000 arrived - set some aside?" - and how much for which goal."""
+
+    transaction_id: int
+    amount: Decimal
+    on: date
+    name: str
+    suggestions: List[PaydaySuggestion]
+    total: Decimal
+
+
+def payday(db: Session, cipher: UserCipher, *, today: Optional[date] = None) -> Optional[Payday]:
+    """
+    GOA-12. The latest income of the last week worth a prompt - at least the
+    amount set in Settings (`payday_prompt_min`, default ₱5,000; decided by
+    the user 2026-09-28), not a cashback credit, not answered yet - with a
+    split worked out from each goal's part of THIS month still to set aside:
+    the emergency fund first, then sinking funds, then the rest by date.
+
+    Never more than came in, and never more than a goal's account has
+    available (GOA-08). None when there is nothing to ask about. Reads only;
+    it SUGGESTS, and set_aside_payday is the one write.
+    """
+    from app.db.repositories.transaction_repository import TransactionRepository
+    from app.services import preferences_service
+
+    today = today or date.today()
+    threshold = money(preferences_service.get_preferences(db, cipher).get("payday_prompt_min", PAYDAY_DEFAULT_MIN) or 0)
+    if threshold <= ZERO:
+        return None
+    since = today - timedelta(days=PAYDAY_LOOKBACK_DAYS)
+    candidates = [
+        r for r in TransactionRepository(db, cipher).cached()
+        if r.data.get("type") == "income" and not r.data.get("cashback_of") and not r.data.get("set_aside_prompted")
+        and since <= date.fromisoformat(str(r.data["txn_date"])) <= today and money(r.data["amount"]) >= threshold
+    ]
+    if not candidates:
+        return None
+    income = max(candidates, key=lambda r: (str(r.data["txn_date"]), r.id))
+    amount = money(income.data["amount"])
+
+    order = {"emergency": 0, "sinking": 1, "saving": 2}
+    goals = sorted((g for g in list_goals(db, cipher, today=today) if not g.reached and g.month_need),
+                   key=lambda g: (order.get(g.kind, 3), g.target_date or date.max, g.name.casefold()))
+    left = amount
+    available: Dict[int, Decimal] = {}
+    suggestions: List[PaydaySuggestion] = []
+    for goal in goals:
+        room = available.setdefault(goal.account_id, max(goal.account_available, ZERO))
+        part = min(max((goal.month_need or ZERO) - goal.month_added, ZERO), left, room)
+        if part <= ZERO:
+            continue
+        suggestions.append(PaydaySuggestion(goal.id, goal.name, goal.kind, part))
+        left -= part
+        available[goal.account_id] = room - part
+    if not suggestions:
+        return None
+    name = income.data.get("merchant") or "Income"
+    return Payday(income.id, amount, date.fromisoformat(str(income.data["txn_date"])), str(name), suggestions,
+                  amount - left)
+
+
+def set_aside_payday(db: Session, cipher: UserCipher, transaction_id: int, amounts: Mapping[int, Any], *,
+                     today: Optional[date] = None) -> None:
+    """
+    GOA-12. "Set aside" on the payday card: each amount goes to its goal
+    through the same checks as Add money (GOA-08), and the income is marked as
+    answered - all in ONE commit, so a refused part leaves nothing half done.
+    """
+    from app.services import transaction_service as txns
+
+    today = today or date.today()
+    for goal_id, amount in amounts.items():
+        if money(amount) > ZERO:
+            _record_entry(db, cipher, int(goal_id), {"amount": amount, "on": today}, "add", today=today, commit=False)
+    txns.mark_set_aside_prompted(db, cipher, transaction_id)
+    db.commit()
+
+
+def dismiss_payday(db: Session, cipher: UserCipher, transaction_id: int) -> None:
+    """GOA-12. "Not now" - this income is never asked about again."""
+    from app.services import transaction_service as txns
+
+    txns.mark_set_aside_prompted(db, cipher, transaction_id)
+    db.commit()
 
 
 def set_aside_by_account(db: Session, cipher: UserCipher) -> Dict[int, Decimal]:
@@ -142,7 +295,7 @@ def update_goal(db: Session, cipher: UserCipher, goal_id: int, payload: Mapping[
     record = repo.get(goal_id)
     if record is None:
         raise NotFoundException("Goal not found")
-    data = _clean(db, cipher, payload, record.data)
+    data = _clean(db, cipher, payload, record.data, goal_id)
     if data["account_id"] != record.data.get("account_id") and _saved(record.data) > ZERO:
         # What is set aside is part of THAT account's balance; it cannot follow the goal elsewhere.
         raise BusinessRuleException("Use or release what is set aside before moving the goal to another account")
@@ -190,7 +343,8 @@ def use_money(
 
 
 def _record_entry(
-    db: Session, cipher: UserCipher, goal_id: int, payload: Mapping[str, Any], kind: str, *, today: Optional[date]
+    db: Session, cipher: UserCipher, goal_id: int, payload: Mapping[str, Any], kind: str, *, today: Optional[date],
+    commit: bool = True,
 ) -> GoalView:
     repo = GoalRepository(db, cipher)
     record = repo.get(goal_id)
@@ -225,7 +379,8 @@ def _record_entry(
         user_id=cipher.user_id, entity="savings_goals", entity_id=goal_id, cipher=cipher,
         detail={"amount": str(amount)},
     )
-    db.commit()
+    if commit:
+        db.commit()
     return get_goal(db, cipher, goal_id, today=today)
 
 
@@ -255,15 +410,24 @@ def _balances(db: Session, cipher: UserCipher, today: Optional[date]) -> Mapping
 
 
 def _view(goal_id: int, data: Mapping[str, Any], balances: Mapping[int, Decimal],
-          held: Mapping[int, Decimal], today: date) -> GoalView:
+          held: Mapping[int, Decimal], today: date,
+          rules: Optional[Mapping[int, Mapping[str, Any]]] = None) -> GoalView:
     target = money(data["target"])
     saved = _saved(data)
     account_id = int(data["account_id"])
     balance = balances.get(account_id, ZERO)
     on_account = held.get(account_id, ZERO)
     target_date = date.fromisoformat(data["target_date"]) if data.get("target_date") else None
+    kind = str(data.get("kind") or "saving")
+    rule_id = data.get("rule_id")
+    followed = _next_bill(int(rule_id), (rules or {}).get(int(rule_id)), today) if rule_id else None
+    if followed is not None:
+        target, target_date = followed  # GOA-09 - the bill's next occurrence is the goal
+    elif data.get("repeats_yearly") and target_date is not None:
+        target_date = _next_yearly(target_date, today)
     remaining = max(target - saved, ZERO)
     per_month, months_left = monthly_need(remaining, today, target_date)
+    month_need, month_added = _this_month(data, target, saved, target_date, today)
     return GoalView(
         id=goal_id,
         name=str(data.get("name", "")),
@@ -282,10 +446,71 @@ def _view(goal_id: int, data: Mapping[str, Any], balances: Mapping[int, Decimal]
         per_month=per_month,
         months_left=months_left,
         overdue=target_date is not None and target_date < today and remaining > ZERO,
+        kind=kind if kind in KINDS else "saving",
+        repeats_yearly=bool(data.get("repeats_yearly")),
+        rule_id=int(rule_id) if rule_id and followed is not None else None,
+        month_need=month_need,
+        month_added=month_added,
+        month_done=month_need is not None and month_added >= month_need,
     )
 
 
-def _clean(db: Session, cipher: UserCipher, payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]]) -> dict:
+def _this_month(data: Mapping[str, Any], target: Decimal, saved: Decimal, target_date: Optional[date],
+                today: date) -> Tuple[Optional[Decimal], Decimal]:
+    """
+    GOA-09. (what this month asks for, what is set aside in it). The ask is
+    worked out from where the goal stood when the month BEGAN - so setting this
+    month's part aside ticks it off instead of shrinking it - and None when
+    the goal has no date, a past one, or was already reached then.
+    """
+    added = used = ZERO
+    for entry in data.get("set_aside") or []:
+        on = str(entry.get("on") or "")
+        if on[:7] != today.isoformat()[:7]:
+            continue
+        if entry.get("kind") == "add":
+            added += money(entry.get("amount") or ZERO)
+        else:
+            used += money(entry.get("amount") or ZERO)
+    before = saved - added + used
+    need, _ = monthly_need(max(target - before, ZERO), today, target_date)
+    return need, added
+
+
+def _next_yearly(on: date, today: date) -> date:
+    """GOA-09. A repeating fund's date, rolled on a year at a time until it is today or later."""
+    from app.core.utils.date_utils import add_months
+
+    years = 0
+    while add_months(on, 12 * years) < today:
+        years += 1
+    return add_months(on, 12 * years)
+
+
+def _next_bill(rule_id: int, rule: Optional[Mapping[str, Any]], today: date) -> Optional[Tuple[Decimal, date]]:
+    """
+    GOA-09. The next occurrence of the bill a sinking fund follows - its amount
+    and its day, from THE schedule (occurrences, REC-22). None when the rule is
+    gone or has nothing left. Imported here: recurring_service reaches
+    account_service, which imports this module lazily.
+    """
+    if rule is None:
+        return None
+    from app.services import recurring_service
+
+    ahead = [o for o in recurring_service.occurrences(rule_id, rule, today, today + timedelta(days=YEARLY_HORIZON_DAYS))
+             if not o.paused]
+    return (ahead[0].amount, ahead[0].on) if ahead else None
+
+
+def _rules(db: Session, cipher: UserCipher) -> Dict[int, Mapping[str, Any]]:
+    from app.db.repositories.recurring_repository import RecurringRuleRepository
+
+    return {r.id: r.data for r in RecurringRuleRepository(db, cipher).list()}
+
+
+def _clean(db: Session, cipher: UserCipher, payload: Mapping[str, Any], existing: Optional[Mapping[str, Any]],
+           goal_id: Optional[int] = None) -> dict:
     data = dict(existing or {})
     name = " ".join(str(payload.get("name") or data.get("name") or "").split())
     if not name:
@@ -317,4 +542,26 @@ def _clean(db: Session, cipher: UserCipher, payload: Mapping[str, Any], existing
     data["colour"] = str(payload.get("colour") or data.get("colour") or "#3FA37A")
     data["icon"] = str(payload.get("icon") or data.get("icon") or "piggy-bank")
     data.setdefault("set_aside", [])
+
+    # Phase 13. The kind; a sinking fund may repeat yearly, or follow a yearly bill.
+    kind = str(payload.get("kind") or data.get("kind") or "saving")
+    if kind not in KINDS:
+        raise ValidationException(f"A goal is one of: {', '.join(KINDS)}")
+    if kind == "emergency":
+        others = [r for r in GoalRepository(db, cipher).list()
+                  if r.data.get("kind") == "emergency" and r.id != goal_id]
+        if others:
+            raise BusinessRuleException("You already have an emergency fund goal - there is one, and the cover reads it")
+    data["kind"] = kind
+    data["repeats_yearly"] = kind == "sinking" and bool(payload.get("repeats_yearly", data.get("repeats_yearly", False)))
+    rule_id = payload.get("rule_id", data.get("rule_id"))
+    if kind != "sinking" or not rule_id:
+        data["rule_id"] = None
+    else:
+        from app.db.repositories.recurring_repository import RecurringRuleRepository
+
+        rule = RecurringRuleRepository(db, cipher).get(int(rule_id))
+        if rule is None or rule.data.get("type") != "expense":
+            raise ValidationException("A sinking fund follows a repeating bill - that one does not exist")
+        data["rule_id"] = int(rule_id)
     return data

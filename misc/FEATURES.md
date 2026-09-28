@@ -34,10 +34,10 @@
 | 7. Stats & Reports | `STA` | 11 | 0 | 0 | 0 | 11 |
 | 8. Recurring, Installments & Projection | `REC` | 30 | 0 | 1 | 0 | 31 |
 | 9. Subscriptions | `SUB` | 9 | 0 | 0 | 0 | 9 |
-| 10. Savings Goals | `GOA` | 7 | 0 | 0 | 0 | 7 |
+| 10. Savings Goals | `GOA` | 11 | 0 | 0 | 0 | 11 |
 | 11. Data In/Out | `DAT` | 16 | 2 | 2 | 0 | 20 |
 | 12. Settings & UX | `UX` | 14 | 3 | 3 | 0 | 20 |
-| **Total** | | **191** | **6** | **17** | **0** | **214** |
+| **Total** | | **195** | **6** | **17** | **0** | **218** |
 
 > **2026-09-14 — the recovery phrase is out.** SEC-14/15/16/20/22 moved to ❌
 > Out and two features came in: password reset by email (SEC-30) and an
@@ -48,7 +48,7 @@
 > BUD-17, CAL-07, REC-35, GOA-09..12, ACC-41, STA-12, SEC-32), ordered into Phases
 > 11–15. A new ID gets its row here the day it is built. **Phase 11 built the
 > same day:** TXN-24, TXN-25, BUD-17, GOA-05, SUB-07, STA-10. **Phase 12 too:** CAL-06,
-> CAL-07, REC-27, REC-35.
+> CAL-07, REC-27, REC-35. **Phase 13 too:** GOA-09, GOA-10, GOA-11, GOA-12.
 
 **All decisions are closed** — §13 records what was chosen and why. Four new
 second-order questions came out of those choices; each has a working default
@@ -380,6 +380,10 @@ wrong. One engine makes that bug impossible rather than merely unlikely.
 | GOA-06 | ~~Contributions are real transfers~~ **Replaced by GOA-08 on 2026-09-16** | ✅ v1 | 8b | **DECIDED: goals are in.** Putting ₱5,000 toward a goal writes an actual transfer into the linked account, so goal progress and account balance can never disagree. See §13-C |
 | GOA-07 | Goal progress never contradicts the account | ✅ v1 | 8b | Progress is *derived*, never stored as its own number - since GOA-08 from the goal's own dated set-aside entries, and a goal whose account balance falls below what its goals hold says so (`short_by`) instead of pretending |
 | GOA-08 | **Goals set money aside inside their account** | ✅ v1 | 10 | Added 2026-09-16 (user: "when I press add money it deducts my spending available for that account, but the balance should remain the same as I want to check it matches my bank"). *Add money* earmarks part of the account's balance for the goal and *Use it* releases it; **nothing moves** - no transaction, the balance still matches the bank. What is set aside comes off the account's **available** money and, **decided by the user, off cash on hand** (and so Months ahead); net worth still counts it. Several goals may share one account, each holding only its part; no more than is available can be set aside, and no more than a goal holds can be used. Deleting a goal releases what it held; a goal holding money cannot move to another account. **Existing goals start at ₱0 set aside** (user's choice). Add money / Use it on the Accounts tab, the account's page (banner: *₱X set aside for goals · ₱Y available*) and the Goals screen. `POST /goals/{id}/add` and `/use`; the old `/contribute` transfer is gone |
+| GOA-09 | **Sinking funds** | ✅ v1 | 13 | **Built 2026-09-28.** A goal has a kind: *saving*, *sinking* or *emergency*. A sinking fund can repeat **every year** (its date rolls on) or **follow a yearly bill** (`rule_id`, an expense rule), taking its target and date from the bill's next occurrence through `recurring_service.occurrences()`. The Goals screen lists *Bills that come once a year* that no goal follows yet, each with *Set aside for it*. Every dated goal shows *"This month: X of Y set aside ✓ done"*, measured from where it stood when the month began. `GET /goals/yearly-bills` |
+| GOA-10 | **Emergency-fund cover** | ✅ v1 | 13 | **Built 2026-09-28.** *"Emergency money lasts 1.2 months"* on the Accounts tab and More → *Emergency fund*. Emergency money is the goal marked emergency fund, else cash on hand (**user's choice**), and the screen says which. Essential spending is the average of the last 6 full months over categories marked **Essential** - pre-marked by name (rent, bills, food, transport, health, education…), with a switch on each category that overrides the name (**user's choice**) - plus every repeating bill and plan payment; with none, 70% of spending, and it says so. `safety_service`, `app/core/utils/emergency.py` |
+| GOA-11 | **Emergency-fund advisor (rule-based)** | ✅ v1 | 13 | **Built 2026-09-28.** A target in months from rules, never a model: base 3 (employed) / 6 (self-employed or irregular), +1/+2 for income that swings over 25%/50%, +1 for a single income source, +1 for a month with no income, +1 when debt payments pass 30% of income, +1/+2 for dependents, −1 for two or more earners, clamped 3–12. Three questions (work, dependents, earners) are preferences; every rule that fired is listed with its months. Under 3 months of history only the base applies. *"Make ₱X its target"* sets or creates the emergency fund. `GET /goals/emergency` |
+| GOA-12 | **Payday prompt** | ✅ v1 | 13 | **Built 2026-09-28.** When income of at least the Settings amount lands (default ₱5,000, *Never* to turn off - **user's choice**; cashback never counts), Home offers each goal its part of this month - emergency fund first, then sinking funds, then the rest - capped by what came in and what each account has available; every amount can be changed. *Set aside* is one commit; it and *Not now* are both kept on the income (`set_aside_prompted`), so it is never asked twice, on any device. `GET /goals/payday`, `POST /goals/payday/{id}` and `/dismiss` |
 
 ---
 

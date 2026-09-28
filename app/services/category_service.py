@@ -18,6 +18,7 @@ Deleting is soft (is_deleted) like every other row, so the audit trail and any
 backup taken before today stay honest.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -41,6 +42,14 @@ NAME_MAX = 40
 MAX_CATEGORIES = 300
 
 
+# GOA-10. A category whose NAME reads as a need is essential until its own switch says otherwise
+# (user, 2026-09-28). Matched at the start of a word, in any case.
+ESSENTIAL_NAME = re.compile(
+    r"\b(rent|utilit|bill|electric|water|internet|grocer|food|transport|fare|fuel|gas\b|health|medic|"
+    r"pharma|insur|educat|school|tuition)",
+    re.IGNORECASE,
+)
+
 @dataclass(frozen=True)
 class CategoryView:
     id: int
@@ -53,6 +62,7 @@ class CategoryView:
     archived: bool
     children: Tuple["CategoryView", ...] = ()
     usage: int = 0  # transactions pointing at this category, splits included
+    essential: bool = False  # GOA-10 - counts in essential spending; see essential_ids()
 
 
 # ------------------------------------------------------------------ reading
@@ -72,7 +82,8 @@ def list_categories(
     hidden - losing sight of a category is worse than an untidy list.
     """
     records = CategoryRepository(db, cipher).list()
-    views = {record.id: _view(record.id, record.data) for record in records}
+    essential = essential_ids(records)
+    views = {record.id: _replace(_view(record.id, record.data), essential=record.id in essential) for record in records}
 
     usage = _usage_counts(db, cipher) if with_usage else {}
     if usage:
@@ -96,6 +107,40 @@ def list_categories(
     if kind:
         tree = [view for view in tree if view.kind == kind]
     return tree
+
+
+def essential_ids(records: Sequence) -> Set[int]:
+    """
+    GOA-10. The spending categories that count as ESSENTIAL - what an emergency
+    fund has to cover. Decided by the user 2026-09-28: pre-marked by NAME, with
+    a switch on every category. So, for each expense category:
+
+        its own switch, when it has been set                 (`essential`)
+        otherwise its name - rent, utilities, bills, groceries, food,
+        transport, health, education and the like            (ESSENTIAL_NAME)
+        otherwise, for a sub-category, its parent's answer
+
+    Nothing is written to decide this: a category nobody has switched keeps
+    following its name, so renaming "Food" to "Eating out" changes the answer.
+    """
+    by_id = {record.id: record.data for record in records}
+
+    def own(data: Mapping[str, Any]) -> Optional[bool]:
+        if "essential" in data and data["essential"] is not None:
+            return bool(data["essential"])
+        return True if ESSENTIAL_NAME.search(str(data.get("name") or "")) else None
+
+    found: Set[int] = set()
+    for category_id, data in by_id.items():
+        if data.get("kind", "expense") != "expense":
+            continue
+        answer = own(data)
+        parent = by_id.get(data.get("parent_id")) if data.get("parent_id") is not None else None
+        if answer is None and parent is not None:
+            answer = own(parent)
+        if answer:
+            found.add(category_id)
+    return found
 
 
 def get_category(db: Session, cipher: UserCipher, category_id: int) -> CategoryView:
@@ -316,6 +361,10 @@ def _view(category_id: int, data: Mapping[str, Any]) -> CategoryView:
         colour=str(data.get("colour") or "#8E8E93"),
         sort_order=int(data.get("sort_order") or 0),
         archived=bool(data.get("archived", False)),
+        # Its own answer; list_categories replaces it with essential_ids(), which also lets a child follow its parent.
+        essential=data.get("kind", "expense") == "expense" and (
+            bool(data["essential"]) if data.get("essential") is not None else bool(ESSENTIAL_NAME.search(str(data.get("name") or "")))
+        ),
     )
 
 
@@ -370,6 +419,9 @@ def _clean(
     data["archived"] = bool(payload.get("archived", data.get("archived", False)))
     if payload.get("sort_order") is not None:
         data["sort_order"] = int(payload["sort_order"])
+    # GOA-10. Set only when the switch is used; left unset, the name decides (essential_ids).
+    if payload.get("essential") is not None:
+        data["essential"] = bool(payload["essential"])
 
     _reject_duplicate_name(siblings, name, data["parent_id"], kind, category_id)
     return data

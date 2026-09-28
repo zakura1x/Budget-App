@@ -20,6 +20,7 @@ import { format, parseISO } from 'date-fns';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CategoryGrid } from '../components/CategoryGrid';
+import { PaydayCard } from '../components/PaydayCard';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TransactionRow } from '../components/TransactionRow';
 import { Button } from '../components/ui/Button';
@@ -284,6 +285,8 @@ export function Home() {
         ? status.is_current && <AlertBanner alerts={status.alerts} status={status} lookups={lookups} />
         : <AlertBanner alerts={alerts} status={null} lookups={lookups} />}
       {status?.is_current && <ReminderCard status={status} />}
+      {/* GOA-12 - income just landed: set some aside? */}
+      <PaydayCard />
       {(error || budgetError) && (
         <p className="mb-3 rounded-2xl border-2 border-danger bg-danger/10 px-4 py-3 text-footnote text-danger">{error ?? budgetError}</p>
       )}

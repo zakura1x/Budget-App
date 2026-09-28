@@ -208,3 +208,8 @@ class PreferencesIn(BaseModel):
     # BUD-17: what a suggested budget rounds up to, and the period-start reminder
     budget_round_step: Optional[Literal[1, 10, 50, 100, 500, 1000]] = None
     budget_suggestion_nudge: Optional[bool] = None
+    # Phase 13: the payday prompt's amount in pesos (0 = off), and the emergency advisor's three answers
+    payday_prompt_min: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    safety_work: Optional[Literal["employee", "contract", "self"]] = None
+    safety_dependents: Optional[Literal["0", "1-2", "3+"]] = None
+    safety_earners: Optional[Literal["1", "2+"]] = None
