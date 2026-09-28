@@ -43,6 +43,11 @@
 > Out and two features came in: password reset by email (SEC-30) and an
 > offline copy of `.env` kept by the server owner (SEC-31). §13 records why.
 
+> **2026-09-28 — what comes next is in [ROADMAP.md](ROADMAP.md).** Every 🟡
+> Deferred row below, plus thirteen new features with reserved IDs (TXN-24/25,
+> BUD-17, CAL-07, REC-35, GOA-09..12, ACC-41, STA-12, SEC-32), ordered into Phases
+> 11–15. A new ID gets its row here the day it is built.
+
 **All decisions are closed** — §13 records what was chosen and why. Four new
 second-order questions came out of those choices; each has a working default
 built into the docs, listed at the end of §13.

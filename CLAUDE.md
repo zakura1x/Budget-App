@@ -22,6 +22,7 @@ conventions this project deliberately mirrors.
 | `misc/ARCHITECTURE.md` | The same system in full detail, numbered §1–§14. Code comments cite these section numbers. |
 | `misc/FEATURES.md` | Feature-by-feature scope with IDs (`TXN-01`, `BUD-06`, `SEC-14`…) referenced throughout the code. |
 | `misc/phases.md` | Build order, phase by phase, and what is actually done. |
+| `misc/ROADMAP.md` | Everything not built yet — deferred rows plus new ideas, with reserved IDs, as Phases 11–15. Tick it when one ships. |
 | `misc/how-to-run.txt` | Setup, recovery, and backup runbook. |
 | `misc/DEPLOY.md` | Deploying to IIS: the release zip, first deploy, every update, rollback, troubleshooting. |
 
