@@ -12,3 +12,7 @@ app/web/static/dist/** -text
 # Notes for Claude Code while developing - not part of a release (scripts/make_release.py
 # uses git archive, which leaves out export-ignore paths).
 CLAUDE.md export-ignore
+
+# Screenshots of each phase's changes (made-up local data): kept in the repository and
+# on GitHub, but the server has no use for them, so they stay out of the release zip.
+misc/screenshots/** export-ignore
