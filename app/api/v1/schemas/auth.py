@@ -1,9 +1,10 @@
 """Request and response shapes for /auth. Strings are length-capped so a
 request cannot make bcrypt chew on megabytes."""
 
-from typing import Optional
+from datetime import datetime
+from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RegisterRequest(BaseModel):
@@ -58,6 +59,65 @@ class SessionOut(BaseModel):
     locked: bool
     pin_set: bool
     auto_lock_minutes: int
+    passkey_set: bool = False  # SEC-12
+
+
+class PasskeyAnswer(BaseModel):
+    """SEC-12 - what navigator.credentials.get() answered, binary fields base64url."""
+
+    credential_id: str = Field(max_length=1400)
+    client_data_json: str = Field(max_length=4096)
+    authenticator_data: str = Field(max_length=4096)
+    signature: str = Field(max_length=1024)
+
+
+class PasskeyNew(BaseModel):
+    """SEC-12 - what navigator.credentials.create() answered."""
+
+    client_data_json: str = Field(max_length=4096)
+    attestation_object: str = Field(max_length=16384)
+    label: Optional[str] = Field(default=None, max_length=60)
+
+
+class PasskeyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    label: Optional[str] = None
+    created: datetime
+    last_used: Optional[datetime] = None
+
+
+class OpenSessionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    device: Optional[str] = None
+    started: datetime
+    last_active: datetime
+    current: bool
+
+
+class SignInOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    at: datetime
+    kind: str
+    success: bool
+    same_network: bool
+
+
+class ActivityOut(BaseModel):
+    """SEC-32 - who is signed in, and the last month of sign-ins."""
+
+    sessions: List[OpenSessionOut]
+    sign_ins: List[SignInOut]
+    passkeys: List[PasskeyOut]
+    passkey_enabled: bool
+
+
+class SessionsEndedCountOut(BaseModel):
+    ended: int
 
 
 class PasswordPolicy(BaseModel):
@@ -73,4 +133,5 @@ class AuthConfigOut(BaseModel):
     pin_length: int
     password_reset_enabled: bool
     reset_link_minutes: int
+    passkey_enabled: bool = False  # SEC-12
     password_policy: PasswordPolicy

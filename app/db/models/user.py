@@ -11,7 +11,7 @@ if the pepper ever had to change.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, CHAR, Integer, String, false, text, true
+from sqlalchemy import Boolean, CHAR, Integer, String, UnicodeText, false, text, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -37,6 +37,10 @@ class User(Base):
     # The PIN guards the SESSION only; it never derives a key (section 6).
     pin_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     pin_failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    # SEC-12 - passkeys that may unlock the lock screen: a JSON list of credential
+    # ids and PUBLIC keys (auth_service/passkey_service.py). Like the PIN, a
+    # passkey only decides whether to unwrap the DEK again; it derives nothing.
+    passkeys: Mapped[Optional[str]] = mapped_column(UnicodeText, nullable=True)
 
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())

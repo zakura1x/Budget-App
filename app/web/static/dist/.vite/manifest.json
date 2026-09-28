@@ -1,6 +1,13 @@
 {
+  "_formatDistanceToNowStrict-D9md7ie-.js": {
+    "file": "assets/formatDistanceToNowStrict-D9md7ie-.js",
+    "name": "formatDistanceToNowStrict",
+    "imports": [
+      "index.html"
+    ]
+  },
   "index.html": {
-    "file": "assets/index-llAIuIjT.js",
+    "file": "assets/index-BQ7z8TGw.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -14,10 +21,12 @@
       "src/screens/Projection.tsx",
       "src/screens/Recurring.tsx",
       "src/screens/RecentlyDeleted.tsx",
+      "src/screens/Review.tsx",
+      "src/screens/SecurityActivity.tsx",
       "src/screens/Stats.tsx"
     ],
     "css": [
-      "assets/index-Bov5w56k.css"
+      "assets/index-D_rEZW18.css"
     ],
     "assets": [
       "assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
@@ -25,7 +34,7 @@
     ]
   },
   "src/screens/AboutEncryption.tsx": {
-    "file": "assets/AboutEncryption-ByHxg04K.js",
+    "file": "assets/AboutEncryption-DeU8wjW4.js",
     "name": "AboutEncryption",
     "src": "src/screens/AboutEncryption.tsx",
     "isDynamicEntry": true,
@@ -34,7 +43,7 @@
     ]
   },
   "src/screens/Admin.tsx": {
-    "file": "assets/Admin-DLQbssSV.js",
+    "file": "assets/Admin-CdZRHB6v.js",
     "name": "Admin",
     "src": "src/screens/Admin.tsx",
     "isDynamicEntry": true,
@@ -43,7 +52,7 @@
     ]
   },
   "src/screens/Backup.tsx": {
-    "file": "assets/Backup-CGR27R6t.js",
+    "file": "assets/Backup-DKCqOko5.js",
     "name": "Backup",
     "src": "src/screens/Backup.tsx",
     "isDynamicEntry": true,
@@ -52,7 +61,7 @@
     ]
   },
   "src/screens/Emergency.tsx": {
-    "file": "assets/Emergency-CljRTgWv.js",
+    "file": "assets/Emergency-DzjDiOWt.js",
     "name": "Emergency",
     "src": "src/screens/Emergency.tsx",
     "isDynamicEntry": true,
@@ -61,7 +70,7 @@
     ]
   },
   "src/screens/Goals.tsx": {
-    "file": "assets/Goals-CO_PoOLH.js",
+    "file": "assets/Goals-DonItHbA.js",
     "name": "Goals",
     "src": "src/screens/Goals.tsx",
     "isDynamicEntry": true,
@@ -70,7 +79,7 @@
     ]
   },
   "src/screens/Payoff.tsx": {
-    "file": "assets/Payoff-C6JVkpbi.js",
+    "file": "assets/Payoff-CRDEttDG.js",
     "name": "Payoff",
     "src": "src/screens/Payoff.tsx",
     "isDynamicEntry": true,
@@ -79,7 +88,7 @@
     ]
   },
   "src/screens/Projection.tsx": {
-    "file": "assets/Projection-DjUO3Usf.js",
+    "file": "assets/Projection-i1S6aaDn.js",
     "name": "Projection",
     "src": "src/screens/Projection.tsx",
     "isDynamicEntry": true,
@@ -88,16 +97,17 @@
     ]
   },
   "src/screens/RecentlyDeleted.tsx": {
-    "file": "assets/RecentlyDeleted-BTnbclfm.js",
+    "file": "assets/RecentlyDeleted-DZUVkbHO.js",
     "name": "RecentlyDeleted",
     "src": "src/screens/RecentlyDeleted.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "index.html"
+      "index.html",
+      "_formatDistanceToNowStrict-D9md7ie-.js"
     ]
   },
   "src/screens/Recurring.tsx": {
-    "file": "assets/Recurring-qSK9jPdN.js",
+    "file": "assets/Recurring-DEGNCLZY.js",
     "name": "Recurring",
     "src": "src/screens/Recurring.tsx",
     "isDynamicEntry": true,
@@ -105,8 +115,27 @@
       "index.html"
     ]
   },
+  "src/screens/Review.tsx": {
+    "file": "assets/Review-OIIzotSZ.js",
+    "name": "Review",
+    "src": "src/screens/Review.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/screens/SecurityActivity.tsx": {
+    "file": "assets/SecurityActivity-DwaPF-TE.js",
+    "name": "SecurityActivity",
+    "src": "src/screens/SecurityActivity.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_formatDistanceToNowStrict-D9md7ie-.js"
+    ]
+  },
   "src/screens/Stats.tsx": {
-    "file": "assets/Stats-DElDsguK.js",
+    "file": "assets/Stats-WAVIctom.js",
     "name": "Stats",
     "src": "src/screens/Stats.tsx",
     "isDynamicEntry": true,

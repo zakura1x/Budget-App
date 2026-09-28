@@ -7,6 +7,7 @@ EDITABLE can be written - a preferences row is sealed JSON, and anything
 accepted here would be trusted by every later read of it.
 """
 
+from datetime import date
 from typing import Any, Dict, Mapping
 
 from sqlalchemy.orm import Session
@@ -31,6 +32,8 @@ EDITABLE = (
     "budget_round_step", "budget_suggestion_nudge",
     # Phase 13, 2026-09-28: the payday prompt's amount (GOA-12) and the emergency advisor's three answers (GOA-11)
     "payday_prompt_min", "safety_work", "safety_dependents", "safety_earners",
+    # Phase 14, 2026-09-28: the monthly review's "Not now" (STA-12) - the start of the period it was for
+    "review_dismissed_for",
 )
 THEMES = ("system", "light", "dark")
 # UX-05: the colour palette, independent of light/dark (every palette has both).
@@ -62,6 +65,11 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
             if changes[key] not in allowed:
                 raise ValidationException(f"{key} must be one of: {', '.join(allowed)}")
             cleaned[key] = changes[key]
+    if "review_dismissed_for" in changes:
+        try:
+            cleaned["review_dismissed_for"] = date.fromisoformat(str(changes["review_dismissed_for"])).isoformat()
+        except ValueError:
+            raise ValidationException("review_dismissed_for is a date") from None
     if "budget_round_step" in changes:
         step = changes["budget_round_step"]
         if isinstance(step, bool) or step not in STEPS:

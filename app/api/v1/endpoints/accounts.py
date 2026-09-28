@@ -28,6 +28,7 @@ from app.api.v1.schemas.accounts import (
     AccountListOut,
     AccountOut,
     ArchiveIn,
+    BalanceCheckIn,
     BillsIn,
     InterestAccrualOut,
     ValuationIn,
@@ -191,4 +192,17 @@ def add_valuation(
 ) -> AccountOut:
     """ACC-12/13 - a valuation change, appended with its date. Not income."""
     account_service.add_valuation(db, ctx.cipher, account_id, body.value, on=body.on, note=body.note)
+    return _current(db, ctx, account_id, today)
+
+
+@router.post("/{account_id}/balance-check", response_model=AccountOut)
+def check_balance(
+    account_id: int,
+    body: BalanceCheckIn,
+    today: Optional[date] = TODAY,
+    ctx: UnlockedContext = Depends(get_unlocked_context),
+    db: Session = Depends(get_db),
+) -> AccountOut:
+    """ACC-41 - the bank's balance for a day; the account comes back with the difference."""
+    account_service.check_balance(db, ctx.cipher, account_id, body.on, body.balance, today=today)
     return _current(db, ctx, account_id, today)

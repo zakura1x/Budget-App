@@ -21,6 +21,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { addDays, format, parseISO } from 'date-fns';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Cell, Line, LineChart, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CalendarSwitch } from '../components/CalendarSwitch';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -480,6 +481,7 @@ export function Stats() {
     staleTime: STALE.derived,
   });
 
+  const navigate = useNavigate();
   const step = (direction: -1 | 1) => {
     if (!overview) return;
     setOn(iso(addDays(parseISO(direction < 0 ? overview.start : overview.end), direction)));
@@ -521,6 +523,15 @@ export function Stats() {
           { value: 'custom', label: 'Custom' },
         ]}
       />
+
+      {(mode === 'budget' || mode === 'month') && overview && (
+        // STA-12 - a finished period can be looked back on; the current one offers the last.
+        <button type="button" onClick={() => navigate(overview.end < localToday() ? `/review?on=${overview.start}` : '/review')}
+          className="press mt-3 flex min-h-tap w-full items-center justify-between rounded-xl bg-surface px-4 text-footnote font-bold text-ink">
+          <span>{overview.end < localToday() ? 'Review this period' : 'Review the last period'}</span>
+          <span aria-hidden="true">›</span>
+        </button>
+      )}
 
       {mode === 'custom' && (
         <div className="mt-3 grid grid-cols-2 gap-3">

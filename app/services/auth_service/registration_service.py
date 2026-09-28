@@ -118,6 +118,7 @@ def register(
     registration_code: str,
     display_name: Optional[str] = None,
     ip_hash: Optional[str] = None,
+    device: Optional[str] = None,
 ):
     """
     Create an account from the signup screen and sign it in.
@@ -169,6 +170,6 @@ def register(
     audit_service.record(db, audit_service.REGISTER, user_id=user.id, ip_hash=ip_hash,
                          cipher=UserCipher(user.id, dek, keyring.current_version),
                          detail={"admin": account.is_admin})
-    issued = session_service.start_session(db, user, dek, keyring)
+    issued = session_service.start_session(db, user, dek, keyring, device=device)
     db.commit()
     return account, issued

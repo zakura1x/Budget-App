@@ -12,6 +12,7 @@ in QUOT. Two levels:
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.core.config import settings
 from app.core.crypto.blind_index import get_blind_indexer
 from app.core.crypto.session_keys import get_session_keyring
 from app.core.crypto.user_cipher import UserCipher
+from app.core.utils.user_agent import device_label
 from app.core.exceptions import (
     AuthenticationException,
     SessionLockedException,
@@ -50,6 +52,11 @@ def client_ip(request: Request) -> str:
 
 def get_ip_hash(request: Request) -> str:
     return get_blind_indexer().ip(client_ip(request))
+
+
+def get_device_label(request: Request) -> Optional[str]:
+    """SEC-32 - "Chrome on Android"; the raw User-Agent goes no further than this."""
+    return device_label(request.headers.get("user-agent"))
 
 
 def get_session_context(request: Request, db: Session = Depends(get_db)) -> SessionContext:

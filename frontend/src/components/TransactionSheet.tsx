@@ -366,7 +366,7 @@ export function TransactionSheet() {
     } else {
       setKind(addPreset?.type ?? 'expense');
       setRepeating(false);
-      setTyped('0');
+      setTyped(addPreset?.amount ? typedFrom(addPreset.amount) : '0');
       setCategoryId(null);
       setTxnDate(addOn ?? localToday());
       setNote('');

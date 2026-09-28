@@ -592,6 +592,26 @@ auto-lock); they are never persisted in the browser.
   the money helpers. `/projection/payoff` and `/projection/what-if` are POSTs
   that write nothing (writePaths.test.ts exempts screens/Payoff.tsx for that).
 
+**Phase 14** (2026-09-28) - rules worth keeping:
+
+- **A bank check (ACC-41)** stores only the bank's figure (`balance_checks`);
+  the difference is derived on every read (`_balance_check_view`, over
+  `balance_on`). Answering it goes through a forgotten transaction or ACC-28's
+  own `update_account` question - never a writer of its own.
+- **The monthly review (STA-12)** is `stats_service.review`, derived and never
+  stored; its Home offer's "Not now" is the `review_dismissed_for` preference.
+  No past net worth - typed card bills carry no date.
+- **Sessions (SEC-32)** are named to the client by a handle, never the family
+  id (it IS the session id); ending one goes through `session_service`, so the
+  keyring entry goes with it. `device_label` is a coarse label - never store
+  the raw User-Agent, and never a raw IP.
+- **A passkey (SEC-12) is the PIN's equal**: `passkey_service.verify` only
+  decides, and `auth_service.unlock_with_passkey` unlocks through the same
+  `_reunlock`. Never let it derive, wrap or unwrap a key, never let it sign
+  in, and keep the challenge single-use. It is hand-rolled on `cryptography`
+  on purpose (user, 2026-09-28) - do not swap in a WebAuthn package without
+  asking. `users.passkeys` holds PUBLIC keys only.
+
 There is no "copy last period's budget" action,
 because allocations persist across periods - confirmed by the user on
 2026-09-14, along with every other proposed default in FEATURES.md §13 and

@@ -34,3 +34,5 @@ class RefreshToken(Base):
     used_at: Mapped[Optional[datetime]] = mapped_column(UtcDateTime, nullable=True)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(UtcDateTime, nullable=True)
     revoke_reason: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    # SEC-32 - "Chrome on Android", from the User-Agent at sign-in; never the raw string
+    device_label: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)

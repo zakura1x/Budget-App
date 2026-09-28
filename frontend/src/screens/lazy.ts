@@ -15,6 +15,8 @@ export const loadPayoff = () => import('./Payoff');
 export const loadProjection = () => import('./Projection');
 export const loadRecurring = () => import('./Recurring');
 export const loadRecentlyDeleted = () => import('./RecentlyDeleted');
+export const loadReview = () => import('./Review');
+export const loadSecurityActivity = () => import('./SecurityActivity');
 export const loadStats = () => import('./Stats');
 
 /** Warmed in this order: Stats is the heaviest and the most visited of them. */
@@ -27,6 +29,8 @@ export const LAZY_SCREENS = [
   loadEmergency,
   loadBackup,
   loadRecentlyDeleted,
+  loadReview,
+  loadSecurityActivity,
   loadAboutEncryption,
   loadAdmin,
 ];

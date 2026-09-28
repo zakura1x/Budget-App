@@ -374,6 +374,207 @@ def _cash_on_hand(db: Session, cipher: UserCipher, start: date, end: date, granu
     return [CashPoint(day, amount) for day, amount in zip(days, amounts)]
 
 
+# ------------------------------------------------------ the monthly review
+
+
+REVIEW_OFFER_DAYS = 5  # Home offers last period's review in the first days of a new one
+REVIEW_TOP = 3
+
+
+@dataclass(frozen=True)
+class ReviewPeriod:
+    start: date
+    end: date
+    span: str  # budget | month
+
+
+@dataclass(frozen=True)
+class BudgetResult:
+    available: Decimal  # the period's amount plus anything carried in
+    carried_in: Decimal
+    spent: Decimal
+    remaining: Decimal  # negative when over
+    carry_over: bool  # when on, `remaining` is what the next period starts with (BUD-11)
+
+
+@dataclass(frozen=True)
+class CategoryChange:
+    category_id: Optional[int]
+    amount: Decimal
+    previous: Decimal
+    change: Decimal  # amount - previous
+
+
+@dataclass(frozen=True)
+class PlanEvent:
+    rule_id: int
+    name: str
+    kind: str  # subscription | installment | standard
+    event: str  # started | finished | cancelled | price
+    on: date
+    amount: Optional[Decimal] = None
+    previous_amount: Optional[Decimal] = None  # a price change only
+
+
+@dataclass(frozen=True)
+class BigPurchase:
+    transaction_id: int
+    on: date
+    amount: Decimal
+    category_id: Optional[int]
+    merchant: Optional[str]
+
+
+@dataclass(frozen=True)
+class Review:
+    """
+    STA-12. One finished period, looked back on. Everything is derived from
+    the working set, the rules and the balances - nothing is stored but the
+    "Not now" on Home's offer. Net worth is left out on purpose: a card's typed
+    bills are not dated, so a past net worth could not be rebuilt honestly.
+    """
+
+    period: ReviewPeriod
+    spent: Decimal
+    earned: Decimal
+    net: Decimal
+    previous_spent: Decimal
+    budget: Optional[BudgetResult]
+    changes: List[CategoryChange]
+    plans: List[PlanEvent]
+    purchases: List[BigPurchase]
+    cashback: Decimal  # TXN-22 - money back credited in the period
+    interest: Decimal  # ACC-37 - savings interest credited in the period
+    cash_start: Decimal  # STA-10 - cash on hand the day before it began
+    cash_end: Decimal
+    later: Optional[date] = None  # the next period's first day, when it has finished too
+
+
+def review_period(db: Session, cipher: UserCipher, *, today: date, on: Optional[date] = None) -> ReviewPeriod:
+    """
+    The finished period to review: the one containing `on`, or by default the
+    one just before today's - a budget period when there is a budget, else a
+    calendar month. A period that has not ended yet has nothing to review.
+    """
+    if on is None:
+        on = _period_around(db, cipher, today).start - timedelta(days=1)
+    period = _period_around(db, cipher, on)
+    if period.end >= today:
+        raise ValidationException("That period has not finished yet")
+    return period
+
+
+def review_offer(db: Session, cipher: UserCipher, *, today: date, prefs: Mapping[str, object]) -> Optional[ReviewPeriod]:
+    """Home's card: in the first days of a period, for the one before it, until "Not now"."""
+    current = _period_around(db, cipher, today)
+    if (today - current.start).days >= REVIEW_OFFER_DAYS:
+        return None
+    period = review_period(db, cipher, today=today)
+    if prefs.get("review_dismissed_for") == period.start.isoformat():
+        return None
+    return period
+
+
+def review(db: Session, cipher: UserCipher, *, today: date, on: Optional[date] = None) -> Review:
+    period = review_period(db, cipher, today=today, on=on)
+    before = _period_around(db, cipher, period.start - timedelta(days=1))
+
+    current: List[TransactionView] = []
+    earlier: List[TransactionView] = []
+    for view in transaction_service.views(db, cipher):
+        if period.start <= view.txn_date <= period.end:
+            current.append(view)
+        elif before.start <= view.txn_date <= before.end:
+            earlier.append(view)
+    spending = [v for v in current if _spending(v)]
+    earlier_spending = [v for v in earlier if _spending(v)]
+    spent = total(v.amount for v in spending)
+    earned = total(v.amount for v in current if _earning(v))
+
+    budget = None
+    # A period from before the budget existed had no amount in force - no result to show, not "over by all of it".
+    if period.span == "budget" and budget_service.budget_between(db, cipher, period.start, period.end) > ZERO:
+        found = budget_service.status(db, cipher, today=today, on=period.start)
+        if found is not None:
+            a = found.allowance
+            budget = BudgetResult(a.available, a.carried_in, a.spent, a.remaining, found.carry_over)
+
+    postings = transaction_service.postings(db, cipher)
+    cash = account_service.cash_history(db, cipher, [period.start - timedelta(days=1), period.end], postings)
+    purchases = sorted((v for v in current if v.type == "expense"), key=lambda v: (-v.amount, v.txn_date, v.id))
+
+    return Review(
+        period=period,
+        spent=spent,
+        earned=earned,
+        net=earned - spent,
+        previous_spent=total(v.amount for v in earlier_spending),
+        budget=budget,
+        changes=_changes(spending, earlier_spending, _parents(db, cipher)),
+        plans=_plan_events(db, cipher, period, today),
+        purchases=[
+            BigPurchase(v.id, v.txn_date, v.amount, v.splits[0].category_id if v.splits else None, v.merchant)
+            for v in purchases[:REVIEW_TOP]
+        ],
+        cashback=total(v.amount for v in current if v.type == "income" and v.cashback_of is not None),
+        interest=total(v.amount for v in current if v.type == "income" and v.interest_on is not None),
+        cash_start=cash[0],
+        cash_end=cash[1],
+        later=_finished_after(db, cipher, period, today),
+    )
+
+
+def _finished_after(db: Session, cipher: UserCipher, period: ReviewPeriod, today: date) -> Optional[date]:
+    following = _period_around(db, cipher, period.end + timedelta(days=1))
+    return following.start if following.end < today else None
+
+
+def _period_around(db: Session, cipher: UserCipher, day: date) -> ReviewPeriod:
+    period = budget_service.period_for(db, cipher, day)
+    if period is not None:
+        return ReviewPeriod(period.start, period.end, "budget")
+    first = day.replace(day=1)
+    return ReviewPeriod(first, first.replace(day=days_in_month(first.year, first.month)), "month")
+
+
+def _changes(now: Sequence[TransactionView], before: Sequence[TransactionView],
+             parents: Mapping[int, Optional[int]]) -> List[CategoryChange]:
+    """The categories that moved most against the period before - up or down, and one that stopped."""
+    amounts = {s.category_id: s.amount for s in category_shares(now, parents) if not s.unrecorded}
+    previous = {s.category_id: s.amount for s in category_shares(before, parents) if not s.unrecorded}
+    changes = [
+        CategoryChange(c, amounts.get(c, ZERO), previous.get(c, ZERO), amounts.get(c, ZERO) - previous.get(c, ZERO))
+        for c in set(amounts) | set(previous)
+    ]
+    changes = [c for c in changes if c.change != ZERO]
+    return sorted(changes, key=lambda c: (-abs(c.change), -c.amount))[:REVIEW_TOP]
+
+
+def _plan_events(db: Session, cipher: UserCipher, period: ReviewPeriod, today: date) -> List[PlanEvent]:
+    """Plans and subscriptions that started, finished, were cancelled or changed price in the period."""
+    # Imported here: stats has not needed the rules before, and this keeps its imports as they were.
+    from app.services import recurring_service
+
+    def inside(day: Optional[date]) -> bool:
+        return day is not None and period.start <= day <= period.end
+
+    events: List[PlanEvent] = []
+    for rule in recurring_service.list_rules(db, cipher, today=today):
+        if inside(rule.start):
+            first = rule.installment.per_payment if rule.installment else rule.amount
+            events.append(PlanEvent(rule.id, rule.name, rule.kind, "started", rule.start, first))
+        if rule.installment is not None and inside(rule.installment.payoff_on):
+            events.append(PlanEvent(rule.id, rule.name, rule.kind, "finished", rule.installment.payoff_on))
+        if inside(rule.cancelled_on):
+            events.append(PlanEvent(rule.id, rule.name, rule.kind, "cancelled", rule.cancelled_on))
+        history = sorted(rule.amounts, key=lambda a: a.on)
+        for earlier, change in zip(history, history[1:]):
+            if inside(change.on) and change.amount != earlier.amount:
+                events.append(PlanEvent(rule.id, rule.name, rule.kind, "price", change.on, change.amount,
+                                        earlier.amount))
+    return sorted(events, key=lambda e: (e.on, e.name))
+
+
 # ---------------------------------------------------------------- internals
 
 

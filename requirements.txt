@@ -49,9 +49,9 @@ bcrypt>=4.1.0
 pydantic[email]>=2.0.0
 pydantic-settings>=2.0.0
 
-# WebAuthn / passkeys - optional, Phase 9. Uncomment to enable
-# BIOMETRIC_WEBAUTHN_ENABLED and unlock with Face ID / Windows Hello.
-# webauthn>=2.2.0
+# WebAuthn / passkeys (SEC-12) need NO package: the check is hand-rolled on
+# `cryptography` (app/services/auth_service/passkey_service.py), so nothing
+# new lands in the venv QUOT shares. Turned on by BIOMETRIC_WEBAUTHN_ENABLED.
 
 # ============================================
 # TEMPLATING - only the SPA shell + PWA manifest.

@@ -70,3 +70,48 @@ export function getOverview(range: Range, signal?: AbortSignal) {
   }
   return api<Overview>(`/stats/overview?${params.toString()}`, { signal });
 }
+
+/** STA-12 - one finished period looked back on. Derived on the server; nothing is stored. */
+export interface ReviewPeriod {
+  start: string;
+  end: string;
+  span: 'budget' | 'month';
+}
+
+export interface Review {
+  period: ReviewPeriod;
+  spent: string;
+  earned: string;
+  net: string;
+  previous_spent: string;
+  budget: { available: string; carried_in: string; spent: string; remaining: string; carry_over: boolean } | null;
+  changes: { category_id: number | null; amount: string; previous: string; change: string }[];
+  plans: {
+    rule_id: number;
+    name: string;
+    kind: string;
+    event: 'started' | 'finished' | 'cancelled' | 'price';
+    on: string;
+    amount: string | null;
+    previous_amount: string | null;
+  }[];
+  purchases: { transaction_id: number; on: string; amount: string; category_id: number | null; merchant: string | null }[];
+  cashback: string;
+  interest: string;
+  cash_start: string;
+  cash_end: string;
+  /** The next period's first day, when it has finished too - else there is nothing later to review. */
+  later: string | null;
+}
+
+export function getReview(on: string | undefined, signal?: AbortSignal) {
+  const params = new URLSearchParams({ today: localToday() });
+  if (on) params.set('on', on);
+  return api<Review>(`/stats/review?${params.toString()}`, { signal });
+}
+
+export const getReviewOffer = (signal?: AbortSignal) =>
+  api<{ period: ReviewPeriod | null }>(`/stats/review/offer?today=${localToday()}`, { signal });
+
+/** Home's "Not now" - kept in the preferences on the server. */
+export const dismissReview = () => api<null>(`/stats/review/dismiss?today=${localToday()}`, { method: 'POST' });

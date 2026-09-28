@@ -20,6 +20,8 @@ export interface AddPreset {
   /** A transfer INTO this account - paying back a loan, lending more (ACC-31). */
   counterAccountId?: number;
   type?: EntryType;
+  /** ACC-41 - "a transaction I forgot": the difference the bank's balance showed, as a decimal string. */
+  amount?: string;
 }
 
 interface UiState {

@@ -27,6 +27,9 @@ UNLOCK_FAILED = "UNLOCK_FAILED"
 PIN_SET = "PIN_SET"
 PIN_LOCKOUT = "PIN_LOCKOUT"
 REFRESH_REUSE = "REFRESH_REUSE"
+SESSION_END = "SESSION_END"  # SEC-32 - other devices signed out from Settings, with the count
+PASSKEY_ADD = "PASSKEY_ADD"  # SEC-12
+PASSKEY_REMOVE = "PASSKEY_REMOVE"
 
 # Data mutations, from Phase 3 on. The verb and the table stay plaintext so the
 # trail is readable; the name, the amount and anything else identifying goes in
@@ -43,6 +46,7 @@ REORDER = "REORDER"
 # user accepts; fixing the opening balance instead writes no such entry.
 BALANCE_ADJUST = "BALANCE_ADJUST"
 STATEMENT_CHECK = "STATEMENT_CHECK"  # ACC-24 - the bank's total for one statement
+BALANCE_CHECK = "BALANCE_CHECK"  # ACC-41 - the bank's balance for one day
 INTEREST = "INTEREST"  # ACC-37 - days of savings interest credited, with the count
 # Phase 7 - the recurring engine.
 EXPAND = "EXPAND"  # REC-04/05 - occurrences posted, with the count

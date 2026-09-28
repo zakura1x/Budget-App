@@ -60,6 +60,8 @@ const Admin = lazy(() => lazyScreens.loadAdmin().then((m) => ({ default: m.Admin
 const Backup = lazy(() => lazyScreens.loadBackup().then((m) => ({ default: m.Backup })));
 const Goals = lazy(() => lazyScreens.loadGoals().then((m) => ({ default: m.Goals })));
 const Emergency = lazy(() => lazyScreens.loadEmergency().then((m) => ({ default: m.Emergency })));
+const Review = lazy(() => lazyScreens.loadReview().then((m) => ({ default: m.Review })));
+const SecurityActivity = lazy(() => lazyScreens.loadSecurityActivity().then((m) => ({ default: m.SecurityActivity })));
 const Payoff = lazy(() => lazyScreens.loadPayoff().then((m) => ({ default: m.Payoff })));
 const Projection = lazy(() => lazyScreens.loadProjection().then((m) => ({ default: m.Projection })));
 const Recurring = lazy(() => lazyScreens.loadRecurring().then((m) => ({ default: m.Recurring })));
@@ -103,6 +105,8 @@ function AppTabs() {
             <Route path="/backup" element={<Backup />} />
             <Route path="/goals" element={<Goals />} />
             <Route path="/emergency" element={<Emergency />} />
+            <Route path="/review" element={<Review />} />
+            <Route path="/security" element={<SecurityActivity />} />
             <Route path="/about-encryption" element={<AboutEncryption />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/transactions" element={<Ledger />} />

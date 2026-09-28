@@ -17,9 +17,10 @@ class TokenRepository:
         self.session = session
 
     def add(self, *, user_id: int, token_hash: str, family_id: str, expires_at: datetime,
-            parent_id: Optional[int] = None) -> RefreshToken:
+            parent_id: Optional[int] = None, device_label: Optional[str] = None) -> RefreshToken:
         row = RefreshToken(user_id=user_id, token_hash=token_hash, family_id=family_id,
-                           parent_id=parent_id, issued_at=utcnow(), expires_at=expires_at)
+                           parent_id=parent_id, issued_at=utcnow(), expires_at=expires_at,
+                           device_label=device_label)
         self.session.add(row)
         self.session.flush()
         return row

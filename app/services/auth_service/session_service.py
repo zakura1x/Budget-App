@@ -49,7 +49,8 @@ def _refresh_expiry():
     return utcnow() + timedelta(days=settings.JWT_REFRESH_EXPIRATION_DAYS)
 
 
-def start_session(db: Session, user: User, dek: bytearray, keyring: Optional[MasterKeyring] = None) -> IssuedSession:
+def start_session(db: Session, user: User, dek: bytearray, keyring: Optional[MasterKeyring] = None,
+                  device: Optional[str] = None) -> IssuedSession:
     """
     Open a session for a user whose DEK has just been unwrapped. TAKES the DEK:
     the keyring zeroes the caller's buffer.
@@ -67,7 +68,8 @@ def start_session(db: Session, user: User, dek: bytearray, keyring: Optional[Mas
         user.dek_wrapped = wrap_dek(dek, keyring, user.id)
     session_id = new_session_id()
     raw, token_hash = new_refresh_token()
-    TokenRepository(db).add(user_id=user.id, token_hash=token_hash, family_id=session_id, expires_at=_refresh_expiry())
+    TokenRepository(db).add(user_id=user.id, token_hash=token_hash, family_id=session_id, expires_at=_refresh_expiry(),
+                            device_label=device)
     get_session_keyring().unlock(session_id, user.id, dek, keyring.current_version)
     return IssuedSession(user.id, session_id, create_access_token(user.id, session_id), raw)
 
@@ -105,7 +107,7 @@ def rotate(db: Session, raw_refresh: Optional[str], ip_hash: Optional[str] = Non
     row.used_at = utcnow()
     raw, token_hash = new_refresh_token()
     tokens.add(user_id=row.user_id, token_hash=token_hash, family_id=row.family_id,
-               expires_at=_refresh_expiry(), parent_id=row.id)
+               expires_at=_refresh_expiry(), parent_id=row.id, device_label=row.device_label)
     return IssuedSession(row.user_id, row.family_id, create_access_token(row.user_id, row.family_id), raw)
 
 

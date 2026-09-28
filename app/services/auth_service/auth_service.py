@@ -22,7 +22,7 @@ the master key. Neither secret derives anything.
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from sqlalchemy.orm import Session
 
@@ -44,7 +44,7 @@ from app.db.repositories.attempt_repository import AttemptRepository, seconds_un
 from app.db.repositories.user_repository import UserRepository
 from app.db.types import utcnow
 from app.services import audit_service, transaction_service
-from app.services.auth_service import session_service
+from app.services.auth_service import passkey_service, session_service
 from app.services.auth_service.passwords import hash_password, verify_password
 from app.services.auth_service.pin_service import hash_pin, verify_pin
 
@@ -84,10 +84,12 @@ class Profile:
     pin_set: bool
     locked: bool
     email: Optional[str] = None
+    passkey_set: bool = False  # SEC-12 - the lock screen offers the passkey
     display_name: Optional[str] = None
 
 
-def login(db: Session, email: str, password: str, ip_hash: Optional[str] = None) -> session_service.IssuedSession:
+def login(db: Session, email: str, password: str, ip_hash: Optional[str] = None,
+          device: Optional[str] = None) -> session_service.IssuedSession:
     indexer = get_blind_indexer()
     bidx = indexer.email(email)
     attempts = AttemptRepository(db)
@@ -114,7 +116,7 @@ def login(db: Session, email: str, password: str, ip_hash: Optional[str] = None)
     attempts.record(kind="login", success=True, email_bidx=bidx, user_id=user.id, ip_hash=ip_hash)
     keyring = get_master_keyring()
     dek = UserRepository(db).unwrap_dek(user, keyring)
-    issued = session_service.start_session(db, user, dek, keyring)
+    issued = session_service.start_session(db, user, dek, keyring, device=device)
     _warm(db, issued.session_id)
     user.last_login_at = utcnow()
     user.pin_failed_count = 0
@@ -150,6 +152,24 @@ def unlock_with_pin(db: Session, user: User, session_id: str, pin: str, ip_hash:
             f"Wrong PIN. {remaining} attempt{'s' if remaining != 1 else ''} left.",
             extra={"attempts_left": remaining},
         )
+    user.pin_failed_count = 0
+    _reunlock(db, user, session_id, ip_hash)
+
+
+def unlock_with_passkey(db: Session, user: User, session_id: str, answer: Mapping[str, str],
+                        ip_hash: Optional[str] = None) -> None:
+    """
+    SEC-12. The passkey only DECIDES, like the PIN: once it verifies, the DEK
+    comes back through the same _reunlock, unwrapped with the master key.
+    """
+    if get_session_keyring().is_unlocked(session_id):
+        return
+    try:
+        passkey_service.verify(user, session_id, **answer)
+    except InvalidCredentialsException:
+        audit_service.record(db, audit_service.UNLOCK_FAILED, user_id=user.id, ip_hash=ip_hash)
+        db.commit()
+        raise
     user.pin_failed_count = 0
     _reunlock(db, user, session_id, ip_hash)
 
@@ -220,6 +240,13 @@ def set_pin(db: Session, user: User, cipher: UserCipher, pin: str, current_passw
     db.commit()
 
 
+def audit_passkey(db: Session, ctx: Any, *, added: bool, ip_hash: Optional[str] = None) -> None:
+    """SEC-12. Commits the passkey change with its audit entry."""
+    audit_service.record(db, audit_service.PASSKEY_ADD if added else audit_service.PASSKEY_REMOVE,
+                         user_id=ctx.user.id, ip_hash=ip_hash)
+    db.commit()
+
+
 def logout(db: Session, session_id: Optional[str], user_id: Optional[int] = None, ip_hash: Optional[str] = None) -> None:
     if session_id:
         session_service.end_session(db, session_id, "logout")
@@ -235,7 +262,7 @@ def profile(db: Session, user: User, session_id: str) -> Profile:
     cipher = get_session_keyring().cipher_for(session_id)
     result = Profile(
         user_id=user.id, is_admin=user.is_admin, pin_set=bool(user.pin_hash and settings.PIN_ENABLED),
-        locked=cipher is None,
+        locked=cipher is None, passkey_set=passkey_service.has_passkeys(user),
     )
     if cipher is not None:
         data = UserRepository(db).read_profile(user, cipher)

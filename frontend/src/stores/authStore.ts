@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { ApiError } from '../lib/api';
 import { authApi, type AuthConfig, type Session } from '../lib/auth';
 import { clearOfflineCaches } from '../lib/pwa';
+import { signWithPasskey } from '../lib/passkeys';
 
 export type AuthStatus = 'loading' | 'anonymous' | 'locked' | 'unlocked';
 
@@ -25,6 +26,10 @@ interface AuthState {
   lock: () => Promise<void>;
   unlockWithPin: (pin: string) => Promise<void>;
   unlockWithPassword: (password: string) => Promise<void>;
+  /** SEC-12 - Face ID, a fingerprint or Windows Hello; the PIN stays the fallback. */
+  unlockWithPasskey: () => Promise<void>;
+  /** Read /auth/me again - after a passkey is added or removed, so the lock screen knows. */
+  refreshSession: () => Promise<void>;
   /** SEC-30 - a new password from an emailed link; signs in. */
   resetPassword: (token: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -95,6 +100,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   unlockWithPassword: async (password) => {
     const session = await authApi.unlock(password);
+    set({ session, status: statusOf(session) });
+  },
+
+  refreshSession: async () => {
+    const session = await authApi.me();
+    set({ session, status: statusOf(session) });
+  },
+
+  unlockWithPasskey: async () => {
+    const answer = await signWithPasskey(await authApi.passkeyUnlockOptions());
+    const session = await authApi.passkeyUnlock(answer);
     set({ session, status: statusOf(session) });
   },
 

@@ -156,6 +156,25 @@ class ValuationIn(BaseModel):
     note: Optional[str] = Field(default=None, max_length=280)
 
 
+class BalanceCheckIn(BaseModel):
+    """ACC-41 - the bank's balance at the end of `on`."""
+
+    on: date
+    balance: Money
+
+
+class BalanceCheckOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    on: date
+    bank: Money
+    app: Money  # the app's closing balance for that day
+    adjusted: Money  # balance adjustments dated after it, which answer it
+    difference: Money  # bank - app - adjusted; zero means checked
+    checked: bool
+    stale: bool  # over a month old
+
+
 class ValuationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -312,6 +331,7 @@ class AccountOut(BaseModel):
     # and find it for a loan; there is no way to set it from a request.
     hidden: bool = False
     debt_rate: Optional[DebtRateOut] = None  # REC-35
+    balance_check: Optional[BalanceCheckOut] = None  # ACC-41 - cash, debit, savings and member only
 
 
 class NetWorthOut(BaseModel):

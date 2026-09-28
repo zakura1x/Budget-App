@@ -360,6 +360,20 @@ UPDATE [ZBDGT].alembic_version SET version_num='20260914_0003' WHERE [ZBDGT].ale
 
 GO
 
+-- Running upgrade 20260914_0003 -> 20260928_0004
+
+ALTER TABLE [ZBDGT].refresh_tokens ADD device_label VARCHAR(60) NULL;
+
+GO
+
+ALTER TABLE [ZBDGT].users ADD passkeys NTEXT NULL;
+
+GO
+
+UPDATE [ZBDGT].alembic_version SET version_num='20260928_0004' WHERE [ZBDGT].alembic_version.version_num = '20260914_0003';
+
+GO
+
 COMMIT;
 
 GO

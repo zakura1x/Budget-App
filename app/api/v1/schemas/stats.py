@@ -151,3 +151,80 @@ class OverviewOut(BaseModel):
     tags: List[TagTotalOut]
     forecast: Optional[ForecastOut] = None
     cash_on_hand: List[CashPointOut] = []
+
+
+# ------------------------------------------------------ STA-12 the monthly review
+
+
+class ReviewPeriodOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    start: date
+    end: date
+    span: Literal["budget", "month"]
+
+
+class BudgetResultOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    available: Money
+    carried_in: Money
+    spent: Money
+    remaining: Money  # negative when over
+    carry_over: bool
+
+
+class CategoryChangeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    category_id: Optional[int] = None
+    amount: Money
+    previous: Money
+    change: Money
+
+
+class PlanEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    rule_id: int
+    name: str
+    kind: str
+    event: Literal["started", "finished", "cancelled", "price"]
+    on: date
+    amount: Optional[Money] = None
+    previous_amount: Optional[Money] = None
+
+
+class BigPurchaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    transaction_id: int
+    on: date
+    amount: Money
+    category_id: Optional[int] = None
+    merchant: Optional[str] = None
+
+
+class ReviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    period: ReviewPeriodOut
+    spent: Money
+    earned: Money
+    net: Money
+    previous_spent: Money
+    budget: Optional[BudgetResultOut] = None
+    changes: List[CategoryChangeOut]
+    plans: List[PlanEventOut]
+    purchases: List[BigPurchaseOut]
+    cashback: Money
+    interest: Money
+    cash_start: Money
+    cash_end: Money
+    later: Optional[date] = None  # the next finished period's first day
+
+
+class ReviewOfferOut(BaseModel):
+    """Home's card, or null outside the first days of a period."""
+
+    period: Optional[ReviewPeriodOut] = None

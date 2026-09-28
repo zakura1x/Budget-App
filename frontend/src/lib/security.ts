@@ -4,6 +4,7 @@
  * Every security call carries the password again in its body.
  */
 import { api } from './api';
+import type { Passkey } from './passkeys';
 import { localToday } from './transactions';
 
 export interface RotatedKey {
@@ -18,6 +19,34 @@ export const rotateKey = (password: string) => api<RotatedKey>('/security/rotate
 
 export const deleteAccount = (password: string, confirm_email: string) =>
   api<null>('/security/delete-account', { method: 'POST', body: { password, confirm_email } });
+
+/** SEC-32 - a session on another device, named by a handle - never the session id itself. */
+export interface OpenSession {
+  id: number;
+  device: string | null;
+  started: string;
+  last_active: string;
+  current: boolean;
+}
+
+export interface SignIn {
+  at: string;
+  kind: 'login' | 'unlock' | 'reset';
+  success: boolean;
+  /** IPs are only ever stored hashed: "the same network as now" is all that can be said. */
+  same_network: boolean;
+}
+
+export interface Activity {
+  sessions: OpenSession[];
+  sign_ins: SignIn[];
+  passkeys: Passkey[];
+  passkey_enabled: boolean;
+}
+
+export const getActivity = (signal?: AbortSignal) => api<Activity>('/auth/activity', { signal });
+export const endSession = (id: number) => api<null>(`/auth/sessions/${id}/end`, { method: 'POST' });
+export const endOtherSessions = () => api<{ ended: number }>('/auth/sessions/end-others', { method: 'POST' });
 
 export interface Goal {
   id: number;

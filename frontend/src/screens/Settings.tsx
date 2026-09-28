@@ -230,6 +230,8 @@ export function Settings() {
             <ListRow title="Change password" chevron onClick={() => setSheet('password')} />
             <ListRow title={pinSet ? 'Change PIN' : 'Set a PIN'} subtitle="Unlocks this device - never your data" chevron
               onClick={() => setSheet('pin')} />
+            <ListRow title="Signed-in devices" subtitle="Sign-ins, other devices, Face ID and fingerprint" chevron
+              onClick={() => navigate('/security')} />
           </ListGroup>
           <Card className="mt-3">
             <p className="mb-2 text-body">Lock after I stop using it for</p>

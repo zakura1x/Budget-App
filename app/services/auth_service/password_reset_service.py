@@ -101,7 +101,7 @@ def request_reset(db: Session, email: str, *, ip_hash: Optional[str] = None) -> 
 
 
 def complete_reset(
-    db: Session, token: str, new_password: str, *, ip_hash: Optional[str] = None
+    db: Session, token: str, new_password: str, *, ip_hash: Optional[str] = None, device: Optional[str] = None
 ) -> session_service.IssuedSession:
     attempts = AttemptRepository(db)
     window = settings.PASSWORD_RESET_WINDOW_MINUTES
@@ -141,7 +141,7 @@ def complete_reset(
 
     keyring = get_master_keyring()
     dek = UserRepository(db).unwrap_dek(user, keyring)
-    issued = session_service.start_session(db, user, dek, keyring)
+    issued = session_service.start_session(db, user, dek, keyring, device=device)
     _warm(db, issued.session_id)
     user.last_login_at = utcnow()
     db.commit()

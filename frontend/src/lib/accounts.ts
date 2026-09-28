@@ -209,7 +209,30 @@ export interface Account {
   hidden: boolean;
   /** REC-35 - the interest a card or a loan charges, as typed; only the payoff planner reads it. */
   debt_rate?: DebtRate | null;
+  /** ACC-41 - the latest check against the bank; cash, debit, savings and member accounts only. */
+  balance_check?: BalanceCheck | null;
 }
+
+/**
+ * ACC-41. The bank's balance for a day beside the app's, and what is still
+ * unexplained. Only the bank's figure is stored; the rest is worked out on
+ * every read, so a forgotten entry added later clears it by itself.
+ */
+export interface BalanceCheck {
+  on: string;
+  bank: string;
+  app: string;
+  /** Balance adjustments dated after that day, which answer it. */
+  adjusted: string;
+  /** bank - app - adjusted: negative when the bank has less. */
+  difference: string;
+  checked: boolean;
+  /** Over a month old. */
+  stale: boolean;
+}
+
+/** ACC-41 - the accounts whose balance is checked against a bank or a wallet for a day. A card has its statements. */
+export const CHECKABLE: readonly AccountType[] = ['cash', 'debit', 'savings', 'member'];
 
 /** REC-35. "3% a month" or "24% a year", and the same thing a year. Rates carry four places - never money helpers. */
 export interface DebtRate {
@@ -452,6 +475,10 @@ export const untrackedCash = () => api<Account>(`/accounts/untracked?${today()}`
 
 export const updateAccount = (id: number, body: AccountDraft) =>
   api<Account>(`/accounts/${id}?${today()}`, { method: 'PATCH', body });
+
+/** ACC-41 - the bank's balance at the end of `on`; the account comes back with the difference. */
+export const checkBalance = (id: number, on: string, balance: string) =>
+  api<Account>(`/accounts/${id}/balance-check?${today()}`, { method: 'POST', body: { on, balance } });
 
 export const setArchived = (id: number, archived: boolean) =>
   api<Account>(`/accounts/${id}/archive?${today()}`, { method: 'POST', body: { archived } });

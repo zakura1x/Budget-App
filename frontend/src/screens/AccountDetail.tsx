@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
+import { BalanceCheck } from '../components/BalanceCheck';
 import { AccountDues } from '../components/AccountDues';
 import { AccountPayments } from '../components/AccountPayments';
 import { AccountPlans } from '../components/AccountPlans';
@@ -31,7 +32,7 @@ import { TransactionRow, moneyIn } from '../components/TransactionRow';
 import { Button } from '../components/ui/Button';
 import { Segmented } from '../components/ui/Segmented';
 import { useLookups } from '../hooks/useLookups';
-import { isOwed, kindLabelOf, listAccounts, owedWithPlans } from '../lib/accounts';
+import { CHECKABLE, isOwed, kindLabelOf, listAccounts, owedWithPlans } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { type Rule } from '../lib/recurring';
@@ -396,6 +397,8 @@ export function AccountDetail() {
       ) : (
         <div className="skeleton h-44 rounded-card" aria-hidden="true" />
       )}
+
+      {account && CHECKABLE.includes(account.type) && !account.archived && <BalanceCheck account={account} />}
 
       {account?.credit && !account.archived && (
         <>

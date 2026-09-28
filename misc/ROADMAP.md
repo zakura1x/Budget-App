@@ -48,10 +48,10 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **GOA-10** | Emergency-fund cover ("X months") | new (#7) | 13 | S | ✅ 2026-09-28 |
 | **GOA-11** | Emergency-fund advisor — rule-based target | new (#7) | 13 | M | ✅ 2026-09-28 |
 | **GOA-12** | Payday prompt — set money aside when income lands | new (#8) | 13 | M | ✅ 2026-09-28 |
-| **ACC-41** | Check a debit / savings account against the bank | new (#9) | 14 | M | ⬜ |
-| **STA-12** | Monthly review | new (#12) | 14 | M | ⬜ |
-| **SEC-32** | Sign-in activity and open sessions | new (#11) | 14 | M | ⬜ |
-| **SEC-12** | Biometric unlock (WebAuthn / Face ID) | deferred | 14 | L | ⬜ |
+| **ACC-41** | Check a debit / savings account against the bank | new (#9) | 14 | M | ✅ 2026-09-28 |
+| **STA-12** | Monthly review | new (#12) | 14 | M | ✅ 2026-09-28 |
+| **SEC-32** | Sign-in activity and open sessions | new (#11) | 14 | M | ✅ 2026-09-28 |
+| **SEC-12** | Biometric unlock (WebAuthn / Face ID) | deferred | 14 | L | ✅ 2026-09-28 |
 | **DAT-09** | PDF / Excel export | deferred | 15 | M | ⏸️ |
 | **DAT-20** | Nightly server backup via Task Scheduler | deferred | 15 | S | ⏸️ |
 | **UX-13** | Offline writes with sync-on-reconnect | deferred | 15 | L | ⏸️ |
@@ -465,12 +465,33 @@ emergency fund first). One tap sets each part aside through `goal_service.add_mo
 
 ### 🎯 Objective: Trust the numbers, look back on a month, and see who is signed in
 
+> **Decided by the user, 2026-09-28:** SEC-12 is **hand-rolled** on the
+> `cryptography` library the app already has - no WebAuthn package in the venv
+> QUOT shares - and Phase 13 was committed on its own first.
+>
+> **✅ Built 2026-09-28** — all four; 32 new tests (924 in all, 0 failed),
+> checked in the browser on a local in-memory copy with a VIRTUAL
+> authenticator, screenshots in misc/screenshots/phase-14/. Where the build
+> differed from the plan below:
+> - **ACC-41** also covers cash (a counted wallet) and member cards; a
+>   balance adjustment dated after the checked day answers the check, so
+>   "Record it as an adjustment" goes through ACC-28's question and still
+>   clears it. No *cleared* ticks (the default).
+> - **STA-12** shows the budget's result only for a period the budget
+>   covered; net worth is left out, as planned. Home offers it for 5 days.
+> - **SEC-32** names a session to the client by a handle (its first token's
+>   row id), never the session id, and lists unlocks and resets beside
+>   sign-ins.
+> - **SEC-12** stays off until `BIOMETRIC_WEBAUTHN_ENABLED=True` in `.env`;
+>   passkeys live as public keys on `users.passkeys` (migration
+>   `20260928_0004`, with SEC-32's `device_label`).
+
 | ID | Feature | Status |
 |---|---|---|
-| ACC-41 | Check a debit / savings account | ⬜ |
-| STA-12 | Monthly review | ⬜ |
-| SEC-32 | Sign-in activity | ⬜ |
-| SEC-12 | Biometric unlock | ⬜ |
+| ACC-41 | Check a debit / savings account | ✅ |
+| STA-12 | Monthly review | ✅ |
+| SEC-32 | Sign-in activity | ✅ |
+| SEC-12 | Biometric unlock | ✅ |
 
 ### ACC-41 · Check a debit or savings account against the bank
 What ACC-24 does for a card, for every other account: type the bank's balance

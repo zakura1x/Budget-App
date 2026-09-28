@@ -5,14 +5,19 @@
  *
  * PIN by default; password if no PIN is set, or on request. Five wrong PINs
  * end the session (the server decides) and send you to the sign-in screen.
+ *
+ * SEC-12: with a passkey on this account and a device that can use one, Face
+ * ID or a fingerprint is offered above the PIN - a button, never a prompt that
+ * opens by itself. A cancelled prompt leaves the PIN where it was.
  */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { FormError } from '../components/AuthLayout';
 import { ShieldIcon } from '../components/Icons';
 import { PinPad } from '../components/PinPad';
 import { Button } from '../components/ui/Button';
 import { TextField } from '../components/ui/TextField';
 import { ApiError } from '../lib/api';
+import { passkeyCancelled, passkeysSupported } from '../lib/passkeys';
 import { authErrorMessage, useAuthStore } from '../stores/authStore';
 
 export function PinLock() {
@@ -20,6 +25,8 @@ export function PinLock() {
   const length = useAuthStore((s) => s.config?.pin_length ?? 6);
   const unlockWithPin = useAuthStore((s) => s.unlockWithPin);
   const unlockWithPassword = useAuthStore((s) => s.unlockWithPassword);
+  const unlockWithPasskey = useAuthStore((s) => s.unlockWithPasskey);
+  const passkeyOn = useAuthStore((s) => Boolean(s.config?.passkey_enabled && s.session?.passkey_set));
   const logout = useAuthStore((s) => s.logout);
   const markSignedOut = useAuthStore((s) => s.markSignedOut);
   const pinSet = session?.pin_set ?? false;
@@ -29,6 +36,11 @@ export function PinLock() {
   const [error, setError] = useState<string | null>(null);
   const [errorKey, setErrorKey] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [supported, setSupported] = useState(false);
+
+  useEffect(() => {
+    if (passkeyOn) void passkeysSupported().then(setSupported);
+  }, [passkeyOn]);
 
   const handle = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -40,6 +52,7 @@ export function PinLock() {
         markSignedOut();
         return;
       }
+      if (passkeyCancelled(err)) return;
       setError(authErrorMessage(err));
       setErrorKey((k) => k + 1);
     } finally {
@@ -62,6 +75,12 @@ export function PinLock() {
         <p className="mb-8 mt-1 text-footnote text-ink-2">
           {mode === 'pin' ? 'Enter your PIN' : 'Enter your password to unlock'}
         </p>
+
+        {passkeyOn && supported && (
+          <Button className="mb-6" size="lg" block disabled={busy} onClick={() => void handle(unlockWithPasskey)}>
+            Unlock with Face ID or fingerprint
+          </Button>
+        )}
 
         {mode === 'pin' ? (
           <>

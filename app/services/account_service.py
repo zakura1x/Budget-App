@@ -136,6 +136,14 @@ GIVES_CASHBACK: Tuple[str, ...] = ("cash", "debit", "credit", "savings", "member
 # answers on the client.
 OWES: Tuple[str, ...] = ("credit", "borrowed")
 
+# ACC-41. Accounts whose balance can be checked against the bank's (or the
+# wallet's) for a day - ACC-24 is the card's own check, by statement. A loan
+# or money lent has no bank balance to read, and an investment's value is
+# typed (ACC-12), never checked.
+CHECKABLE: Tuple[str, ...] = ("cash", "debit", "savings", "member")
+MAX_BALANCE_CHECKS = 24
+CHECK_STALE_DAYS = 31  # an older check says so - "Checked 12 Aug" is no longer news
+
 
 # ------------------------------------------------------------------- shapes
 
@@ -434,6 +442,27 @@ class DuesView:
 
 
 @dataclass(frozen=True)
+class BalanceCheckView:
+    """
+    ACC-41. The latest check against the bank: its figure for `on`, the app's
+    closing balance for the same day, and what is still unexplained. Only the
+    bank's figure is stored; everything else is derived on every read, so a
+    forgotten transaction added later makes the difference go away by itself.
+
+    `adjusted` is every balance adjustment dated AFTER that day - recording the
+    difference as one (ACC-28) dates it today, and it answers this check.
+    """
+
+    on: date
+    bank: Decimal
+    app: Decimal
+    adjusted: Decimal
+    difference: Decimal  # bank - app - adjusted; zero means checked
+    checked: bool
+    stale: bool
+
+
+@dataclass(frozen=True)
 class AccountView:
     """An account as the API returns it: stored payload plus derived money."""
 
@@ -476,6 +505,7 @@ class AccountView:
     # worth, and only untracked_cash() ever writes one.
     hidden: bool = False
     debt_rate: Optional[DebtRate] = None  # REC-35 - on a card or a loan, when typed
+    balance_check: Optional[BalanceCheckView] = None  # ACC-41 - the latest, when there is one
 
 
 @dataclass(frozen=True)
@@ -993,7 +1023,72 @@ def record_statement_check(
     db.commit()
 
 
+def check_balance(
+    db: Session,
+    cipher: UserCipher,
+    account_id: int,
+    on: date,
+    bank_balance: Any,
+    *,
+    today: Optional[date] = None,
+) -> None:
+    """
+    ACC-41. Keep the bank's balance for the end of one day - one figure per
+    day, replaced if typed again. Nothing else is written: a difference is
+    answered by the user afterwards, with a forgotten transaction or through
+    update_account's own BALANCE_DIFFERS question (ACC-28), never here.
+    """
+    when = today or date.today()
+    repo = AccountRepository(db, cipher)
+    record = repo.get(account_id)
+    if record is None:
+        raise NotFoundException("Account not found")
+    if record.data.get("type") not in CHECKABLE:
+        raise BusinessRuleException("Only a cash, debit, savings or member account is checked this way")
+    if on > when:
+        raise ValidationException("Check a day that has already ended - or today")
+    amount = _amount(bank_balance, "balance")
+    if abs(amount) > MAX_AMOUNT:
+        raise ValidationException("That amount is larger than this app records")
+
+    data = dict(record.data)
+    checks = [c for c in data.get("balance_checks") or [] if c.get("on") != on.isoformat()]
+    checks.append({"on": on.isoformat(), "bank": str(amount), "at": utcnow().isoformat()})
+    checks.sort(key=lambda c: str(c.get("on")))
+    data["balance_checks"] = checks[-MAX_BALANCE_CHECKS:]
+
+    repo.update(account_id, data)
+    audit_service.record(
+        db, audit_service.BALANCE_CHECK, user_id=cipher.user_id, entity="accounts",
+        entity_id=account_id, cipher=cipher, detail={"on": on.isoformat(), "bank": str(amount)},
+    )
+    db.commit()
+
+
 # ---------------------------------------------------------------- internals
+
+
+def _balance_check_view(data: Mapping[str, Any], postings: Sequence[Posting], today: date) -> Optional[BalanceCheckView]:
+    """ACC-41. The latest check, measured against the app's balance for that day (balance_on)."""
+    latest = None
+    for item in data.get("balance_checks") or []:
+        try:
+            on = date.fromisoformat(str(item.get("on")))
+            bank = money(item.get("bank"))
+        except (ValueError, TypeError, ArithmeticError):
+            continue
+        if latest is None or on >= latest[0]:
+            latest = (on, bank)
+    if latest is None:
+        return None
+    on, bank = latest
+    app = balance_on(data, postings, on)
+    adjusted = total(p.amount for p in postings if p.on > on and p.kind == "adjustment")
+    difference = (bank - app - adjusted).quantize(ZERO)
+    return BalanceCheckView(
+        on=on, bank=bank, app=app.quantize(ZERO), adjusted=adjusted.quantize(ZERO), difference=difference,
+        checked=difference == ZERO, stale=(today - on).days > CHECK_STALE_DAYS,
+    )
 
 
 def _set_aside(db: Session, cipher: UserCipher) -> Mapping[int, Decimal]:
@@ -1099,6 +1194,8 @@ def _view(
         view = replace(view, cashback=_cashback_rule(data.get("cashback")))
     if kind in OWES:
         view = replace(view, debt_rate=_debt_rate_view(data.get("debt_rate")))
+    if kind in CHECKABLE:
+        view = replace(view, balance_check=_balance_check_view(data, postings, today or date.today()))
     due_now = view.credit.due_now if view.credit is not None else None
     if due_now is None and view.dues is not None:
         # ACC-40. The same bargain as a card with bills: what is due now is the

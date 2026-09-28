@@ -56,6 +56,11 @@ export const keys = {
   payoff: (extra: string, payments: string) => ['projection', 'payoff', localToday(), extra, payments] as const,
   /** REC-27 - an unsaved plan's what-if, keyed by the plan itself. */
   whatIf: (months: 3 | 6 | 12, draft: string) => ['projection', 'what-if', localToday(), months, draft] as const,
+  /** STA-12 - under `stats`, so every write that moves money refreshes the review too. */
+  review: (on?: string) => ['stats', 'review', localToday(), on ?? 'last'] as const,
+  reviewOffer: () => ['stats', 'review-offer', localToday()] as const,
+  /** SEC-12/32 - the Security activity screen: sessions, sign-ins, passkeys. */
+  activity: () => ['security', 'activity'] as const,
   cardLookahead: () => ['cards', 'lookahead', localToday()] as const,
   statement: (accountId: number, closes: string) => ['statement', accountId, closes] as const,
   health: () => ['health'] as const,
@@ -92,6 +97,7 @@ export const GROUP_KEYS = {
   projection: [['projection'], ['cards']],
   statements: [['statement']],
   preferences: [],
+  security: [['security']], // SEC-12/32 - nothing here shows money
 } as const satisfies Record<string, readonly (readonly unknown[])[]>;
 
 export type Group = keyof typeof GROUP_KEYS;

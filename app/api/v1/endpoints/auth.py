@@ -12,20 +12,27 @@ unscoped cookie would be sent to every app on it. Secure comes from
 SESSION_COOKIE_SECURE (true in production, via web.config).
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.auth import (
+    ActivityOut,
     AuthConfigOut,
     ForgotPasswordRequest,
     LoginRequest,
     PasswordPolicy,
+    PasskeyAnswer,
+    PasskeyNew,
+    PasskeyOut,
     PasswordRequest,
     PinRequest,
     RegisterRequest,
     ResetPasswordRequest,
     ResetRequestedOut,
     SessionOut,
+    SessionsEndedCountOut,
     SetPinRequest,
     UserOut,
 )
@@ -33,6 +40,7 @@ from app.core.config import settings
 from app.core.deps import (
     SessionContext,
     UnlockedContext,
+    get_device_label,
     get_ip_hash,
     get_session_context,
     get_unlocked_context,
@@ -41,7 +49,15 @@ from app.core.exceptions import AppException, problem
 from app.db.models import User
 from app.db.session import get_db
 from app.services import email_service
-from app.services.auth_service import auth_service, password_reset_service, registration_service, session_service
+from app.services.auth_service import (
+    activity_service,
+    auth_service,
+    passkey_service,
+    password_reset_service,
+    registration_service,
+    security_service,
+    session_service,
+)
 from app.services.auth_service.session_service import IssuedSession
 from app.services.auth_service.tokens import decode_access_token, TokenExpired, TokenInvalid
 
@@ -85,6 +101,7 @@ def _session_out(db: Session, user: User, session_id: str) -> SessionOut:
         locked=p.locked,
         pin_set=p.pin_set,
         auto_lock_minutes=settings.PIN_AUTO_LOCK_MINUTES,
+        passkey_set=p.passkey_set,
     )
 
 
@@ -100,6 +117,7 @@ def auth_config() -> AuthConfigOut:
         pin_length=settings.PIN_LENGTH,
         password_reset_enabled=settings.email_enabled,
         reset_link_minutes=settings.PASSWORD_RESET_LINK_MINUTES,
+        passkey_enabled=passkey_service.enabled(),
         password_policy=PasswordPolicy(
             min_length=settings.PASSWORD_MIN_LENGTH,
             require_upper=settings.PASSWORD_REQUIRE_UPPER,
@@ -111,10 +129,10 @@ def auth_config() -> AuthConfigOut:
 
 @router.post("/register", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
 def register(body: RegisterRequest, response: Response, db: Session = Depends(get_db),
-             ip_hash: str = Depends(get_ip_hash)) -> SessionOut:
+             ip_hash: str = Depends(get_ip_hash), device: Optional[str] = Depends(get_device_label)) -> SessionOut:
     _, issued = registration_service.register(
         db, email=body.email, password=body.password, registration_code=body.registration_code,
-        display_name=(body.display_name or "").strip() or None, ip_hash=ip_hash,
+        display_name=(body.display_name or "").strip() or None, ip_hash=ip_hash, device=device,
     )
     set_session_cookies(response, issued)
     return _session_out(db, db.get(User, issued.user_id), issued.session_id)
@@ -122,8 +140,8 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
 
 @router.post("/login", response_model=SessionOut)
 def login(body: LoginRequest, response: Response, db: Session = Depends(get_db),
-          ip_hash: str = Depends(get_ip_hash)) -> SessionOut:
-    issued = auth_service.login(db, body.email, body.password, ip_hash)
+          ip_hash: str = Depends(get_ip_hash), device: Optional[str] = Depends(get_device_label)) -> SessionOut:
+    issued = auth_service.login(db, body.email, body.password, ip_hash, device=device)
     set_session_cookies(response, issued)
     return _session_out(db, db.get(User, issued.user_id), issued.session_id)
 
@@ -209,8 +227,76 @@ def forgot_password(body: ForgotPasswordRequest, background: BackgroundTasks, db
 
 @router.post("/reset-password", response_model=SessionOut)
 def reset_password(body: ResetPasswordRequest, response: Response, db: Session = Depends(get_db),
-                   ip_hash: str = Depends(get_ip_hash)) -> SessionOut:
+                   ip_hash: str = Depends(get_ip_hash),
+                   device: Optional[str] = Depends(get_device_label)) -> SessionOut:
     """SEC-30. The token from the emailed link, in the body - never in a URL. Signs the user in."""
-    issued = password_reset_service.complete_reset(db, body.token, body.password, ip_hash=ip_hash)
+    issued = password_reset_service.complete_reset(db, body.token, body.password, ip_hash=ip_hash, device=device)
     set_session_cookies(response, issued)
     return _session_out(db, db.get(User, issued.user_id), issued.session_id)
+
+
+# ------------------------------------------------- SEC-12 passkeys, SEC-32 activity
+
+
+@router.post("/passkey/unlock-options")
+def passkey_unlock_options(ctx: SessionContext = Depends(get_session_context)) -> dict:
+    """SEC-12 - the challenge the lock screen signs. Locked is fine; signed out is not."""
+    return passkey_service.unlock_options(ctx.user, ctx.session_id)
+
+
+@router.post("/passkey/unlock", response_model=SessionOut)
+def unlock_with_passkey(body: PasskeyAnswer, ctx: SessionContext = Depends(get_session_context),
+                        db: Session = Depends(get_db), ip_hash: str = Depends(get_ip_hash)) -> SessionOut:
+    auth_service.unlock_with_passkey(db, ctx.user, ctx.session_id, body.model_dump(), ip_hash)
+    return _session_out(db, ctx.user, ctx.session_id)
+
+
+@router.post("/passkeys/options")
+def passkey_options(body: PasswordRequest, ctx: UnlockedContext = Depends(get_unlocked_context),
+                    db: Session = Depends(get_db), ip_hash: str = Depends(get_ip_hash)) -> dict:
+    """SEC-12 - adding a passkey takes the password, as changing the PIN does."""
+    security_service.confirm_password(db, ctx.user, body.password, ip_hash)
+    return passkey_service.registration_options(ctx.user, ctx.session_id)
+
+
+@router.post("/passkeys", response_model=PasskeyOut, status_code=status.HTTP_201_CREATED)
+def add_passkey(body: PasskeyNew, ctx: UnlockedContext = Depends(get_unlocked_context),
+                db: Session = Depends(get_db), ip_hash: str = Depends(get_ip_hash),
+                device: Optional[str] = Depends(get_device_label)) -> PasskeyOut:
+    added = passkey_service.register(ctx.user, ctx.session_id, client_data_json=body.client_data_json,
+                                     attestation_object=body.attestation_object, label=body.label or device)
+    auth_service.audit_passkey(db, ctx, added=True, ip_hash=ip_hash)
+    return PasskeyOut.model_validate(added)
+
+
+@router.delete("/passkeys/{passkey_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_passkey(passkey_id: str, ctx: UnlockedContext = Depends(get_unlocked_context),
+                   db: Session = Depends(get_db), ip_hash: str = Depends(get_ip_hash)) -> Response:
+    passkey_service.remove(ctx.user, passkey_id)
+    auth_service.audit_passkey(db, ctx, added=False, ip_hash=ip_hash)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/activity", response_model=ActivityOut)
+def activity(ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = Depends(get_db),
+             ip_hash: str = Depends(get_ip_hash)) -> ActivityOut:
+    """SEC-32 - the devices signed in now, recent sign-ins, and this account's passkeys."""
+    return ActivityOut(
+        sessions=activity_service.open_sessions(db, ctx.user.id, ctx.session_id),
+        sign_ins=activity_service.recent_sign_ins(db, ctx.user.id, ip_hash),
+        passkeys=passkey_service.listed(ctx.user),
+        passkey_enabled=passkey_service.enabled(),
+    )
+
+
+@router.post("/sessions/end-others", response_model=SessionsEndedCountOut)
+def end_other_sessions(ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = Depends(get_db),
+                       ip_hash: str = Depends(get_ip_hash)) -> SessionsEndedCountOut:
+    return SessionsEndedCountOut(ended=activity_service.end_others(db, ctx.cipher, ctx.session_id, ip_hash))
+
+
+@router.post("/sessions/{handle}/end", status_code=status.HTTP_204_NO_CONTENT)
+def end_session(handle: int, ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = Depends(get_db),
+                ip_hash: str = Depends(get_ip_hash)) -> Response:
+    activity_service.end_session(db, ctx.cipher, handle, ctx.session_id, ip_hash)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
