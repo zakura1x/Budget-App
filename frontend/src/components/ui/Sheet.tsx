@@ -61,7 +61,7 @@ export function Sheet({ open, onClose, title, children }: SheetProps) {
   return (
     <div className="fixed inset-0 z-50" role="presentation">
       <div
-        className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 touch-none bg-black/40 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -89,7 +89,9 @@ export function Sheet({ open, onClose, title, children }: SheetProps) {
           <span className="h-1.5 w-12 rounded-full bg-stroke" />
         </div>
         {title && <h2 className="px-5 pb-3 text-title font-black tracking-tight">{title}</h2>}
-        <div className="max-h-[85dvh] overflow-y-auto px-5 pb-4 pt-1">{children}</div>
+        {/* Vertical only: overflow-y-auto alone makes x auto too, and iOS then lets a
+            finger drag the whole form sideways; contain stops the drag reaching the page. */}
+        <div className="max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain px-5 pb-4 pt-1">{children}</div>
       </div>
     </div>
   );

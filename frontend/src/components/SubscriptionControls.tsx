@@ -106,7 +106,7 @@ export function SubscriptionControls({ rule, onDone }: { rule: Rule; onDone: () 
             <span className="font-semibold text-ink-2">Remind me to cancel by</span>
             <input type="date" value={by} min={localToday()} onChange={(e) => setBy(e.target.value)}
               aria-label="Remind me to cancel by"
-              className="min-h-11 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote" />
+              className="min-h-11 rounded-xl border-2 border-stroke bg-surface px-2 text-body" />
           </label>
           {(by || item.cancel_by) && by !== (item.cancel_by ?? '') && (
             <Button variant="secondary" block disabled={busy}

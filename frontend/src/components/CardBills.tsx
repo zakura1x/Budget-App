@@ -87,7 +87,7 @@ export function CardBills({ account }: { account: Account }) {
             <div key={row.key} className="flex items-center gap-2">
               <input type="date" value={row.due} aria-label="Due date"
                 onChange={(e) => e.target.value && setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, due: e.target.value } : r)))}
-                className="min-h-tap min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2.5 text-footnote" />
+                className="min-h-tap min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2.5 text-body" />
               <input value={row.amount} inputMode="decimal" placeholder="0.00" aria-label="Amount"
                 onChange={(e) => setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, amount: sanitizeAmount(e.target.value) } : r)))}
                 className="num min-h-tap w-28 rounded-xl border-2 border-stroke bg-surface px-2.5 text-right text-body" />

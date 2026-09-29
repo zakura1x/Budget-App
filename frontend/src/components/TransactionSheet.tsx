@@ -941,7 +941,7 @@ export function TransactionSheet() {
           value={txnDate}
           onChange={(e) => e.target.value && setTxnDate(e.target.value)}
           aria-label="Date"
-          className="block min-h-tap w-full rounded-xl border-2 border-stroke bg-surface px-3 text-footnote font-medium text-ink"
+          className="block min-h-tap w-full rounded-xl border-2 border-stroke bg-surface px-3 text-body font-medium text-ink"
         />
         <div className="flex flex-wrap items-center gap-2">
           {kind !== 'transfer' && !showMerchant && (
@@ -1043,7 +1043,7 @@ export function TransactionSheet() {
                   value={cashbackCategory ?? ''}
                   onChange={(e) => setCashbackCategory(Number(e.target.value) || null)}
                   aria-label="Cashback category"
-                  className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
+                  className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-stroke bg-surface px-2 text-body"
                 >
                   <option value="">Lands in…</option>
                   {incomeCategories.map((c) => (
@@ -1056,7 +1056,7 @@ export function TransactionSheet() {
                 value={cashbackOn ?? txnDate}
                 onChange={(e) => e.target.value && setCashbackOn(e.target.value)}
                 aria-label="Cashback lands on"
-                className="min-h-11 rounded-xl border-2 border-stroke bg-surface px-2 text-footnote"
+                className="min-h-11 rounded-xl border-2 border-stroke bg-surface px-2 text-body"
               />
             </div>
             <p className="text-caption text-ink-3">
@@ -1131,7 +1131,7 @@ export function TransactionSheet() {
                     setLines((ls) => ls.map((l) => (l.key === line.key ? { ...l, category_id: Number(e.target.value) || null } : l)))
                   }
                   aria-label="Split category"
-                  className="min-h-tap min-w-0 flex-1 rounded-xl bg-surface px-2 text-footnote"
+                  className="min-h-tap min-w-0 flex-1 rounded-xl bg-surface px-2 text-body"
                 >
                   <option value="">Category…</option>
                   {chips.map((c) => (
