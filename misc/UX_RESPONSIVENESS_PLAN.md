@@ -57,7 +57,7 @@ went from 162.21 KB to 174.17 KB gzipped, **+11.96 KB**.
 | **D4** | A single `GET /bootstrap`? | **A** | Later, if the numbers still ask for it once the cache is in. |
 | **D5** | Prefetch | **A** | Both: data prefetched on tab press, lazy chunks warmed on idle. |
 | **D6** | The `ledgerStore.version` counter | **A** | `afterWrite()` keeps bumping it during the migration; it is deleted in the last step, once every screen is on the cache. |
-| **D7** | Background-refresh cue | **A** | Silent for 400 ms, then a 2 px accent line under the header. |
+| **D7** | Background-refresh cue | **A** | Silent for 400 ms, then a 2 px accent line under the header. **Removed 2026-09-29 (user):** it flashed at the top whenever the Ledger paged in rows while scrolling; a refresh is now silent. |
 | **D8** | Order of work | **A** | Part 3's stale-after-write fixes land first, as their own commit, on top of correct invalidation. |
 | **D9** | Do `ledgerStore` / `budgetStore` move to React Query? | **No** | They stay hand-rolled. Both already survive a tab switch, and they own the two delicate flows — the pending row (`addPending`/`failPending`) and the `Outcome` merge (`applyOutcome`/`acceptOutcome`). React Query takes the 15 screens that refetch on mount; `afterWrite()` reloads these two. Revisit `useInfiniteQuery` for the ledger and account trails only if paging turns out to matter in use. |
 
@@ -207,7 +207,7 @@ Rules, and this is the whole UX change:
 |---|---|
 | `isPending` (no cached data yet) | the skeleton it shows today — **once per session**, not per visit |
 | cached data, fresh | the data, **no request at all** |
-| cached data, stale | the data immediately, a background refetch, silent swap (D7's hairline once `isFetching` passes 400 ms) |
+| cached data, stale | the data immediately, a background refetch, silent swap |
 | refetch fails | `data` stays, `error` is set — the existing inline error strip appears and a good screen is never blanked |
 
 `enabled: false` covers the idle cases (`DaySheet` with no day chosen). Aborts

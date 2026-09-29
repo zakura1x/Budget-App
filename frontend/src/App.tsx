@@ -15,7 +15,6 @@ import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { BottomTabBar } from './components/BottomTabBar';
 import { Offline } from './components/Offline';
-import { RefreshLine } from './components/RefreshLine';
 import { RuleSheetHost } from './components/RuleSheetHost';
 import { useOnline } from './hooks/useOnline';
 import { usePreferencesStore } from './stores/preferencesStore';
@@ -85,7 +84,6 @@ function AppTabs() {
   useScrollMemory(); // come back to a tab where you left it (step 6)
   return (
     <>
-      <RefreshLine />
       <div className="mx-auto min-h-dvh max-w-app px-safe pt-safe">
         {/* bottom padding clears the tab bar, the raised [+] and the home indicator */}
         <main className="pb-[calc(theme(spacing.tabbar)+env(safe-area-inset-bottom)+2rem)]">
