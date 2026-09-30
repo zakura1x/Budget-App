@@ -453,6 +453,14 @@ chars). A model failure is **not** an error: it is a 200 with
 
 ## 12. Capacity, failure and testing
 
+*As built (A2, 2026-09-30):* `/assistant/status` also returns `opted_in`,
+`reply_language` and `suggestions`. The conversation store invalidates only
+`['assistant']`: a question moves no figure, so the ledger's version is left
+alone. The first model call after a process start is about 8 s (key fetch and
+client build), measured apart from p95 by `scripts/ai_eval.py`. The router
+sends any question that mentions a card to the card skill.
+
+
 ### Capacity
 
 ZBDGT runs **one uvicorn worker** (invariant 7). Sync endpoints run in its

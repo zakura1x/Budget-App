@@ -36,6 +36,8 @@ EDITABLE = (
     "review_dismissed_for",
     # UX-14: vibrate on keys, saves and deletes
     "haptics",
+    # AI-50 (misc/AI): the AI companion, off until the user opts in after reading what is sent
+    "assistant",
 )
 THEMES = ("system", "light", "dark")
 # UX-05: the colour palette, independent of light/dark (every palette has both).
@@ -60,6 +62,8 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         cleaned["alert_pace_enabled"] = _bool(changes["alert_pace_enabled"], "alert_pace_enabled")
     if "haptics" in changes:
         cleaned["haptics"] = _bool(changes["haptics"], "haptics")
+    if "assistant" in changes:
+        cleaned["assistant"] = _bool(changes["assistant"], "assistant")
     if "budget_suggestion_nudge" in changes:
         cleaned["budget_suggestion_nudge"] = _bool(changes["budget_suggestion_nudge"], "budget_suggestion_nudge")
     if "payday_prompt_min" in changes:
@@ -110,7 +114,8 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
 
     repo = PreferencesRepository(db, cipher)
     record = repo.current()
-    data = {**default_preferences(), **(record.data if record else {}), **cleaned}
+    before = {**default_preferences(), **(record.data if record else {})}
+    data = {**before, **cleaned}
     if record is None:
         repo.create(data)
     else:
@@ -119,6 +124,12 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         db, audit_service.UPDATE, user_id=cipher.user_id, entity="user_preferences",
         cipher=cipher, detail={"changed": sorted(cleaned)},
     )
+    if "assistant" in cleaned and cleaned["assistant"] != bool(before.get("assistant")):
+        # AI-50: its own entry, because it decides whether figures leave the process
+        audit_service.record(
+            db, audit_service.ASSISTANT_ENABLED if cleaned["assistant"] else audit_service.ASSISTANT_DISABLED,
+            user_id=cipher.user_id, entity="user_preferences",
+        )
     db.commit()
     return data
 

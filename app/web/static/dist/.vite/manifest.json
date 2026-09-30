@@ -1,19 +1,20 @@
 {
-  "_formatDistanceToNowStrict-DjmxqJ3w.js": {
-    "file": "assets/formatDistanceToNowStrict-DjmxqJ3w.js",
+  "_formatDistanceToNowStrict-DGfdBztr.js": {
+    "file": "assets/formatDistanceToNowStrict-DGfdBztr.js",
     "name": "formatDistanceToNowStrict",
     "imports": [
       "index.html"
     ]
   },
   "index.html": {
-    "file": "assets/index-2lzgSg19.js",
+    "file": "assets/index-PVZTfHo4.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
       "src/screens/AboutEncryption.tsx",
       "src/screens/Admin.tsx",
+      "src/screens/Assistant.tsx",
       "src/screens/Backup.tsx",
       "src/screens/Emergency.tsx",
       "src/screens/Goals.tsx",
@@ -26,7 +27,7 @@
       "src/screens/Stats.tsx"
     ],
     "css": [
-      "assets/index-_rCFFAHP.css"
+      "assets/index-CnNx7hDM.css"
     ],
     "assets": [
       "assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
@@ -34,7 +35,7 @@
     ]
   },
   "src/screens/AboutEncryption.tsx": {
-    "file": "assets/AboutEncryption-C0GikAv2.js",
+    "file": "assets/AboutEncryption-Lby1mtOo.js",
     "name": "AboutEncryption",
     "src": "src/screens/AboutEncryption.tsx",
     "isDynamicEntry": true,
@@ -43,7 +44,7 @@
     ]
   },
   "src/screens/Admin.tsx": {
-    "file": "assets/Admin-CFN5LrbV.js",
+    "file": "assets/Admin--MlNg27y.js",
     "name": "Admin",
     "src": "src/screens/Admin.tsx",
     "isDynamicEntry": true,
@@ -51,8 +52,17 @@
       "index.html"
     ]
   },
+  "src/screens/Assistant.tsx": {
+    "file": "assets/Assistant-DD9Uj9Bn.js",
+    "name": "Assistant",
+    "src": "src/screens/Assistant.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
   "src/screens/Backup.tsx": {
-    "file": "assets/Backup-Dy9ai4FU.js",
+    "file": "assets/Backup-BR5rJopi.js",
     "name": "Backup",
     "src": "src/screens/Backup.tsx",
     "isDynamicEntry": true,
@@ -61,7 +71,7 @@
     ]
   },
   "src/screens/Emergency.tsx": {
-    "file": "assets/Emergency-CziI37WD.js",
+    "file": "assets/Emergency-bmkugl4U.js",
     "name": "Emergency",
     "src": "src/screens/Emergency.tsx",
     "isDynamicEntry": true,
@@ -70,7 +80,7 @@
     ]
   },
   "src/screens/Goals.tsx": {
-    "file": "assets/Goals-C5OACASv.js",
+    "file": "assets/Goals-C2EFBawq.js",
     "name": "Goals",
     "src": "src/screens/Goals.tsx",
     "isDynamicEntry": true,
@@ -79,7 +89,7 @@
     ]
   },
   "src/screens/Payoff.tsx": {
-    "file": "assets/Payoff-BbTaUFOF.js",
+    "file": "assets/Payoff-cmjMmuuy.js",
     "name": "Payoff",
     "src": "src/screens/Payoff.tsx",
     "isDynamicEntry": true,
@@ -88,7 +98,7 @@
     ]
   },
   "src/screens/Projection.tsx": {
-    "file": "assets/Projection-un4c_oXk.js",
+    "file": "assets/Projection-CxHiDzHm.js",
     "name": "Projection",
     "src": "src/screens/Projection.tsx",
     "isDynamicEntry": true,
@@ -97,17 +107,17 @@
     ]
   },
   "src/screens/RecentlyDeleted.tsx": {
-    "file": "assets/RecentlyDeleted-B5hbNbz_.js",
+    "file": "assets/RecentlyDeleted-DfvmNcIZ.js",
     "name": "RecentlyDeleted",
     "src": "src/screens/RecentlyDeleted.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_formatDistanceToNowStrict-DjmxqJ3w.js"
+      "_formatDistanceToNowStrict-DGfdBztr.js"
     ]
   },
   "src/screens/Recurring.tsx": {
-    "file": "assets/Recurring-CwtYutH7.js",
+    "file": "assets/Recurring-CjVWIrXo.js",
     "name": "Recurring",
     "src": "src/screens/Recurring.tsx",
     "isDynamicEntry": true,
@@ -116,7 +126,7 @@
     ]
   },
   "src/screens/Review.tsx": {
-    "file": "assets/Review-twx6W4Kv.js",
+    "file": "assets/Review-eFSXs_Vy.js",
     "name": "Review",
     "src": "src/screens/Review.tsx",
     "isDynamicEntry": true,
@@ -125,17 +135,17 @@
     ]
   },
   "src/screens/SecurityActivity.tsx": {
-    "file": "assets/SecurityActivity-BxgER9IN.js",
+    "file": "assets/SecurityActivity-D5wHrwLc.js",
     "name": "SecurityActivity",
     "src": "src/screens/SecurityActivity.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_formatDistanceToNowStrict-DjmxqJ3w.js"
+      "_formatDistanceToNowStrict-DGfdBztr.js"
     ]
   },
   "src/screens/Stats.tsx": {
-    "file": "assets/Stats-COXvhpHy.js",
+    "file": "assets/Stats-Bc3kOW-1.js",
     "name": "Stats",
     "src": "src/screens/Stats.tsx",
     "isDynamicEntry": true,

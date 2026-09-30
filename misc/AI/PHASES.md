@@ -100,6 +100,46 @@ from this machine; p95 under 5 s; `pytest` green with the SDK not installed.
 
 ## A2 — First questions (AI-06 – AI-08, AI-10 – AI-16, AI-50, AI-51, AI-53)
 
+**Status (2026-09-30): built; the gate passed on the numbers.** The Taglish
+default is waiting on the user.
+`scripts/ai_eval.py` asks 30 golden questions of the real model, 10 of them in
+Taglish, for a made-up user on in-memory SQLite (throwaway keys, never ZBDGT):
+
+| Run | Routed right | Figure check passed | p50 | p95 | Cold start |
+|---|---|---|---|---|---|
+| `AI_REPLY_LANGUAGE=en` | 100% | 100% of 28 | 642 ms | 3,138 ms | 8,057 ms |
+| `AI_REPLY_LANGUAGE=match` | 100% | 100% of 28 | 669 ms | 3,773 ms | 8,281 ms |
+
+Reading the replies found three wrong answers that the figure check could not
+catch (every number was real, just used wrongly). All three were fixed before
+the runs above:
+- "more than last month" set the period to last month, so September was
+  compared with August. `find_period` now reads a comparison as this month.
+- "the statement that closed 16 Oct" was said before 16 Oct. The card facts
+  now say "closes" for a date still ahead.
+- A net-worth reply was garbled. The net-worth line was split in two, and the
+  prompt (now `answer-2`) says not to explain how a figure is made unless asked.
+
+The lesson: the figure check makes an invented number impossible, but a wrong
+answer built from true numbers is still possible. Keep the golden set growing
+and keep reading its replies at every phase.
+
+Built as planned, with these differences:
+- The card rule: a question that mentions a card goes to the card skill,
+  whatever else matches.
+- The cold start is about 8 s: the first question after the process starts
+  fetches the key and builds the client. IIS idle-stops the process after 20
+  minutes, so the first question after a quiet spell pays this once.
+- The model sometimes answers a Taglish question in Taglish even with `en`.
+  The figures still check out, so this is left alone.
+- The screen was checked in the running app (local, in-memory data): opting
+  in, a question, and a reply card with the right figures. The Based-on
+  panel, follow-up chips and "New chat" are exercised by the vitest store test
+  and the API tests.
+
+Tests: `tests/test_ai_assistant.py` (43), `tests/test_ai_plumbing.py` (28),
+`frontend/src/tests/assistantStore.test.ts` (5).
+
 1. `assistant_service`: `turn.py`, `router.py` (rules first, model ROUTE call
    when unsure, pydantic-validated slots, names → ids server-side),
    `prompts.py` (ROUTE and ANSWER, each with a version constant),

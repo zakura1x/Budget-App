@@ -65,6 +65,9 @@ CONFIRM_TERMS = "CONFIRM_TERMS"  # REC-29 - interest from the first statement
 BACKUP = "BACKUP"  # DAT-06 - "Back up now"; automatic ones are logged, not audited
 RESTORE = "RESTORE"  # DAT-07 - mode, how it was unlocked, counts
 EXPORT = "EXPORT"  # DAT-02 - plaintext left the boundary on purpose
+# misc/AI (AI-50) - the user let their figures go to the AI model, or stopped it
+ASSISTANT_ENABLED = "ASSISTANT_ENABLED"
+ASSISTANT_DISABLED = "ASSISTANT_DISABLED"
 IMPORT = "IMPORT"  # DAT-03
 # Phase 8b - the account's own security, and the admin.
 PASSWORD_CHANGE = "PASSWORD_CHANGE"

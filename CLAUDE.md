@@ -334,9 +334,7 @@ security, goals, admin and PWA (Phase 8b, all 2026-09-14) — 43 test files.
 Mounted: `auth`, `health`, `settings`, `accounts`, `statements`, `categories`,
 `tags`, `transactions`, `budgets`, `calendar`, `stats`, `recurring`,
 `subscriptions`, `projection`, `attachments`, `backups`, `data`, `goals`,
-`security`, `admin`, `assistant` (AI companion, `misc/AI` - Phase A1 only:
-status and admin health; watsonx via the company IAM service, off while
-`AI_ENABLED=False`).
+`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1 + A2).
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -614,6 +612,27 @@ auto-lock); they are never persisted in the browser.
   in, and keep the challenge single-use. It is hand-rolled on `cryptography`
   on purpose (user, 2026-09-28) - do not swap in a WebAuthn package without
   asking. `users.passkeys` holds PUBLIC keys only.
+
+**The AI companion** (`misc/AI`, A1 + A2 2026-09-30) - rules worth keeping:
+
+- **watsonx through the company IAM service**, the way STWRD does it:
+  `app/ai/` is STWRD's loader, client and service, copied. The API key lives
+  only in process memory. `AI_ENABLED=False` loads and calls nothing, and
+  tests never import the SDK (they use a fake model).
+- **The model never computes a figure.** A skill
+  (`assistant_service/skills/`) calls the service behind a screen and hands
+  over finished, formatted facts. `verifier.check` throws away any reply with
+  a number that is not in the facts or the question, and the skill's
+  template answers instead. A new skill must report the figure its screen
+  shows; `test_ai_assistant.py` holds each one to its endpoint.
+- **It never writes.** No `/assistant` route changes financial data. The only
+  write is the `assistant_usage` count (Shape A, counts only).
+- **Question and reply text is never logged** - counts, skill and `elapsed_ms` only.
+- **Opt-in** is the server-side `assistant` preference, audited as
+  `ASSISTANT_ENABLED` / `ASSISTANT_DISABLED`. Conversations live in
+  `assistant_service/memory.py` and `assistantStore`, and both drop on lock.
+- `scripts/ai_eval.py` is the gate: the golden questions against the real
+  model on in-memory data. Read its replies, not just its percentages.
 
 **Phase 15** (2026-09-28): only UX-14 was chosen. Vibration goes through
 `buzz()` in `lib/haptics.ts` and nothing else calls `navigator.vibrate`; it

@@ -57,6 +57,8 @@ def default_preferences() -> dict:
         "payday_prompt_min": 5000,
         # UX-14 (2026-09-28): a short vibration on keys, saves and deletes, where the phone allows it.
         "haptics": True,
+        # AI-50 (misc/AI): the AI companion sends figures to IBM watsonx, so it waits for an opt-in.
+        "assistant": False,
     }
 
 

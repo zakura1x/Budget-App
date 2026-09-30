@@ -182,6 +182,8 @@ export interface Preferences {
   safety_earners?: '1' | '2+';
   /** UX-14 - vibrate on keys, saves and deletes; Android only. */
   haptics?: boolean;
+  /** AI-50 (misc/AI): opted in to the AI companion. */
+  assistant?: boolean;
   [key: string]: unknown;
 }
 

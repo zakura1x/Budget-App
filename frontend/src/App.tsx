@@ -46,6 +46,7 @@ import { Register } from './screens/Register';
 import { ResetPassword } from './screens/ResetPassword';
 import { Settings } from './screens/Settings';
 import { Tags } from './screens/Tags';
+import { useAssistantStore } from './stores/assistantStore';
 import { useAuthStore } from './stores/authStore';
 import { useBudgetStore } from './stores/budgetStore';
 import { useLedgerStore } from './stores/ledgerStore';
@@ -56,6 +57,7 @@ import { useUiStore } from './stores/uiStore';
 // and the add sheet stays in the main bundle.
 const AboutEncryption = lazy(() => lazyScreens.loadAboutEncryption().then((m) => ({ default: m.AboutEncryption })));
 const Admin = lazy(() => lazyScreens.loadAdmin().then((m) => ({ default: m.Admin })));
+const Assistant = lazy(() => lazyScreens.loadAssistant().then((m) => ({ default: m.Assistant })));
 const Backup = lazy(() => lazyScreens.loadBackup().then((m) => ({ default: m.Backup })));
 const Goals = lazy(() => lazyScreens.loadGoals().then((m) => ({ default: m.Goals })));
 const Emergency = lazy(() => lazyScreens.loadEmergency().then((m) => ({ default: m.Emergency })));
@@ -107,6 +109,7 @@ function AppTabs() {
             <Route path="/security" element={<SecurityActivity />} />
             <Route path="/about-encryption" element={<AboutEncryption />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/assistant" element={<Assistant />} />
             <Route path="/transactions" element={<Ledger />} />
             <Route path="/deleted" element={<RecentlyDeleted />} />
             <Route path="/budget" element={<Budget />} />
@@ -148,6 +151,7 @@ export function App() {
   const closeAddSheet = useUiStore((s) => s.closeAddSheet);
   const resetLedger = useLedgerStore((s) => s.reset);
   const resetBudget = useBudgetStore((s) => s.reset);
+  const resetAssistant = useAssistantStore((s) => s.reset);
 
   useEffect(() => {
     void init();
@@ -173,6 +177,7 @@ export function App() {
       clearScrollMemory();
       resetLedger();
       resetBudget();
+      resetAssistant(); // misc/AI - the conversation goes with the key, here and on the server
       // Locked (or still loading) is the same person, so the theme stays; signed
       // out is not - the next person on this device gets the device's setting (UX-05).
       resetPreferences({ keepTheme: status !== 'anonymous' });
@@ -181,7 +186,7 @@ export function App() {
       warmOnUnlock(); // the answers every screen needs, while Home is still drawing
       warmLazyScreens(); // and the chunks for Stats and friends, once things are quiet
     }
-  }, [status, closeAddSheet, resetLedger, resetBudget, resetPreferences, loadPreferences]);
+  }, [status, closeAddSheet, resetLedger, resetBudget, resetAssistant, resetPreferences, loadPreferences]);
 
   useAutoLock(status === 'unlocked', autoLockMinutes, () => void lock());
   useCatchUp(status === 'unlocked');

@@ -64,6 +64,8 @@ export const keys = {
   cardLookahead: () => ['cards', 'lookahead', localToday()] as const,
   statement: (accountId: number, closes: string) => ['statement', accountId, closes] as const,
   health: () => ['health'] as const,
+  /** misc/AI - may this user ask, opted in, questions left today. Never a conversation: that is assistantStore. */
+  assistantStatus: () => ['assistant', 'status'] as const,
 };
 
 /** How long each answer stays fresh before a background refetch (plan §2.3). */
@@ -74,6 +76,7 @@ export const STALE = {
   shape: 30 * 60_000, // the budget's own structure
   statement: 30_000, // a card's closed statement, while its sheet is open
   health: 60_000,
+  assistant: 60_000, // the questions-left count moves with every question, which invalidates it
 } as const;
 
 /**
@@ -98,6 +101,7 @@ export const GROUP_KEYS = {
   statements: [['statement']],
   preferences: [],
   security: [['security']], // SEC-12/32 - nothing here shows money
+  assistant: [['assistant']], // misc/AI - an opt-in or a question asked; never money
 } as const satisfies Record<string, readonly (readonly unknown[])[]>;
 
 export type Group = keyof typeof GROUP_KEYS;

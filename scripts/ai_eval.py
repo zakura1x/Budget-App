@@ -1,0 +1,203 @@
+"""
+The A2 gate: golden questions asked of the REAL model (misc/AI/PHASES.md, A2).
+
+    python scripts/ai_eval.py                  # English replies (AI_REPLY_LANGUAGE=en)
+    python scripts/ai_eval.py --language match # replies in the question's language (the Taglish gate)
+    python scripts/ai_eval.py --only taglish   # just the Taglish questions
+    python scripts/ai_eval.py --out report.txt # also write every reply to a file, for reading
+
+It never touches the company database or your real keys. It uses the test
+suite's setup: throwaway keys and an invalid DB_SERVER come from
+tests/conftest.py, and the data is an in-memory SQLite database holding a
+made-up user (Wallet, BPI Savings, a BPI card, a salary, Meralco, Netflix, a
+September and an October of spending). The IAM and watsonx settings still
+come from .env, so it calls the real model; it needs AI_ENABLED=True.
+
+For each question it prints the expected skill, the skill chosen, whether the
+rules or the model routed it, whether the model's reply was shown or replaced
+by the template (and why), the time, and the reply. The summary checks A2's
+gate: at least 90% routed right, at least 95% of replies passing the figure
+check, and p95 under 8 s. The figure check means no reply ever shows a number
+missing from its facts.
+"""
+
+import argparse
+import logging
+import os
+import statistics
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+os.chdir(ROOT)
+
+TODAY = "2026-10-10"
+
+# (question, expected skill, language)
+GOLDEN = [
+    ("How much is left in my budget?", "budget_status", "en"),
+    ("What's my daily allowance today?", "budget_status", "en"),
+    ("Am I on track with my budget this month?", "budget_status", "en"),
+    ("How much of my Food budget is left?", "budget_status", "en"),
+    ("How much did I spend this month?", "spending", "en"),
+    ("Where did my money go last month?", "spending", "en"),
+    ("How much did I spend on Transport in September?", "spending", "en"),
+    ("What are my biggest expenses this month?", "spending", "en"),
+    ("Am I spending more than last month?", "spending", "en"),
+    ("How much cash do I have?", "cash", "en"),
+    ("What's my net worth?", "cash", "en"),
+    ("How much is in BPI Savings?", "cash", "en"),
+    ("What bills are due before payday?", "upcoming", "en"),
+    ("What's due this week?", "upcoming", "en"),
+    ("Anything I need to pay before the end of the month?", "upcoming", "en"),
+    ("How much do I owe on my card?", "card", "en"),
+    ("When is my BPI Card bill due?", "card", "en"),
+    ("How much credit limit do I have left?", "card", "en"),
+    ("What's the weather tomorrow?", "off_topic", "en"),
+    ("Write me a poem about cats", "off_topic", "en"),
+    ("Magkano ang natitira sa budget ko?", "budget_status", "tl"),
+    ("Magkano pwede kong gastusin kada araw?", "budget_status", "tl"),
+    ("Magkano ang nagastos ko ngayong buwan?", "spending", "tl"),
+    ("Saan napunta ang pera ko noong nakaraang buwan?", "spending", "tl"),
+    ("Magkano ang gastos ko sa Food?", "spending", "tl"),
+    ("Magkano pera ko ngayon?", "cash", "tl"),
+    ("Ano ang mga bayarin ko bago sahod?", "upcoming", "tl"),
+    ("May babayaran ba ako this week?", "upcoming", "tl"),
+    ("Magkano utang ko sa card?", "card", "tl"),
+    ("Kailan due ang BPI Card ko?", "card", "tl"),
+]
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--language", choices=("en", "match"), default="en")
+    parser.add_argument("--only", choices=("en", "taglish"), default=None)
+    parser.add_argument("--out", default=None, help="write the full report here as well")
+    parser.add_argument("--facts", action="store_true", help="print the facts each reply was built from")
+    parser.add_argument("--grep", default=None, help="only questions containing this text")
+    return parser.parse_args()
+
+
+def seed(api):
+    """The made-up user. Figures are fixed so a reader can check the replies by hand."""
+    assert api.register().status_code == 201
+    assert api.patch("/settings/preferences", {"assistant": True}).status_code == 200
+    q = f"?today={TODAY}"
+    wallet = api.post("/accounts", {"name": "Wallet", "type": "cash", "opening_balance": "8500.00"}).json()["id"]
+    savings = api.post("/accounts", {"name": "BPI Savings", "type": "savings",
+                                     "opening_balance": "45000.00"}).json()["id"]
+    card = api.post("/accounts", {"name": "BPI Card", "type": "credit", "statement_closing_day": 16,
+                                  "payment_due_day": 6, "credit_limit": "50000.00"}).json()["id"]
+    cats = {name: api.post("/categories", {"name": name}).json()["id"]
+            for name in ("Food", "Transport", "Bills", "Shopping")}
+    cats["Salary"] = api.post("/categories", {"name": "Salary", "kind": "income"}).json()["id"]
+    api.post(f"/budgets{q}", {"period": "monthly", "amount": "30000.00", "allocations": [
+        {"category_id": cats["Food"], "amount": "9000.00"},
+        {"category_id": cats["Transport"], "amount": "3000.00"},
+        {"category_id": cats["Shopping"], "amount": "4000.00"},
+    ]})
+    entries = [
+        ("2026-09-03", "1850.00", wallet, "Food"), ("2026-09-08", "620.00", wallet, "Transport"),
+        ("2026-09-12", "3499.00", card, "Shopping"), ("2026-09-19", "2200.00", wallet, "Food"),
+        ("2026-09-25", "980.00", wallet, "Transport"), ("2026-09-28", "1540.00", card, "Food"),
+        ("2026-10-01", "2100.00", wallet, "Food"), ("2026-10-03", "450.00", wallet, "Transport"),
+        ("2026-10-05", "5299.00", card, "Shopping"), ("2026-10-07", "1320.00", wallet, "Food"),
+        ("2026-10-09", "380.00", wallet, "Transport"),
+    ]
+    for when, amount, account, category in entries:
+        r = api.post(f"/transactions{q}", {"type": "expense", "amount": amount, "txn_date": when,
+                                            "account_id": account, "category_id": cats[category]})
+        assert r.status_code == 201, r.text
+    for body in (
+        {"kind": "standard", "type": "income", "name": "Salary", "amount": "25000.00", "account_id": savings,
+         "category_id": cats["Salary"], "frequency": "monthly", "start": "2026-10-15"},
+        {"kind": "standard", "type": "expense", "name": "Meralco", "amount": "2450.00", "account_id": wallet,
+         "category_id": cats["Bills"], "frequency": "monthly", "start": "2026-10-13"},
+        {"kind": "subscription", "type": "expense", "name": "Netflix", "amount": "549.00", "account_id": card,
+         "category_id": cats["Bills"], "frequency": "monthly", "start": "2026-10-20"},
+    ):
+        r = api.post(f"/recurring{q}", body)
+        assert r.status_code == 201, r.text
+
+
+def main() -> int:
+    args = parse_args()
+    # Before anything under app/ is imported: the test suite's throwaway keys and
+    # harmless DB_SERVER, plus this run's language and no daily cap.
+    os.environ["AI_REPLY_LANGUAGE"] = args.language
+    os.environ["AI_MAX_QUESTIONS_PER_DAY"] = "0"
+    import tests.conftest as harness  # noqa: F401 - sets the environment on import
+
+    from fastapi.testclient import TestClient
+
+    import app.api.v1.endpoints.health as health_module
+    import app.main as main_module
+    from app.core.config import settings
+    from app.db.connection import set_engine
+
+    if not settings.AI_ENABLED:
+        print("AI_ENABLED is false in .env - nothing to evaluate.")
+        return 1
+
+    ok = {"reachable": True, "schema_present": True}
+    health_module.check_database = lambda: dict(ok)
+    main_module.check_database = lambda: dict(ok)
+    set_engine(harness.make_sqlite_engine())
+
+    questions = [g for g in GOLDEN if args.only is None
+                 or (args.only == "taglish") == (g[2] == "tl")]
+    if args.grep:
+        questions = [g for g in questions if args.grep.lower() in g[0].lower()]
+    rows, report = [], []
+    with TestClient(main_module.app, raise_server_exceptions=True) as client:
+        logging.disable(logging.INFO)  # the request log would bury the report
+        # The first call after a start fetches the key from IAM and builds the client
+        # (6-9 s, once per process). Timed on its own so p95 measures ordinary questions.
+        from app.ai import llm_service
+
+        started = time.perf_counter()
+        llm_service.get_llm_service().invoke(settings.WATSONX_CHAT_MODEL, {"max_new_tokens": 5}, "Reply OK.")
+        cold_ms = int((time.perf_counter() - started) * 1000)
+        api = harness.ApiClient(client, settings.API_PREFIX)
+        seed(api)
+        for question, expected, lang in questions:
+            started = time.perf_counter()
+            response = api.post("/assistant/ask", {"question": question, "today": TODAY})
+            ms = int((time.perf_counter() - started) * 1000)
+            if response.status_code != 200:
+                rows.append((question, expected, "ERROR", False, ms, lang))
+                report.append(f"[ERROR {response.status_code}] {question}\n    {response.text[:200]}\n")
+                continue
+            body = response.json()
+            rows.append((question, expected, body["skill"], body["ai_phrased"], ms, lang))
+            mark = "ok " if body["skill"] == expected else "MISS"
+            phrased = "model" if body["ai_phrased"] else "template"
+            report.append(f"[{mark}] ({lang}) {question}\n    expected {expected}, got {body['skill']}; "
+                          f"{phrased}; {ms} ms\n    > {body['text']}\n"
+                          + ("".join(f"      | {line}\n" for line in body["facts"]) if args.facts else ""))
+
+    routed = sum(1 for r in rows if r[1] == r[2]) / len(rows)
+    phrasable = [r for r in rows if r[2] not in ("off_topic", "clarify", "ERROR")]
+    phrased = sum(1 for r in phrasable if r[3]) / len(phrasable) if phrasable else 0.0
+    times = sorted(r[4] for r in rows)
+    p95 = times[min(len(times) - 1, round(0.95 * (len(times) - 1)))]
+    summary = [
+        f"Questions: {len(rows)}  (language setting: {args.language})",
+        f"Routed right: {routed:.0%}  (gate 90%)",
+        f"Model replies that passed the figure check: {phrased:.0%} of {len(phrasable)}  (gate 95%)",
+        f"Time: p50 {int(statistics.median(times))} ms, p95 {p95} ms, max {times[-1]} ms  (gate p95 8000 ms)",
+        f"Cold start (first model call after the process starts, not in p95): {cold_ms} ms",
+    ]
+    passed = routed >= 0.9 and phrased >= 0.95 and p95 < 8000
+    summary.append("GATE: " + ("PASSED" if passed else "NOT PASSED"))
+    text = "\n".join(report) + "\n" + "\n".join(summary)
+    print(text)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

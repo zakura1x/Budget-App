@@ -156,7 +156,9 @@ Budget App/
 │   │       └── audit_repository.py      # detail sealed under the user's DEK
 │   │
 │   ├── services/                        # ALL business logic. Plaintext only.
-│   │   ├── assistant_service/           # AI companion (misc/AI); A1: usage.py daily counts
+│   │   ├── assistant_service/           # AI companion (misc/AI): turn, router (rules, then
+│   │   │                                #   the model), skills/ (one per question kind), facts,
+│   │   │                                #   verifier (figure check), prompts, memory, usage
 │   │   ├── auth_service/
 │   │   │   ├── auth_service.py
 │   │   │   ├── passwords.py             # bcrypt direct (passlib breaks on bcrypt 5)
@@ -332,6 +334,7 @@ Budget App/
 │   ├── verify_backup.py                 # round-trip fidelity check (DAT-14)
 │   ├── int_tables.sql                   # raw DDL, 16 tables - generated, do not edit
 │   ├── ai_health.py                     # AI companion: IAM key + model check, --measure N timing
+│   ├── ai_eval.py                       # AI companion gate: golden questions, real model, in-memory data
 │   ├── bootstrap_user.py                # first account + its DEK
 │   ├── seed_categories.py
 │   ├── rotate_keys.py                   # ★ master key: --status/--new-key/--rewrap,
@@ -353,6 +356,7 @@ Budget App/
 │   ├── test_app.py                      # /health, headers, CSP nonce, no detail
 │   ├── test_migration.py                # migration == models, column by column
 │   ├── test_ai_plumbing.py              # AI companion A1: switch, IAM loader, guard, health, usage
+│   ├── test_ai_assistant.py             # AI companion A2: verifier, router, skills vs screens, turn
 │   ├── test_scripts.py
 │   ├── test_db_mssql.py                 # SQL Server only; skipped by default
 │   ├── test_key_rotation.py             #   ...and older backups still open (retired key)

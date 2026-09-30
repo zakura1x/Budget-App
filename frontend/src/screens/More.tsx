@@ -8,8 +8,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getHealth } from '../lib/api';
 import { keys, STALE } from '../lib/queryKeys';
-import { CalendarIcon, GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, TrashIcon, WalletIcon } from '../components/Icons';
+import { CalendarIcon, ChatIcon, GearIcon, LockIcon, LogoutIcon, RepeatIcon, ServerIcon, ShieldIcon, StatsIcon, TagIcon, TrashIcon, WalletIcon } from '../components/Icons';
 import { useAuthStore } from '../stores/authStore';
+import { getAssistantStatus } from '../lib/assistant';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SectionTitle } from '../components/ui/Card';
 import { ListGroup, ListRow } from '../components/ui/ListRow';
@@ -24,6 +25,13 @@ export function More() {
     queryKey: keys.health(),
     queryFn: ({ signal }) => getHealth(signal),
     staleTime: STALE.health,
+  });
+
+  // misc/AI - the row shows only where the server has the assistant on for this user
+  const { data: assistant } = useQuery({
+    queryKey: keys.assistantStatus(),
+    queryFn: ({ signal }) => getAssistantStatus(signal),
+    staleTime: STALE.assistant,
   });
 
   const loading = !health && !error;
@@ -53,6 +61,10 @@ export function More() {
 
       <SectionTitle>Money</SectionTitle>
       <ListGroup>
+        {assistant?.enabled && (
+          <ListRow icon={<ChatIcon size={20} />} title="Assistant" subtitle="Ask about your budget, spending and bills"
+            chevron onClick={() => navigate('/assistant')} />
+        )}
         <ListRow icon={<StatsIcon size={20} />} title="Budget" subtitle="Amount, period and categories"
           chevron onClick={() => navigate('/budget')} />
         <ListRow icon={<TagIcon size={20} />} title="Categories" subtitle="What your spending is sorted into"

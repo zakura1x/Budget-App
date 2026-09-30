@@ -365,10 +365,12 @@ def test_deleting_an_account_removes_its_usage(session):
 def test_status_route(api, monkeypatch):
     api.register()
     monkeypatch.setattr(settings, "AI_ENABLED", False)
-    assert api.get("/assistant/status").json() == {"enabled": False, "questions_left_today": 0}
+    off = api.get("/assistant/status").json()
+    assert (off["enabled"], off["opted_in"], off["questions_left_today"], off["suggestions"]) == (False, False, 0, [])
     monkeypatch.setattr(settings, "AI_ENABLED", True)
-    assert api.get("/assistant/status").json() == {"enabled": True,
-                                                   "questions_left_today": settings.AI_MAX_QUESTIONS_PER_DAY}
+    on = api.get("/assistant/status").json()
+    assert (on["enabled"], on["questions_left_today"]) == (True, settings.AI_MAX_QUESTIONS_PER_DAY)
+    assert on["suggestions"] and on["reply_language"] == settings.AI_REPLY_LANGUAGE
     assert llm_service._llm_service is None  # status never loads credentials
     api.post("/auth/lock")
     locked = api.get("/assistant/status")

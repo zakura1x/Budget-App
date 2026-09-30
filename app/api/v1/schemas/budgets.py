@@ -214,3 +214,4 @@ class PreferencesIn(BaseModel):
     safety_dependents: Optional[Literal["0", "1-2", "3+"]] = None
     safety_earners: Optional[Literal["1", "2+"]] = None
     haptics: Optional[bool] = None  # UX-14
+    assistant: Optional[bool] = None  # AI-50 - opt in to the AI companion (misc/AI)

@@ -8,6 +8,7 @@
  */
 export const loadAboutEncryption = () => import('./AboutEncryption');
 export const loadAdmin = () => import('./Admin');
+export const loadAssistant = () => import('./Assistant');
 export const loadBackup = () => import('./Backup');
 export const loadEmergency = () => import('./Emergency');
 export const loadGoals = () => import('./Goals');
@@ -33,4 +34,5 @@ export const LAZY_SCREENS = [
   loadSecurityActivity,
   loadAboutEncryption,
   loadAdmin,
+  loadAssistant,
 ];

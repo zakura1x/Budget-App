@@ -166,6 +166,28 @@ class ServiceUnavailableException(AppException):
     title = "Service Unavailable"
 
 
+# The AI companion (misc/AI ARCHITECTURE §10). A model failure is NOT one of
+# these: it is a 200 whose reply says it was answered without the model.
+class AssistantDisabledException(ServiceUnavailableException):
+    code = "ASSISTANT_DISABLED"
+
+
+class AssistantNotOptedInException(PermissionDeniedException):
+    code = "ASSISTANT_NOT_OPTED_IN"
+
+
+class AssistantBusyException(RateLimitException):
+    code = "ASSISTANT_BUSY"
+
+
+class AssistantDailyLimitException(RateLimitException):
+    code = "ASSISTANT_DAILY_LIMIT"
+
+
+class AssistantQuestionTooLongException(ValidationException):
+    code = "ASSISTANT_QUESTION_TOO_LONG"
+
+
 # ============================================
 # Responses
 # ============================================
