@@ -5,8 +5,9 @@
 -- GENERATED from alembic/versions by scripts/generate_int_tables.py.
 -- Do not edit by hand - change a migration and regenerate.
 --
--- Fifteen tables:
---   Shape A (operational)  users, refresh_tokens, login_attempts, audit_log
+-- Sixteen tables:
+--   Shape A (operational)  users, refresh_tokens, login_attempts, audit_log,
+--                          assistant_usage (AI companion counts - no content)
 --   Shape B (encrypted)    id, user_id, key_version, payload, is_deleted,
 --                          row_created, row_updated - and nothing else.
 --                          Every amount, date, name and category lives
@@ -371,6 +372,27 @@ ALTER TABLE [ZBDGT].users ADD passkeys NTEXT NULL;
 GO
 
 UPDATE [ZBDGT].alembic_version SET version_num='20260928_0004' WHERE [ZBDGT].alembic_version.version_num = '20260914_0003';
+
+GO
+
+-- Running upgrade 20260928_0004 -> 20260930_0005
+
+CREATE TABLE [ZBDGT].assistant_usage (
+    id BIGINT NOT NULL IDENTITY(1,1), 
+    user_id INTEGER NOT NULL, 
+    day DATETIME NOT NULL, 
+    questions INTEGER NOT NULL DEFAULT '0', 
+    model_calls INTEGER NOT NULL DEFAULT '0', 
+    prompt_tokens INTEGER NOT NULL DEFAULT '0', 
+    completion_tokens INTEGER NOT NULL DEFAULT '0', 
+    fallbacks INTEGER NOT NULL DEFAULT '0', 
+    CONSTRAINT [PK_assistant_usage] PRIMARY KEY (id), 
+    CONSTRAINT [UQ_assistant_usage_user_day] UNIQUE (user_id, day)
+);
+
+GO
+
+UPDATE [ZBDGT].alembic_version SET version_num='20260930_0005' WHERE [ZBDGT].alembic_version.version_num = '20260928_0004';
 
 GO
 

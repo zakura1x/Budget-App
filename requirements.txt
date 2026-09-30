@@ -85,6 +85,19 @@ httpx>=0.25.0
 orjson>=3.9.0
 
 # ============================================
+# AI COMPANION (misc/AI) - watsonx.ai through the company IAM service
+# ============================================
+# The same SDK QUOT, DMS and STWRD use; QUOT already has it in the shared
+# venv. Imported only under app/ai, only when a question is asked with
+# AI_ENABLED=True, so the app runs - and every test runs - without them.
+# These floors are STWRD's pins. BEFORE installing on the server, run
+# `pip list` in the shared venv and lower each floor to the version QUOT has
+# (user decision 2026-09-30: never upgrade what QUOT runs), then check with
+#     pip install -r requirements.txt --dry-run
+ibm-watsonx-ai>=1.6.3
+requests>=2.32.0
+
+# ============================================
 # DEVELOPMENT & TESTING
 # ============================================
 pytest>=7.4.0

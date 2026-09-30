@@ -15,6 +15,9 @@ Budget App/
 │   ├── FEATURES.md                      # Feature catalogue + scope decisions (start here)
 │   ├── phases.md                        # Build log, 9 phases + standing defect list
 │   ├── DEPLOY.md                        # IIS deploy: release zip, first deploy, updates, rollback
+│   ├── ROADMAP.md                       # Unbuilt features, Phases 11-16
+│   ├── AI/                              # AI companion plan: README, ARCHITECTURE, FEATURES, PHASES
+│   ├── archive/                         # finished plans and phase screenshots
 │   ├── file_tree.txt                    # This file
 │   └── how-to-run.txt
 │
@@ -22,10 +25,17 @@ Budget App/
 │   ├── env.py
 │   ├── script.py.mako
 │   └── versions/
-│       └── 20260914_0001_baseline_budget_schema.py
+│       ├── 20260914_0001_baseline_budget_schema.py
+│       ├── 20260914_0002 / 0003, 20260928_0004
+│       └── 20260930_0005_assistant_usage.py
 │
 ├── app/
 │   ├── main.py                          # lifespan, middleware, /health
+│   │
+│   ├── ai/                              # AI companion model layer (misc/AI), copied from STWRD
+│   │   ├── credential_loader.py         # watsonx key from the company IAM service, memory only
+│   │   ├── watsonx_client.py            # one granite model over the chat endpoint, 30 s timeout
+│   │   └── llm_service.py               # AI_ENABLED switch, concurrency guard, recovery, health()
 │   │
 │   ├── api/
 │   │   └── v1/
@@ -47,6 +57,7 @@ Budget App/
 │   │       │   ├── goals.py
 │   │       │   ├── settings.py
 │   │       │   ├── admin.py             # account management only
+│   │       │   ├── assistant.py         # AI companion: status, admin health (misc/AI)
 │   │       │   ├── backup.py            # export / restore / verify
 │   │       │   └── data.py              # CSV import / export
 │   │       └── schemas/
@@ -104,12 +115,13 @@ Budget App/
 │   │   ├── session.py
 │   │   ├── types.py                     # EncryptedPayload TypeDecorator
 │   │   │
-│   │   ├── models/                      # 15 tables, schema ZBDGT
+│   │   ├── models/                      # 16 tables, schema ZBDGT
 │   │   │   ├── encrypted_row.py         # the Shape B mixin every data table uses
 │   │   │   ├── user.py                  # A: email_bidx, profile_enc, password_hash,
 │   │   │   │                            #    pin_hash, dek_wrapped
 │   │   │   ├── refresh_token.py         # A: hashed, family_id, parent_id
 │   │   │   ├── login_attempt.py         # A: email_bidx, hashed IP
+│   │   │   ├── assistant_usage.py       # A: AI companion counts per user per day
 │   │   │   ├── audit_log.py             # A: plaintext verb, encrypted detail
 │   │   │   ├── account.py               # B: encrypted payload (no currency)
 │   │   │   ├── category.py              # B
@@ -144,6 +156,7 @@ Budget App/
 │   │       └── audit_repository.py      # detail sealed under the user's DEK
 │   │
 │   ├── services/                        # ALL business logic. Plaintext only.
+│   │   ├── assistant_service/           # AI companion (misc/AI); A1: usage.py daily counts
 │   │   ├── auth_service/
 │   │   │   ├── auth_service.py
 │   │   │   ├── passwords.py             # bcrypt direct (passlib breaks on bcrypt 5)
@@ -317,7 +330,8 @@ Budget App/
 │   ├── backup.py                        # ★ full encrypted export
 │   ├── restore.py                       # ★ fresh | merge | verify
 │   ├── verify_backup.py                 # round-trip fidelity check (DAT-14)
-│   ├── int_tables.sql                   # raw DDL, 15 tables - generated, do not edit
+│   ├── int_tables.sql                   # raw DDL, 16 tables - generated, do not edit
+│   ├── ai_health.py                     # AI companion: IAM key + model check, --measure N timing
 │   ├── bootstrap_user.py                # first account + its DEK
 │   ├── seed_categories.py
 │   ├── rotate_keys.py                   # ★ master key: --status/--new-key/--rewrap,
@@ -338,6 +352,7 @@ Budget App/
 │   ├── test_logging_redaction.py        # no amount in logs at DEBUG
 │   ├── test_app.py                      # /health, headers, CSP nonce, no detail
 │   ├── test_migration.py                # migration == models, column by column
+│   ├── test_ai_plumbing.py              # AI companion A1: switch, IAM loader, guard, health, usage
 │   ├── test_scripts.py
 │   ├── test_db_mssql.py                 # SQL Server only; skipped by default
 │   ├── test_key_rotation.py             #   ...and older backups still open (retired key)

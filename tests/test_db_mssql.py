@@ -58,13 +58,13 @@ def throwaway_user(factory):
         session.commit()
 
 
-def test_schema_and_all_fifteen_tables_exist(factory):
+def test_schema_and_all_sixteen_tables_exist(factory):
     with factory() as session:
         names = session.execute(
             text("SELECT t.name FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = :s"),
             {"s": settings.DB_SCHEMA},
         ).scalars().all()
-    expected = {"users", "refresh_tokens", "login_attempts", "audit_log"} | {m.__tablename__ for m in ENCRYPTED_MODELS}
+    expected = {"users", "refresh_tokens", "login_attempts", "audit_log", "assistant_usage"} | {m.__tablename__ for m in ENCRYPTED_MODELS}
     assert expected <= set(names)
 
 

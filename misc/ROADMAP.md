@@ -57,6 +57,7 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **UX-13** | Offline writes with sync-on-reconnect | deferred | 15 | L | ⏸️ |
 | **UX-14** | Haptics | deferred | 15 | S | ✅ 2026-09-28 |
 | **UX-15** | Multi-language | deferred | 15 | L | ⬜ |
+| **AI-01…67** | AI companion — ask about your money, "can I afford it?" | new (2026-09-30) | 16 | L | 🔨 A1 ✅ 2026-09-30 |
 
 **Deliberately NOT on this list** (still ❌ Out in FEATURES.md, for the reasons
 written there): push notifications (BUD-16), bank sync (ACC-10), receipt OCR and
@@ -565,6 +566,17 @@ unwrap a DEK. The PIN always stays as the fallback.
 | UX-13 | Offline writes, synced on reconnect | ⏸️ | Queuing a write in the browser means storing it there, which invariant 10 / SEC-29 forbids. Blocked unless that decision changes |
 | UX-14 | Haptics | ✅ | Built 2026-09-28 - `navigator.vibrate` on Android; iOS Safari ignores it |
 | UX-15 | Multi-language | ⬜ | Every string pulled out of the components first; large, and English-only has been fine |
+
+---
+
+## 📦 PHASE 16: AI companion
+
+Planned and tracked on its own in [AI/](AI/README.md): architecture, the
+`AI-xx` features and phases A0–A6. It uses watsonx.ai through the company IAM
+service, as STWRD does. A0 (decisions) and A1 (plumbing; gate passed,
+p95 1.5 s) were done on 2026-09-30. A2 (the first questions and the Assistant
+screen) is next. Tick features in `misc/AI/FEATURES.md`; this row carries only
+the phase.
 
 ---
 

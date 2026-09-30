@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     accounts,
     admin,
+    assistant,
     attachments,
     auth,
     backups,
@@ -50,3 +51,4 @@ api_router.include_router(data.router)
 api_router.include_router(goals.router)
 api_router.include_router(security.router)
 api_router.include_router(admin.router)
+api_router.include_router(assistant.router)

@@ -1,5 +1,5 @@
 """
-The migration and the models describe the same fifteen tables.
+The migration and the models describe the same sixteen tables.
 
 Autogenerate needs a live database to compare against, and the tests never
 touch one. So the migration is rendered offline to T-SQL, and every model
@@ -46,10 +46,10 @@ def test_schema_is_created_before_the_version_table(offline_sql):
     assert f"CREATE TABLE [{SCHEMA}].alembic_version" in offline_sql
 
 
-def test_all_fifteen_tables_are_created(offline_sql):
+def test_all_sixteen_tables_are_created(offline_sql):
     blocks = create_blocks(offline_sql)
     model_tables = {t.name for t in Base.metadata.sorted_tables}
-    assert len(model_tables) == 15
+    assert len(model_tables) == 16
     assert model_tables <= set(blocks)
 
 

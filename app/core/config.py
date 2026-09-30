@@ -23,7 +23,7 @@ import binascii
 import re
 from functools import cached_property
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, FrozenSet, List
 
 from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -282,6 +282,39 @@ class Settings(BaseSettings):
     BACKUP_VERIFY_ON_WRITE: bool = True
 
     # ============================================
+    # AI companion (misc/AI, Phase A1)
+    # ============================================
+    # watsonx.ai through the company IAM service, exactly as STWRD / DMS /
+    # QUOT do it: copy the IAM values from STWRD's .env. Nothing here is a
+    # secret - the watsonx API key is fetched from IAM at runtime and exists
+    # only in process memory. While AI_ENABLED is false nothing under app/ai
+    # is loaded or called, and the IAM settings are not checked.
+    AI_ENABLED: bool = False
+    COMPANY_NAME: str = ""
+    IAM_MANAGEMENT_URL: str = ""
+    CREDENTIAL_CACHE_TTL: int = Field(default=300, ge=30, le=3600)
+    IAM_MAX_RETRIES: int = Field(default=3, ge=1, le=5)
+    IAM_RETRY_DELAY: int = Field(default=5, ge=0, le=30)
+    # The IAM record is shared with QUOT, DMS and STWRD; do not be a second writer
+    IAM_REPORT_TEST_STATUS: bool = False
+
+    WATSONX_URL: str = "https://us-south.ml.cloud.ibm.com"
+    WATSONX_CHAT_MODEL: str = "ibm/granite-4-h-small"
+    WATSONX_TOP_P: float = 0.9
+    # Seconds, applied to the SDK's HTTP client; a request thread waits this long
+    WATSONX_TIMEOUT: int = Field(default=30, ge=5, le=120)
+    WATSONX_MAX_RETRIES: int = Field(default=3, ge=1, le=5)
+
+    # One uvicorn worker serves everyone (invariant 7), so keep these low
+    AI_MAX_CONCURRENT_PER_USER: int = Field(default=1, ge=1, le=3)
+    AI_MAX_CONCURRENT_CALLS: int = Field(default=3, ge=1, le=10)
+    AI_MAX_QUESTIONS_PER_DAY: int = Field(default=100, ge=0)  # 0 = no cap
+    # Pilot list of user ids, comma-separated; blank = every opted-in user (AI-54)
+    AI_ALLOWED_USER_IDS: str = ""
+    # en | match - reply in the question's language, Taglish included (AI-63)
+    AI_REPLY_LANGUAGE: str = "en"
+
+    # ============================================
     # Validators - the encryption material
     # ============================================
     @field_validator("BUDGET_MASTER_KEY")
@@ -421,6 +454,18 @@ class Settings(BaseSettings):
             )
         if not self.API_PREFIX.startswith(self.BASE_URL):
             raise ValueError("API_PREFIX must sit under BASE_URL")
+        if self.AI_REPLY_LANGUAGE not in ("en", "match"):
+            raise ValueError("AI_REPLY_LANGUAGE must be en or match")
+        self.ai_allowed_user_ids  # parse eagerly, like the retired keys
+        if self.AI_ENABLED:
+            # misc/AI ARCHITECTURE §3: checked only when the assistant is on,
+            # so an install without IAM access still starts.
+            if not self.COMPANY_NAME.strip():
+                raise ValueError("COMPANY_NAME must be set while AI_ENABLED is true (copy it from STWRD's .env)")
+            if not re.match(r"^https?://[^\s]+$", self.IAM_MANAGEMENT_URL.strip()):
+                raise ValueError("IAM_MANAGEMENT_URL must be an http(s) URL while AI_ENABLED is true")
+            if not self.WATSONX_URL.startswith("https://"):
+                raise ValueError("WATSONX_URL must be an https URL")
         return self
 
     # ============================================
@@ -464,6 +509,19 @@ class Settings(BaseSettings):
                 raise ValueError(f"BUDGET_RETIRED_KEYS entry {n} must decode to exactly 32 bytes")
             keys[version] = key
         return keys
+
+    @cached_property
+    def ai_allowed_user_ids(self) -> FrozenSet[int]:
+        """AI_ALLOWED_USER_IDS as a set; empty means no pilot list (AI-54)."""
+        ids = set()
+        for n, entry in enumerate(self.AI_ALLOWED_USER_IDS.split(","), start=1):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if not entry.isdigit():
+                raise ValueError(f"AI_ALLOWED_USER_IDS entry {n} must be a user id")
+            ids.add(int(entry))
+        return frozenset(ids)
 
     @property
     def CORS_ORIGINS(self) -> List[str]:

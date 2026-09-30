@@ -178,7 +178,7 @@ This project adds one rule of its own, and it is absolute:
 ## 4. Data model
 
 Everything lives in the **`ZBDGT` schema** of the shared SQL Server database.
-Fifteen tables, in two shapes.
+Sixteen tables, in two shapes (the sixteenth, `assistant_usage`, since 2026-09-30).
 
 ### 4.1 The two table shapes
 
@@ -242,7 +242,7 @@ distinction matters: `row_created` leaks only *when you used the app*, which is
 unavoidable, while `txn_date` — which leaks your actual financial timeline —
 stays inside the ciphertext.
 
-### 4.2 The fifteen tables
+### 4.2 The sixteen tables
 
 | Shape | Table | Holds |
 |---|---|---|
@@ -250,6 +250,7 @@ stays inside the ciphertext.
 | A | `refresh_tokens` | Hashed token, family id, parent id, expiry, revocation |
 | A | `login_attempts` | `kind` (login / pin / register / reset; `recovery` on rows from before 2026-09-14), `email_bidx`, success flag, keyed hash of the IP, timestamp |
 | A | `audit_log` | user_id, action, entity, entity_id, encrypted detail blob |
+| A | `assistant_usage` | The AI companion's counts per user per day: questions, model calls, tokens, template fallbacks. Never a question, reply or figure (misc/AI ARCHITECTURE §7, migration `20260930_0005`) |
 | B | `accounts` | name, type, opening balance, colour, archived, `counts_in_cash_on_hand`, manual value (investment), statement/due day + credit limit + optional own `spending_limit` + `statement_checks` — the bank's total per statement (credit) |
 | B | `categories` | name, parent_id, icon, colour, kind, sort order |
 | B | `budgets` | period type, start day, amount, carry-over flag, active range |

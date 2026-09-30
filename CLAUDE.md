@@ -157,7 +157,8 @@ browser timer.
 ### Data model: two table shapes
 
 - **Shape A — operational, readable, indexed:** `users`, `refresh_tokens`,
-  `login_attempts`, `audit_log`.
+  `login_attempts`, `audit_log`, `assistant_usage` (the AI companion's daily
+  counts - never content, 2026-09-30).
 - **Shape B — encrypted (`EncryptedRowMixin`):** the other eleven tables. Only
   `id`, `user_id`, `key_version`, `is_deleted` and the row timestamps are
   plaintext; everything else is one `VARBINARY(MAX)` JSON blob. The only index
@@ -333,7 +334,9 @@ security, goals, admin and PWA (Phase 8b, all 2026-09-14) — 43 test files.
 Mounted: `auth`, `health`, `settings`, `accounts`, `statements`, `categories`,
 `tags`, `transactions`, `budgets`, `calendar`, `stats`, `recurring`,
 `subscriptions`, `projection`, `attachments`, `backups`, `data`, `goals`,
-`security`, `admin`.
+`security`, `admin`, `assistant` (AI companion, `misc/AI` - Phase A1 only:
+status and admin health; watsonx via the company IAM service, off while
+`AI_ENABLED=False`).
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach

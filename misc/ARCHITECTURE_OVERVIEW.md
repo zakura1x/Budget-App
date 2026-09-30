@@ -111,7 +111,7 @@ graph TD
         RP["All the SQL — and the ONLY place<br/>encrypt/decrypt is called."]
     end
     subgraph L4["4 — Models (app/db/models/)"]
-        MD["15 tables. Payloads are VARBINARY."]
+        MD["16 tables. Payloads are VARBINARY."]
     end
 
     L1 --> L2 --> L3 --> L4 --> DB[("SQL Server — schema ZBDGT<br/>stores ciphertext it cannot read")]
@@ -144,7 +144,7 @@ boundary is designed to make impossible.
 
 ## 4. The data model
 
-Fifteen tables in two shapes. Four are operational and readable; eleven hold a
+Sixteen tables in two shapes. Five are operational and readable; eleven hold a
 single encrypted blob each.
 
 ```mermaid
@@ -154,6 +154,7 @@ graph TD
         RT["refresh_tokens"]
         LA["login_attempts"]
         AL["audit_log"]
+        AU["assistant_usage<br/>AI counts only"]
     end
 
     subgraph ENC["Data — id + user_id plaintext, everything else encrypted"]

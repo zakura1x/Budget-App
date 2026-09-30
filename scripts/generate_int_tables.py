@@ -30,8 +30,9 @@ HEADER = """\
 -- GENERATED from alembic/versions by scripts/generate_int_tables.py.
 -- Do not edit by hand - change a migration and regenerate.
 --
--- Fifteen tables:
---   Shape A (operational)  users, refresh_tokens, login_attempts, audit_log
+-- Sixteen tables:
+--   Shape A (operational)  users, refresh_tokens, login_attempts, audit_log,
+--                          assistant_usage (AI companion counts - no content)
 --   Shape B (encrypted)    id, user_id, key_version, payload, is_deleted,
 --                          row_created, row_updated - and nothing else.
 --                          Every amount, date, name and category lives

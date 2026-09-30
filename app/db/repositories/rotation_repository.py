@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.core.crypto.envelope import PLACEHOLDER
 from app.core.crypto.user_cipher import UserCipher
-from app.db.models import ENCRYPTED_MODELS, AuditLog, LoginAttempt, RefreshToken, User
+from app.db.models import ENCRYPTED_MODELS, AssistantUsage, AuditLog, LoginAttempt, RefreshToken, User
 from app.db.repositories.attachment_repository import FILE_TABLE, AttachmentRepository
 
 
@@ -93,6 +93,8 @@ class RotationRepository:
             counts[model.__tablename__] = self.session.execute(delete(model).where(model.user_id == user_id)).rowcount
         counts["refresh_tokens"] = self.session.execute(delete(RefreshToken).where(RefreshToken.user_id == user_id)).rowcount
         counts["login_attempts"] = self.session.execute(delete(LoginAttempt).where(LoginAttempt.user_id == user_id)).rowcount
+        counts["assistant_usage"] = self.session.execute(
+            delete(AssistantUsage).where(AssistantUsage.user_id == user_id)).rowcount
         counts["users"] = self.session.execute(delete(User).where(User.id == user_id)).rowcount
         self.session.flush()
         return counts
