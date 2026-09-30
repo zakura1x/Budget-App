@@ -22,16 +22,17 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
+from app.core.utils.date_utils import add_months, clamp_day
 from app.core.utils.money import CENTS
 
 logger = logging.getLogger(__name__)
 
 SKILLS = ("budget_status", "spending", "cash", "upcoming", "card", "afford", "review", "goals", "emergency",
-          "subscriptions", "payoff", "how_to", "off_topic")
+          "subscriptions", "payoff", "how_to", "find", "draft", "draft_goal", "off_topic")
 PERIODS = ("this_month", "last_month", "this_year")
 WINDOWS = ("week", "month", "payday")
 METHODS = ("now", "card", "installment")
@@ -82,6 +83,20 @@ _AFFORD = (r"\bafford\b", r"\bcan i (?:buy|get|purchase|spend|splurge)\b", r"\bs
            r"\bkaya ko(?: bang| ba)?\b", r"\bpwede (?:ko )?(?:bang |ba )?(?:bilhin|bumili)\b", r"\bbumili\b",
            r"\bbilhin\b", r"\bbibili\b", r"\bokay (?:lang )?ba (?:na )?bumili\b")
 _EMERGENCY = (r"\bemergency\b", r"\bsafety net\b", r"\bpang-?emergency\b")
+# A4. "I just spent 250 on lunch" - something that happened, to be recorded (AI-42)
+_DRAFT = (r"\bi (?:just |also )?(?:spent|paid|bought|got paid|received|earned)\b", r"\b(?:log|record) (?:an? |my )?\S",
+          r"\badd (?:an? )?(?:expense|entry|income|transaction) (?:of|for)\b", r"\bgumastos ako\b",
+          r"\bnagbayad ako\b", r"\bbumili ako\b", r"\bnatanggap ko\b", r"\bsumahod ako\b")
+_INCOME_WORDS = r"\bgot paid\b|\breceived\b|\bearned\b|\bnatanggap ko\b|\bsumahod\b|\bincome\b"
+# "Help me save ₱50,000 for December" - a goal to set up (AI-43)
+_DRAFT_GOAL = (r"\bhelp me save\b", r"\bi want to save\b", r"\bi(?:'d| would) like to save\b",
+               r"\bsave up (?:₱|php|p?\d)", r"\b(?:start|make|create|set up) a (?:savings )?goal\b", r"\bnew goal\b",
+               r"\bgusto kong mag-?ipon\b", r"\bmag-?iipon ako\b")
+# "When did I last pay Meralco?" - one merchant's or one bill's own entries (AI-41)
+_FIND = (r"\bwhen did i (?:last )?\w", r"\blast time i\b", r"\bkailan ako huling\b", r"\bhuling bayad\b",
+         r"\bhow (?:much|many times) (?:did|have) i (?:spen[dt]|paid?|pay|bought|buy|g[eo]t?) (?:at|from|on|sa|kay)\b",
+         r"\bhow much (?:at|sa|kay)\b",
+         r"\b(?:magkano|ilan) (?:na )?(?:ang )?(?:nagastos|ginastos|binayad|nabayad) ko (?:sa|kay)\b")
 _PAYOFF_ORDER = (r"\bwhich (?:debt|loan|card|one) (?:should i |to )?(?:pay|clear)\b", r"\bdebt[- ]free\b",
                  r"\bsnowball\b", r"\bavalanche\b", r"\bpay (?:off|down) first\b", r"\bpayoff\b")
 
@@ -112,6 +127,10 @@ class Intent:
     method: Optional[str] = None  # now | card | installment
     months: Optional[int] = None  # installment payments
     item: Optional[str] = None  # what the user wants to buy, in their words
+    merchant: Optional[str] = None  # a merchant the user has typed before, or the one named in a draft
+    rule_id: Optional[int] = None  # a recurring bill or plan named in the question
+    on: Optional[date] = None  # "yesterday": the day a drafted entry happened; a goal's target date
+    income: bool = False  # a drafted entry that is money coming in
     by_model: bool = False
     usage: Dict[str, int] = field(default_factory=dict)
 
@@ -247,18 +266,97 @@ _NOT_ITEMS = ("it", "this", "that", "one", "something", "months", "month", "paym
 def find_item(question: str) -> Optional[str]:
     for pattern in (_ITEM, _ITEM_AFTER_PRICE):
         m = pattern.search(question)
-        if m:
-            item = m.group(1).strip()
-            if item.lower() not in _NOT_ITEMS and not item.lower().startswith(("months", "payments")):
-                return item
+        if not m:
+            continue
+        if re.match(r"[,.]\d", question[m.end():]):
+            continue  # it stopped inside a number: "get a 60,000 laptop" is not an item called "a 60"
+        item = re.sub(r"^(?:a|an|the)\s+", "", m.group(1).strip(), flags=re.IGNORECASE)
+        if not item or item[0].isdigit():
+            continue
+        if item.lower() not in _NOT_ITEMS and not item.lower().startswith(("months", "payments")):
+            return item
     return None
 
 
-def _skill_by_rules(text: str, scores: Dict[str, int], category_id, goal_id) -> Optional[str]:
+_MERCHANT_AFTER = re.compile(r"\b(?:at|from|sa|kay)\s+((?:[A-Z][\w&'.-]*)(?:\s+[A-Z][\w&'.-]*){0,2})")
+
+
+def find_merchant(question: str, known: Mapping[int, str]) -> Optional[str]:
+    """A merchant typed before, as the user spelt it - else a capitalised name after "at" / "sa"."""
+    found = find_name(question, known)
+    if found is not None:
+        return known[found]
+    m = _MERCHANT_AFTER.search(question)
+    return m.group(1).strip() if m else None
+
+
+_NOTE = re.compile(
+    r"\b(?:on|for|ng)\s+(?:a |an |the |my |some )?([a-z][a-z \-']{1,30}?)"
+    r"(?=\s+(?:at|from|sa|kay|yesterday|today|kahapon|kanina|ngayon|using|with|on my)\b|[?.!,]|$)",
+    re.IGNORECASE,
+)
+
+
+def find_note(question: str, own_names) -> Optional[str]:
+    """What a drafted entry was for - "lunch" in "spent 250 on lunch" - unless it is one of the user's own
+    categories or accounts, which the draft carries as such."""
+    m = _NOTE.search(question)
+    if not m:
+        return None
+    note = m.group(1).strip()
+    return None if _lower(note) in own_names or _lower(note) in _NOT_ITEMS else note
+
+
+def find_day(question: str, today: date) -> Optional[date]:
+    text = _lower(question)
+    if re.search(r"\byesterday\b|\bkahapon\b", text):
+        return today - timedelta(days=1)
+    if re.search(r"\btoday\b|\bjust now\b|\bkanina\b|\bngayon\b", text):
+        return today
+    return None
+
+
+def find_target_date(question: str, today: date) -> Optional[date]:
+    """A goal's date: "in 6 months", "by December", "by March 2027" - the last day of that month."""
+    text = _lower(question)
+    m = re.search(r"\b(?:in|within|sa loob ng)\s+(\d{1,2})\s*(?:months?|buwan)\b", text)
+    if m and 1 <= int(m.group(1)) <= 120:
+        target = add_months(today, int(m.group(1)))
+        return clamp_day(target.year, target.month, 31)
+    for word in re.findall(r"[a-z]+", text):
+        if word in _MONTHS and word not in ("may", "mar"):
+            month = _MONTHS[word]
+            year_m = re.search(word + r"\s+(20\d{2})\b", text)
+            year = int(year_m.group(1)) if year_m else (today.year if month >= today.month else today.year + 1)
+            return clamp_day(year, month, 31)
+    return None
+
+
+_GOAL_NAME = re.compile(
+    r"\bfor (?:a |an |the |my |our )?([a-z][a-z0-9 \-']{2,30}?)(?=\s+(?:by|in|before|this|next|within|sa)\b|[?.!,]|$)",
+    re.IGNORECASE,
+)
+
+
+def find_goal_name(question: str) -> Optional[str]:
+    m = _GOAL_NAME.search(question)
+    if not m:
+        return None
+    name = m.group(1).strip()
+    return None if name.lower() in _MONTHS or name.lower() in _NOT_ITEMS else name[0].upper() + name[1:]
+
+
+def _skill_by_rules(text: str, scores: Dict[str, int], category_id, goal_id, named: bool = False) -> Optional[str]:
     if _any(text, _HOW_TO):
         return "how_to"
+    if _any(text, _DRAFT_GOAL):
+        return "draft_goal"
+    if _any(text, _DRAFT):
+        return "draft"
     if _any(text, _AFFORD):
         return "afford"
+    if _any(text, _FIND) and named:
+        return "find"  # only when it names a merchant or a bill the user has - else it is an ordinary question
     if _any(text, _EMERGENCY):
         return "emergency"
     if _any(text, _PAYOFF_ORDER):
@@ -284,18 +382,40 @@ def by_rules(
     categories: Mapping[int, str],
     accounts: Mapping[int, str],
     goals: Optional[Mapping[int, str]] = None,
+    merchants: Optional[Mapping[int, str]] = None,
+    plans: Optional[Mapping[int, str]] = None,
 ) -> Intent:
     """What the rules alone can tell. `skill` is None when they cannot decide."""
     text = _lower(question)
     category_id = find_name(question, categories)
     goal_id = find_name(question, goals or {})
+    rule_id = find_name(question, plans or {})
+    known_merchant = find_name(question, merchants or {})
     method, months = find_method(question)
-    return Intent(
-        skill=_skill_by_rules(text, keyword_scores(question), category_id, goal_id),
+    skill = _skill_by_rules(text, keyword_scores(question), category_id, goal_id,
+                            named=rule_id is not None or known_merchant is not None)
+    intent = Intent(
+        skill=skill,
         period=find_period(question, today), window=find_window(question),
         category_id=category_id, account_id=find_name(question, accounts), goal_id=goal_id,
         amount=find_amount(question), method=method, months=months, item=find_item(question),
+        rule_id=rule_id, merchant=(merchants or {}).get(known_merchant) if known_merchant is not None else None,
     )
+    if skill == "draft":
+        intent.merchant = find_merchant(question, merchants or {})
+        # "from Wallet", "sa Food": one of the user's own accounts or categories is never a merchant
+        own = {_lower(n).strip() for n in (*accounts.values(), *categories.values())}
+        if intent.merchant and _lower(intent.merchant).strip() in own:
+            intent.merchant = None
+        intent.on = find_day(question, today)
+        intent.item = find_note(question, own)
+        intent.income = re.search(_INCOME_WORDS, text) is not None
+        intent.method = intent.months = None
+    elif skill == "draft_goal":
+        intent.on = find_target_date(question, today)
+        intent.item = find_goal_name(question)
+        intent.method = intent.months = None
+    return intent
 
 
 # ------------------------------------------------------------------ the model
@@ -358,7 +478,10 @@ def by_model(
     except Exception as error:
         logger.warning("ROUTE call failed: %s", error.__class__.__name__)
         return None
-    if not isinstance(answer, Mapping) or answer.get("skill") not in SKILLS:
+    # find, draft and draft_goal are reached by the rules only: their slots (a merchant the user has
+    # typed, an amount, a date) come from the words, and the model is never asked to supply them.
+    if not isinstance(answer, Mapping) or answer.get("skill") not in SKILLS \
+            or answer.get("skill") in ("find", "draft", "draft_goal"):
         logger.info("ROUTE answer rejected: no known skill")
         return None
 
@@ -400,6 +523,7 @@ def merge(rules: Intent, model: Optional[Intent]) -> Intent:
         account_id=rules.account_id if rules.account_id is not None else model.account_id,
         goal_id=rules.goal_id if rules.goal_id is not None else model.goal_id,
         amount=rules.amount, method=rules.method, months=rules.months, item=rules.item,
+        merchant=rules.merchant, rule_id=rules.rule_id, on=rules.on, income=rules.income,
         by_model=True,
         usage=model.usage,
     )

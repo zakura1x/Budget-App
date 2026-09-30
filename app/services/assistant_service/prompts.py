@@ -14,7 +14,7 @@ from typing import Iterable, Tuple
 from app.core.config import settings
 from app.services.assistant_service.facts import Facts
 
-PROMPT_VERSION = "answer-4"
+PROMPT_VERSION = "answer-5"
 HISTORY_TURNS = 6
 
 _RULES = """You are the budget companion inside a personal budget app. Answer the question using ONLY the facts below.
@@ -41,9 +41,10 @@ def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]
     language = _LANGUAGE.get(settings.AI_REPLY_LANGUAGE, _LANGUAGE["en"])
     parts = [_RULES.format(language=language)]
     if facts.verdict_text:
-        # AI-30/35: the rules decided; the model explains, leads with it, and never turns it into advice
-        parts.append(f"- The answer is already decided: \"{facts.verdict_text}\" Start with it, in your own words, "
-                     "and never change it.")
+        # AI-30/35: the rules decided. The reply opens with the decided sentence word for word - the model
+        # kept turning "It's tight" into "No," and "which first?" into advice when left to paraphrase it.
+        parts.append(f"- The answer is already decided. Your reply MUST begin with this exact sentence: "
+                     f"\"{facts.verdict_text}\" After it you may add at most two short sentences of detail.")
     parts += ["", f"Facts ({facts.title}):"]
     parts += [f"- {line}" for line in facts.lines]
     turns = list(history)[-HISTORY_TURNS:]
@@ -51,5 +52,7 @@ def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]
         parts += ["", "Earlier in this conversation:"]
         for asked, answered in turns:
             parts += [f"User: {asked}", f"Assistant: {answered}"]
-    parts += ["", f"Question: {question}", "Answer:"]
+    # The language is said again here, last: a Taglish question pulled the reply into Taglish otherwise
+    answer = "Answer (in English):" if settings.AI_REPLY_LANGUAGE != "match" else "Answer:"
+    parts += ["", f"Question: {question}", answer]
     return "\n".join(parts)

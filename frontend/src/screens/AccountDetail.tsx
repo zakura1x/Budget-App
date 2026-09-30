@@ -21,6 +21,7 @@ import { BalanceCheck } from '../components/BalanceCheck';
 import { AccountDues } from '../components/AccountDues';
 import { AccountPayments } from '../components/AccountPayments';
 import { AccountPlans } from '../components/AccountPlans';
+import { ExplainLink } from '../components/ExplainLink';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
 import { PlanPaymentSheet } from '../components/PlanPaymentSheet';
 import { CardPayments } from '../components/CardPayments';
@@ -393,6 +394,8 @@ export function AccountDetail() {
               ))}
             </div>
           )}
+          {/* misc/AI AI-40 - names the account; the server reads it and checks it is this user's */}
+          <ExplainLink ask={`Tell me about ${account.name}`} context={{ account_id: account.id }} label="Ask about this account" />
         </section>
       ) : (
         <div className="skeleton h-44 rounded-card" aria-hidden="true" />

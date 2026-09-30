@@ -230,10 +230,11 @@ Built as planned, with these differences and lessons:
 
 Tests: `tests/test_ai_afford.py` (62), with the A1 and A2 files 133 in all.
 
-**Still the user's call:** Taglish replies. The `match` run passes on
-figures, but several replies read awkwardly or wrongly ("Kasya lang kung
-bumili ka noong 15 Dec pa o mamaya" uses a past-tense word for a future date).
-The recommendation is to keep `AI_REPLY_LANGUAGE=en`.
+**Taglish replies: decided 2026-09-30, English only.** The `match` run passes
+on figures, but several replies read awkwardly or wrongly ("Kasya lang kung
+bumili ka noong 15 Dec pa o mamaya" uses a past-tense word for a future date),
+so the user chose `AI_REPLY_LANGUAGE=en`. Taglish questions are still
+understood.
 
 1. `app/core/utils/affordability.py` — pure; one threshold table; returns a
    verdict, reasons and alternatives as data.
@@ -257,6 +258,64 @@ verdicts are worked out by hand beforehand; all 15 match; the rest as A2.
 ---
 
 ## A4 — In context (AI-40 – AI-45)
+
+**Status (2026-09-30): built; the gate's checks passed.** The plan's gate also
+asks for a week of real use, which starts now.
+`scripts/ai_eval.py` (60 questions, real model): 100% routed, 98% of replies
+accepted, p95 1.7 s. The A4 paths were also walked in the running app on
+in-memory data: Home's tile asking a question, a drafted entry opening the add
+sheet pre-filled, a drafted goal opening the goal sheet, and an installment
+handed to Months ahead's what-if.
+
+What was built:
+- **Explain (AI-40).** `/ask` takes `context` (`screen`, `alert`,
+  `account_id`). `turn.context_intent` checks it against two tables and the
+  user's own visible accounts, and it decides the skill. An account that is
+  not the user's is dropped, not refused. Links: each alert banner on Home,
+  the monthly review (only on the latest finished period, which is the one
+  the skill looks at), and an account's page. The budget is reached through
+  the Home tile rather than a link on the budget card.
+- **Find (AI-41).** One merchant's or one bill's entries. It is routed only
+  when the question names a merchant the user has typed or a recurring rule.
+  Facts carry the name asked about and its dates, amounts and accounts - never
+  a note, never another merchant.
+- **Drafts (AI-42, AI-43).** "I spent 250 on lunch" and "Help me save 50,000
+  by December" answer with a button and no model call. Every field is read
+  from the words; a merchant typed before brings its last category (TXN-24).
+  The button opens the ORDINARY sheet pre-filled (`AddPreset` gained
+  `categoryId`, `merchant`, `note`; `GoalSheet` takes a `preset`). Tests count
+  rows before and after: nothing is written.
+- **What-if hand-off (AI-44).** An affordability reply that is an installment,
+  or is tight / wait / no, offers "Try it as an installment". It opens Months
+  ahead's own installment sheet pre-filled, through router state that is
+  cleared once read.
+- **Home tile (AI-45).** Two questions chosen from the alerts and budget
+  status Home already holds. It makes no request of its own and shows only
+  after opt-in.
+
+Differences from the plan:
+- **No budget draft.** "Draft a goal or budget" built the goal only. A budget
+  has allocations a sentence cannot carry. A request to set one up is not
+  handled specially yet.
+- **The model cannot route to `find`, `draft` or `draft_goal`.** Their fields
+  come from the words, so only the rules reach them.
+
+Found by reading replies, and fixed:
+- A Taglish reply turned "1 Oct to 31 Oct" into "Enero 1 hanggang Disyembre
+  31". Every digit was in the facts. The verifier now checks month names too
+  (`unknown_month`).
+- "It's tight" kept coming back as "No, ...", and "which debt first?" as
+  advice. A decided answer is now given to the model as the exact first
+  sentence (`answer-5`), and the payoff skill sets one.
+- The English instruction is repeated at the very end of the prompt; a
+  Taglish question otherwise pulled the reply into Taglish.
+- "from Wallet" was read as a merchant, and "get a 60,000 laptop" as an item
+  called "a 60".
+- One question hit IBM's 30 s timeout in a run and fell back to the template,
+  as designed. IAM itself also timed out once (a 10 s read), and the retry got
+  through.
+
+Tests: `tests/test_ai_context.py` (33); the four AI files are 171 in all.
 
 1. `context` on `/ask`; server-side resolvers for `screen`, `alert`,
    `account`, `review`. The browser names the object; the server reads it.

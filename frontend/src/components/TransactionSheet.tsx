@@ -368,12 +368,12 @@ export function TransactionSheet() {
       setKind(addPreset?.type ?? 'expense');
       setRepeating(false);
       setTyped(addPreset?.amount ? typedFrom(addPreset.amount) : '0');
-      setCategoryId(null);
+      setCategoryId(addPreset?.categoryId ?? null);
       setTxnDate(addOn ?? localToday());
-      setNote('');
-      setShowNote(false);
-      setMerchant('');
-      setShowMerchant(false);
+      setNote(addPreset?.note ?? '');
+      setShowNote(Boolean(addPreset?.note));
+      setMerchant(addPreset?.merchant ?? '');
+      setShowMerchant(Boolean(addPreset?.merchant));
       setTagIds([]);
       setShowTags(false);
       setSplitting(false);

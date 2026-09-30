@@ -359,6 +359,7 @@ Budget App/
 │   ├── test_ai_plumbing.py              # AI companion A1: switch, IAM loader, guard, health, usage
 │   ├── test_ai_assistant.py             # AI companion A2: verifier, router, skills vs screens, turn
 │   ├── test_ai_afford.py                # AI companion A3: the verdict rules, prices, six more skills
+│   ├── test_ai_context.py               # AI companion A4: Explain contexts, drafts write nothing, find
 │   ├── test_scripts.py
 │   ├── test_db_mssql.py                 # SQL Server only; skipped by default
 │   ├── test_key_rotation.py             #   ...and older backups still open (retired key)

@@ -35,7 +35,9 @@ _ADVICE = re.compile(
     r"\b(?:not |in)?advisable\b|\b(?:un)?wise\b|\bbest (?:to|option)\b|\bbetter to\b|"
     # an instruction, at the start of the reply, a sentence or a clause: "Pay off the card first.",
     # "Based on the snowball method, pay off the card first."
-    r"(?:^|[.!?,;:]\s+|\s-\s)\W*(?:pay|buy|save|cut|stop|avoid|consider|try|start|focus|bayaran|bilhin|iwasan)\b",
+    # and "..., so focus on recording a payment first."
+    r"(?:^|[.!?,;:]\s+|\s-\s)\W*(?:(?:so|then|and|please)\s+)?"
+    r"(?:pay|buy|save|cut|stop|avoid|consider|try|start|focus|bayaran|bilhin|iwasan)\b",
     re.I,
 )
 
@@ -52,10 +54,37 @@ _NUMBER_WORDS = re.compile(
 )
 
 
+# A month named in a reply must be one the facts (or the question) name: "1 Oct to 31 Oct" came back
+# as "Enero 1 hanggang Disyembre 31", every digit of which was in the facts. English and Filipino,
+# short and long; "may" counts only beside a day number, because it is also an ordinary word.
+_MONTH_NAMES = {
+    name: number
+    for number, names in enumerate(
+        (
+            ("january", "jan", "enero"), ("february", "feb", "pebrero"), ("march", "mar", "marso"),
+            ("april", "apr", "abril"), ("mayo",), ("june", "jun", "hunyo"), ("july", "jul", "hulyo"),
+            ("august", "aug", "agosto"), ("september", "sept", "sep", "setyembre"), ("october", "oct", "oktubre"),
+            ("november", "nov", "nobyembre"), ("december", "dec", "disyembre"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+_MONTH_WORD = re.compile(r"\b(" + "|".join(sorted(_MONTH_NAMES, key=len, reverse=True)) + r")\b", re.I)
+_MAY = re.compile(r"\b\d{1,2}\s+may\b|\bmay\s+\d{1,2}\b", re.I)
+
+
+def months(text: str) -> Set[int]:
+    found = {_MONTH_NAMES[m.lower()] for m in _MONTH_WORD.findall(text)}
+    if _MAY.search(text):
+        found.add(5)
+    return found
+
+
 @dataclass(frozen=True)
 class Verdict:
     ok: bool
-    reason: str  # "" when ok; empty | too_long | number_words | unknown_figure | against_verdict | advice | meta
+    reason: str  # "" when ok; empty | too_long | number_words | unknown_figure | unknown_month | against_verdict | advice | meta
 
 
 def figures(text: str) -> Set[Decimal]:
@@ -92,10 +121,14 @@ def check(reply: str, allowed_texts: Iterable[str], verdict: Optional[str] = Non
     if _NUMBER_WORDS.search(text):
         return Verdict(False, "number_words")
     allowed: Set[Decimal] = set()
+    allowed_months: Set[int] = set()
     for source in allowed_texts:
         allowed |= figures(source)
+        allowed_months |= months(source)
     if figures(text) - allowed:
         return Verdict(False, "unknown_figure")
+    if months(text) - allowed_months:
+        return Verdict(False, "unknown_month")
     if verdict and against(text, verdict):
         return Verdict(False, "against_verdict")
     if _ADVICE.search(text):

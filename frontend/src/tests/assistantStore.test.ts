@@ -9,12 +9,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../lib/api';
 import type { AssistantReply } from '../lib/assistant';
 
-const ask = vi.fn<(question: string, conversationId: string | null) => Promise<AssistantReply>>();
+const ask = vi.fn<(question: string, conversationId: string | null, context?: unknown) => Promise<AssistantReply>>();
 const forget = vi.fn<(id: string) => Promise<void>>();
 
 vi.mock('../lib/assistant', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/assistant')>()),
-  askAssistant: (question: string, id: string | null) => ask(question, id),
+  askAssistant: (question: string, id: string | null, context?: unknown) => ask(question, id, context),
   forgetConversation: (id: string) => forget(id),
 }));
 
@@ -58,6 +58,14 @@ describe('asking', () => {
     await useAssistantStore.getState().ask('How much is left?');
     expect(useAssistantStore.getState().error).toMatch(/back tomorrow/);
     expect(useAssistantStore.getState().turns).toHaveLength(0);
+  });
+});
+
+describe('an Explain link', () => {
+  it('sends where it was tapped, never a figure', async () => {
+    ask.mockResolvedValueOnce(reply('Explain my budget'));
+    await useAssistantStore.getState().ask('Explain my budget', { screen: 'budget' });
+    expect(ask.mock.calls[0]![2]).toEqual({ screen: 'budget' });
   });
 });
 

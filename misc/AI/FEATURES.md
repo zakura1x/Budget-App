@@ -9,7 +9,7 @@ references are to [ARCHITECTURE.md](ARCHITECTURE.md) (`AI-ARCH §n`); phases to
 
 | Status | Meaning |
 |---|---|
-| ✅ **Built** | Built and tested (A1, A2 and A3 on 2026-09-30). |
+| ✅ **Built** | Built and tested (A1 to A4 on 2026-09-30). |
 | 📋 **Planned** | In scope, in the phase named. Not built. |
 | 🟡 **Later** | Wanted; the architecture leaves room; not scheduled. |
 | ❌ **Out** | Deliberately not built. Reason given. |
@@ -22,7 +22,7 @@ references are to [ARCHITECTURE.md](ARCHITECTURE.md) (`AI-ARCH §n`); phases to
 | 1. Foundation | AI-01 – AI-08 | 8 | 0 | 0 | 0 | 0 |
 | 2. Ask about your money | AI-10 – AI-21 | 12 | 0 | 0 | 0 | 0 |
 | 3. Can I afford it? | AI-30 – AI-35 | 6 | 0 | 0 | 0 | 0 |
-| 4. In context, and acting on answers | AI-40 – AI-45 | 0 | 6 | 0 | 0 | 0 |
+| 4. In context, and acting on answers | AI-40 – AI-45 | 6 | 0 | 0 | 0 | 0 |
 | 5. Privacy and control | AI-50 – AI-55 | 5 | 0 | 1 | 0 | 0 |
 | 6. Later / out | AI-60 – AI-67 | 1 | 0 | 3 | 4 | 0 |
 
@@ -75,12 +75,12 @@ Each skill reports the figure its screen shows - a test holds them equal.
 
 | ID | Feature | Status | Phase | Scope |
 |---|---|---|---|---|
-| AI-40 | **Explain this** | 📋 | A4 | An *Explain* link on Home's budget card, each alert, the monthly review and an account page opens the assistant with that context; the server re-reads it (the browser names, never supplies, figures) |
-| AI-41 | **Find a transaction** | 📋 | A4 | *"When did I last pay Meralco?"*, *"How much at Jollibee this month?"* - merchant names are sent to the model only for the rows reported; notes and descriptions never (the user allowed this on 2026-09-30, README Q2) |
-| AI-42 | **Draft an entry** | 📋 | A4 | *"I just spent 250 on lunch"* → opens `TransactionSheet` pre-filled; the user saves through the ordinary path and `afterWrite(...MONEY)`. The assistant never saves. AI-ARCH §8 |
-| AI-43 | **Draft a goal or budget** | 📋 | A4 | *"Help me save ₱50,000 for December"* → the goal editor pre-filled with the amount per month |
-| AI-44 | **Try it as a what-if** | 📋 | A4 | From an affordability answer, open the What-if screen with the purchase filled in |
-| AI-45 | **Home "Ask" tile** | 📋 | A4 | A small tile on Home once opted in, with two suggested questions chosen from the user's state (an alert, a near-empty budget) |
+| AI-40 | **Explain this** | ✅ | A4 | An *Explain* link on each alert, the monthly review and an account page; the budget is asked about from Home's tile (AI-45). Each opens the assistant with that context; the server re-reads it (the browser names, never supplies, figures) |
+| AI-41 | **Find a transaction** | ✅ | A4 | *"When did I last pay Meralco?"*, *"How much at Jollibee this month?"* - merchant names are sent to the model only for the rows reported; notes and descriptions never (the user allowed this on 2026-09-30, README Q2) |
+| AI-42 | **Draft an entry** | ✅ | A4 | *"I just spent 250 on lunch"* → opens `TransactionSheet` pre-filled; the user saves through the ordinary path and `afterWrite(...MONEY)`. The assistant never saves. AI-ARCH §8 |
+| AI-43 | **Draft a goal** | ✅ | A4 | *"Help me save ₱50,000 by December"* → the reply states the amount a month (GOA-05's own rule) and opens the goal sheet pre-filled with the name, target and date; the user picks the account and saves. A budget draft was not built: a budget has allocations a sentence cannot carry |
+| AI-44 | **Try it as a what-if** | ✅ | A4 | From an affordability answer, open the What-if screen with the purchase filled in |
+| AI-45 | **Home "Ask" tile** | ✅ | A4 | A small tile on Home once opted in, with two suggested questions chosen from the user's state (an alert, a near-empty budget) |
 
 ## 5. Privacy and control
 
@@ -100,7 +100,7 @@ Each skill reports the figure its screen shows - a test holds them equal.
 | AI-60 | **Saved history** | 🟡 | A6 | Conversations kept across locks as a Shape B table under the user's DEK - then part of backup, restore, DEK rotation, deletion and integrity checks. AI-ARCH §7 |
 | AI-61 | **Weekly nudge** | 🟡 | — | A short written summary on Home once a week. Needs a model call without the user asking, which A1–A5 never make |
 | AI-62 | **Receipt reading** | 🟡 | — | Read amount and merchant from a photo. Would send an image of a receipt to IBM; a separate privacy decision |
-| AI-63 | **Taglish** | ✅ | A2 | Questions in English, Filipino or Taglish are understood from A2. Replies follow the question's language (`AI_REPLY_LANGUAGE=match`) only if the Taglish golden questions pass the A2 language gate; otherwise English only (user, 2026-09-30). Template replies are English either way. Built: the switch and both prompts; the gate numbers passed (100% routed, 100% figure-checked). Waiting on the user reading the Taglish replies before `match` becomes the default |
+| AI-63 | **Taglish** | ✅ | A2 | Questions in English, Filipino or Taglish are understood from A2. Replies follow the question's language (`AI_REPLY_LANGUAGE=match`) only if the Taglish golden questions pass the A2 language gate; otherwise English only (user, 2026-09-30). Template replies are English either way. Built: the switch and both prompts; the gate numbers passed (100% routed, 100% figure-checked). **Decided 2026-09-30: replies stay English** - the user read the Taglish replies and found them awkward; the `match` switch stays in the code for a better model |
 | AI-64 | **The assistant saves entries itself** | ❌ | — | A proposal the user confirms is one tap more and removes a whole class of mistakes. STWRD decision 3 |
 | AI-65 | **Investment or product advice** | ❌ | — | Not licensed, not the app's job |
 | AI-66 | **Model reads the database / writes SQL** | ❌ | — | The data is ciphertext and SQL cannot see inside it; and the model must not decide what to read |

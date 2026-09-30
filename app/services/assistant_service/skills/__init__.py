@@ -16,7 +16,7 @@ from typing import Callable, Dict, List
 from sqlalchemy.orm import Session
 
 from app.core.crypto.user_cipher import UserCipher
-from app.services import account_service, category_service, goal_service, transaction_service
+from app.services import account_service, category_service, goal_service, recurring_service, transaction_service
 from app.services.assistant_service.facts import Facts
 from app.services.assistant_service.router import Intent
 
@@ -51,6 +51,21 @@ class Context:
         return {g.id: g.name for g in self.goals}
 
     @cached_property
+    def merchants(self) -> List[transaction_service.Merchant]:
+        """Merchants the user has typed before (TXN-24) - matched in the question by the rules, never sent
+        to the model as a list."""
+        return transaction_service.merchants(self.db, self.cipher)
+
+    @cached_property
+    def merchant_names(self) -> Dict[int, str]:
+        return dict(enumerate(sorted({m.name for m in self.merchants})))
+
+    @cached_property
+    def plan_names(self) -> Dict[int, str]:
+        """Recurring bills, pay and plans by name - \"when did I last pay Meralco?\"."""
+        return {r.id: r.name for r in recurring_service.list_rules(self.db, self.cipher, today=self.today)}
+
+    @cached_property
     def accounts(self) -> List[account_service.AccountView]:
         """Exactly what GET /accounts builds - the same call, the same figures."""
         return account_service.list_accounts(
@@ -75,8 +90,8 @@ class Context:
 
 def run(ctx: Context) -> Facts:
     from app.services.assistant_service.skills import (
-        afford, budget_status, card, cash, emergency, goals, how_to, other, payoff, review, spending,
-        subscriptions, upcoming,
+        afford, budget_status, card, cash, draft, emergency, find, goals, how_to, other, payoff, review,
+        spending, subscriptions, upcoming,
     )
 
     table: Dict[str, Callable[[Context], Facts]] = {
@@ -92,6 +107,9 @@ def run(ctx: Context) -> Facts:
         "subscriptions": subscriptions.run,
         "payoff": payoff.run,
         "how_to": how_to.run,
+        "find": find.run,
+        "draft": draft.transaction,
+        "draft_goal": draft.goal,
         "off_topic": other.off_topic,
     }
     skill = table.get(ctx.intent.skill or "")

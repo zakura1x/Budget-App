@@ -460,6 +460,11 @@ chars). A model failure is **not** an error: it is a 200 with
 
 ## 12. Capacity, failure and testing
 
+*As built (A4, 2026-09-30):* actions carry a `payload`; the kinds are `open_screen`,
+`draft_transaction`, `draft_goal` and `try_installment` (there is no `draft_budget`). `/ask` takes
+`context`, checked in `turn.context_intent`. The verifier also refuses a month the facts do not
+name. A decided answer is handed to the model as the exact first sentence.
+
 *As built (A3, 2026-09-30):* the verifier has three more refusals beside the figure check:
 `against_verdict`, `advice` and `meta` (see PHASES A3). A reply carries `verdict` and `label`
 for the chip.

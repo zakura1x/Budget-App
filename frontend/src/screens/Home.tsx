@@ -20,6 +20,8 @@ import { format, parseISO } from 'date-fns';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CategoryGrid } from '../components/CategoryGrid';
+import { AskTile } from '../components/AskTile';
+import { ExplainLink } from '../components/ExplainLink';
 import { PaydayCard } from '../components/PaydayCard';
 import { ReviewCard } from '../components/ReviewCard';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -98,6 +100,8 @@ function AlertBanner({ alerts, status, lookups }: { alerts: Alert[]; status: Bud
           ))}
         </ul>
       )}
+      {/* misc/AI AI-40 - names the alert; the server reads what is behind it */}
+      <ExplainLink ask="Explain this alert" context={{ alert: first.kind, account_id: first.account_id ?? undefined }} />
     </div>
   );
 }
@@ -314,6 +318,9 @@ export function Home() {
       ) : (
         <div className="skeleton h-[26rem] rounded-card" aria-hidden="true" />
       )}
+
+      {/* misc/AI AI-45 - only once opted in; its two questions come from what Home already shows */}
+      {loaded && <AskTile status={status?.is_current ? status : null} alerts={status?.is_current ? status.alerts : alerts} />}
 
       {/* Only once the budget status is in: the grid's range IS its cache key, so
           drawing it before the period is known fetched the month, then the period. */}

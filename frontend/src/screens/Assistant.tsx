@@ -13,16 +13,21 @@
  * goes on lock.
  */
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { GoalSheet } from '../components/GoalSheets';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { getAssistantStatus, PLAIN_SKILLS, type AssistantReply, type Tone } from '../lib/assistant';
+import {
+  getAssistantStatus, type AskContext, type AssistantAction, type AssistantReply, type DraftGoal,
+  type Tone,
+} from '../lib/assistant';
 import { afterWrite } from '../lib/invalidate';
 import { keys, STALE } from '../lib/queryKeys';
 import { useAssistantStore } from '../stores/assistantStore';
 import { usePreferencesStore } from '../stores/preferencesStore';
+import { useUiStore } from '../stores/uiStore';
 
 const MAX_CHARS = 500;
 
@@ -57,10 +62,11 @@ function Question({ text }: { text: string }) {
   );
 }
 
-function Reply({ reply, onAsk, busy }: { reply: AssistantReply; onAsk: (q: string) => void; busy: boolean }) {
+function Reply({ reply, onAsk, onAct, busy }: {
+  reply: AssistantReply; onAsk: (q: string) => void; onAct: (action: AssistantAction) => void; busy: boolean;
+}) {
   const navigate = useNavigate();
   const tone = reply.tone ? TONES[reply.tone] : null;
-  const plain = PLAIN_SKILLS.has(reply.skill);
   return (
     <Card className="space-y-3">
       {tone && (
@@ -69,7 +75,8 @@ function Reply({ reply, onAsk, busy }: { reply: AssistantReply; onAsk: (q: strin
         </span>
       )}
       <p className="whitespace-pre-wrap break-words text-body text-ink">{reply.text}</p>
-      {!reply.ai_phrased && !plain && (
+      {/* Only a reply built from figures says so: a draft, a how-to or a clarifying question has none */}
+      {!reply.ai_phrased && reply.facts.length > 0 && (
         <p className="text-footnote text-ink-3">Answered straight from your figures.</p>
       )}
 
@@ -101,7 +108,11 @@ function Reply({ reply, onAsk, busy }: { reply: AssistantReply; onAsk: (q: strin
       {reply.actions.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {reply.actions.map((a) => (
-            <Button key={a.route + a.label} variant="secondary" onClick={() => navigate(a.route)}>{a.label}</Button>
+            // A draft is the reply's point, so it gets the filled button; opening a screen stays secondary
+            <Button key={a.kind + a.label} variant={a.kind === 'open_screen' ? 'secondary' : 'primary'}
+              onClick={() => onAct(a)}>
+              {a.label}
+            </Button>
           ))}
         </div>
       )}
@@ -170,6 +181,17 @@ export function Assistant() {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const openAddSheet = useUiStore((s) => s.openAddSheet);
+  /** AI-43 - a goal the assistant set up, open in the ordinary goal sheet until the user saves or closes it. */
+  const [goalDraft, setGoalDraft] = useState<DraftGoal | null>(null);
+  // One object per draft: the sheet re-seeds its fields whenever `preset` changes identity
+  const goalPreset = useMemo(
+    () => (goalDraft ? { name: goalDraft.name, target: goalDraft.target, target_date: goalDraft.target_date } : null),
+    [goalDraft],
+  );
+  const asked = useRef(false);
 
   useEffect(() => {
     if (turns.length || pending) endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
@@ -183,6 +205,38 @@ export function Assistant() {
     } finally {
       setSaving(false);
       afterWrite('assistant', 'preferences');
+    }
+  };
+
+  // AI-40/45 - opened from an Explain link or Home's tile: ask what it carried, once, then forget it
+  // (a refresh or Back must not ask again).
+  const ready = Boolean(status?.enabled && status.opted_in);
+  useEffect(() => {
+    const state = location.state as { ask?: string; context?: AskContext } | null;
+    if (!ready || asked.current || !state?.ask) return;
+    asked.current = true;
+    void ask(state.ask, state.context);
+    navigate('.', { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  /**
+   * A reply's button (misc/AI ARCHITECTURE §8). None of these saves anything: a draft opens the
+   * ORDINARY sheet pre-filled, and the user checks it and saves there, through the normal path.
+   */
+  const act = (action: AssistantAction) => {
+    if (action.kind === 'draft_transaction') {
+      const d = action.payload;
+      openAddSheet(undefined, d.txn_date, {
+        type: d.type, amount: d.amount, accountId: d.account_id ?? undefined,
+        categoryId: d.category_id ?? undefined, merchant: d.merchant ?? undefined, note: d.notes ?? undefined,
+      });
+    } else if (action.kind === 'draft_goal') {
+      setGoalDraft(action.payload);
+    } else if (action.kind === 'try_installment') {
+      navigate('/projection', { state: { tryInstallment: action.payload } });
+    } else {
+      navigate(action.route);
     }
   };
 
@@ -252,7 +306,7 @@ export function Assistant() {
         {turns.map((reply, i) => (
           <div key={`${reply.conversation_id}-${i}`} className="space-y-3">
             <Question text={reply.question} />
-            <Reply reply={reply} onAsk={send} busy={Boolean(pending)} />
+            <Reply reply={reply} onAsk={send} onAct={act} busy={Boolean(pending)} />
           </div>
         ))}
 
@@ -267,8 +321,16 @@ export function Assistant() {
             {error}
           </p>
         )}
-        <div ref={endRef} />
+        {/* the margin keeps the newest reply clear of the question box and the tab bar it scrolls under */}
+        <div ref={endRef} className="scroll-mb-44" />
       </div>
+
+      <GoalSheet
+        goal={null}
+        open={goalDraft !== null}
+        preset={goalPreset}
+        onClose={() => setGoalDraft(null)}
+      />
 
       <form onSubmit={submit}
         className="sticky bottom-[calc(theme(spacing.tabbar)+env(safe-area-inset-bottom)+0.75rem)] z-10 mt-4 flex items-end gap-2 rounded-card bg-surface p-2 shadow-card">

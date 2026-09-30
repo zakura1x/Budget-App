@@ -13,6 +13,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { addDays, format, parseISO } from 'date-fns';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ExplainLink } from '../components/ExplainLink';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Card, SectionTitle } from '../components/ui/Card';
@@ -79,6 +80,10 @@ export function Review() {
           </div>
         )}
       />
+      {/* misc/AI AI-40 - the assistant looks back on the LAST finished period, so only offered on that one */}
+      {review && !review.later && (
+        <ExplainLink ask="How did I do last period?" context={{ screen: 'review' }} label="Ask about this period" />
+      )}
 
       {isPending && <p className="py-6 text-center text-footnote text-ink-3">Loading…</p>}
       {error && <p className="py-6 text-center text-footnote text-danger">Could not load this review.</p>}

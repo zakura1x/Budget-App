@@ -80,6 +80,11 @@ GOLDEN = [
     ("What is cash on hand?", "how_to", "en"),
     ("Sapat ba ang emergency fund ko?", "emergency", "tl"),
     ("Kumusta ang Japan trip goal ko?", "goals", "tl"),
+    # A4 - drafts (no model call, nothing written) and one merchant's entries
+    ("I just spent 250 on lunch", "draft", "en"),
+    ("Help me save ₱50,000 by December", "draft_goal", "en"),
+    ("When did I last pay at Jollibee?", "find", "en"),
+    ("Magkano nagastos ko sa Jollibee?", "find", "tl"),
     # A3 - affordability. "afford=<verdict>": the verdict was worked out BY HAND from the seeded
     # figures (see AFFORD_WORKING below) before the rules were run, and must match.
     ("Can I afford a ₱500 lunch?", "afford=yes", "en"),
@@ -163,8 +168,11 @@ def seed(api):
         ("2026-10-09", "380.00", wallet, "Transport"),
     ]
     for when, amount, account, category in entries:
-        r = api.post(f"/transactions{q}", {"type": "expense", "amount": amount, "txn_date": when,
-                                            "account_id": account, "category_id": cats[category]})
+        body = {"type": "expense", "amount": amount, "txn_date": when, "account_id": account,
+                "category_id": cats[category]}
+        if category == "Food" and when >= "2026-10-01":
+            body["merchant"] = "Jollibee"  # A4: two entries to find (1 Oct 2,100 and 7 Oct 1,320) - no figure moves
+        r = api.post(f"/transactions{q}", body)
         assert r.status_code == 201, r.text
     # A goal with nothing set aside yet, so cash on hand stays as worked out in AFFORD_WORKING
     goal = api.post("/goals", {"name": "Japan trip", "target": "60000.00", "account_id": savings,
@@ -252,7 +260,9 @@ def main() -> int:
                           + ("".join(f"      | {line}\n" for line in body["facts"]) if args.facts else ""))
 
     routed = sum(1 for r in rows if r[1] == r[2]) / len(rows)
-    phrasable = [r for r in rows if r[2].split("=")[0] not in ("off_topic", "clarify", "how_to", "ERROR")]
+    # Replies with no model call by design are not counted for or against the model
+    unphrased = ("off_topic", "clarify", "how_to", "draft", "draft_goal", "ERROR")
+    phrasable = [r for r in rows if r[2].split("=")[0] not in unphrased]
     phrased = sum(1 for r in phrasable if r[3]) / len(phrasable) if phrasable else 0.0
     times = sorted(r[4] for r in rows)
     p95 = times[min(len(times) - 1, round(0.95 * (len(times) - 1)))]

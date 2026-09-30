@@ -63,6 +63,10 @@ under `app/ai/` and `app/services/assistant_service/` is proposed.
   the Taglish part of the golden set passes the same gate as English
   (PHASES A2). Otherwise every reply is in English, and that decision is
   recorded here (AI-63).
+  **Decided 2026-09-30: English replies only** (`AI_REPLY_LANGUAGE=en`). The
+  Taglish run passed on figures, but the user read the replies and chose
+  English: several were awkward or wrong in tense. Taglish QUESTIONS are
+  still understood. Ask again when the model changes.
 
 One check is left before A1, and it isn't a decision: that this server
 reaches `IAM_MANAGEMENT_URL` and `us-south.ml.cloud.ibm.com`. QUOT on the

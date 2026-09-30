@@ -148,7 +148,9 @@ def run(ctx) -> Facts:
                 else "Not yet.",
         "no": ("No - the card's available limit is short by "
                f"{php(result.limit_short)}." if "card_limit" in result.reasons
-               else "No - your cash would go below zero, even counting the money set aside for goals."),
+               else "No - your cash would go below zero" + (
+                   ", even counting the money set aside for goals." if set_aside > ZERO
+                   else ", and waiting for your next income does not fix it.")),
     }[result.verdict]
     lines.append(f"Verdict: {verdict_text}")
 
@@ -233,6 +235,12 @@ def run(ctx) -> Facts:
     }[result.verdict]
 
     actions = [Action("open_screen", "Open months ahead", "/projection")]
+    if method == "installment" or result.verdict in ("tight", "wait", "no"):
+        # AI-44: the same plan in the app's own what-if (REC-27), where it can be tried and saved
+        actions.insert(0, Action("try_installment", "Try it as an installment", "/projection", {
+            "name": (intent.item or "Purchase")[:60], "price": str(price),
+            "payments": months if method == "installment" else INSTALLMENT_OPTIONS[0],
+        }))
     return Facts(
         skill="afford", title=f"Buying {item} for {php(price)}", lines=lines, template=template,
         sources=[Source("Budget", "/budget"), Source("Months ahead", "/projection")], actions=actions,

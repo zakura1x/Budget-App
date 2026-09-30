@@ -73,8 +73,12 @@ def run(ctx) -> Facts:
                     f"Type one on the Payoff screen to see when it clears.")
     else:
         template = "At your current payments at least one debt never clears - the Payoff screen shows which."
+    # "Which should I pay first?" asks for advice, and left to itself the model gives it ("Pay off the
+    # card first"). So the reply opens with the plain finding, and the orders are described after it.
+    lead = template.split(". ")[0].rstrip(".") + "."
     return Facts(
         skill="payoff", title="Paying off debts", lines=lines, template=template, sources=[source],
+        verdict_text=lead,
         actions=[Action("open_screen", "Open payoff planner", "/payoff")],
         tone="ok" if p.as_is.debt_free is not None else "danger",
         follow_ups=["How much do I owe on my card?", "What bills are due before payday?"],

@@ -63,7 +63,8 @@ def ask(body: AskIn, ctx: UnlockedContext = Depends(get_unlocked_context), db: S
     if not _opted_in(db, ctx):
         raise AssistantNotOptedInException("Turn the assistant on first")
     reply = turn.ask(db, ctx.cipher, question=body.question, today=body.today,
-                     conversation_id=body.conversation_id)
+                     conversation_id=body.conversation_id,
+                     context=body.context.model_dump(exclude_none=True) if body.context else None)
     return ReplyOut(**reply)
 
 

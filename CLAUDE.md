@@ -334,7 +334,7 @@ security, goals, admin and PWA (Phase 8b, all 2026-09-14) — 43 test files.
 Mounted: `auth`, `health`, `settings`, `accounts`, `statements`, `categories`,
 `tags`, `transactions`, `budgets`, `calendar`, `stats`, `recurring`,
 `subscriptions`, `projection`, `attachments`, `backups`, `data`, `goals`,
-`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1-A3).
+`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1-A4).
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -613,7 +613,7 @@ auto-lock); they are never persisted in the browser.
   on purpose (user, 2026-09-28) - do not swap in a WebAuthn package without
   asking. `users.passkeys` holds PUBLIC keys only.
 
-**The AI companion** (`misc/AI`, A1-A3 2026-09-30) - rules worth keeping:
+**The AI companion** (`misc/AI`, A1-A4 2026-09-30) - rules worth keeping:
 
 - **watsonx through the company IAM service**, the way STWRD does it:
   `app/ai/` is STWRD's loader, client and service, copied. The API key lives
@@ -640,7 +640,20 @@ auto-lock); they are never persisted in the browser.
   from the model.
 - **The reply checks** (`verifier.check`): every figure is in the facts; the
   reply does not contradict a verdict; no advice ("you should", an
-  instruction); no talk of "the facts". Any failure shows the template.
+  instruction); no talk of "the facts"; no month the facts do not name. Any
+  failure shows the template.
+- **An Explain link names a place, never a figure (A4).** `/ask` takes
+  `context` (`screen`, `alert`, `account_id`); `turn.context_intent` checks it
+  against its two tables and the user's own visible accounts, and the server
+  reads the object itself. `ExplainLink` and `AskTile` draw nothing until the
+  user has opted in (`useAssistantOn`).
+- **A draft is a button, not a write (A4).** "I spent 250 on lunch" and "help
+  me save 50,000 by December" return an action with a `payload`; the client
+  opens the ORDINARY sheet pre-filled (`AddPreset`, `GoalSheet preset`, Months
+  ahead's what-if) and the user saves. Their fields come from the question's
+  words only, no model is called, and the model can never route to `draft`,
+  `draft_goal` or `find`. `find` sends the one merchant or bill asked about -
+  never a note.
 - `scripts/ai_eval.py` is the gate: the golden questions against the real
   model on in-memory data, with affordability verdicts worked out by hand
   (`AFFORD_WORKING`). Read its replies, not just its percentages - every

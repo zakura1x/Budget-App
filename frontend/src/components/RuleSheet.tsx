@@ -142,8 +142,8 @@ export function RuleSheet({ open, rule, kind: newKind, prefill, lookups, onClose
     setEndMode(source?.end_after ? 'after' : source?.end_on ? 'on' : 'never');
     setEndAfter(String(source?.end_after ?? 12));
     setEndOn(source?.end_on ?? '');
-    setPrice(source?.installment ? typedFrom(source.installment.price) : '');
-    setPayments(String(source?.installment?.payments ?? 12));
+    setPrice(source?.installment ? typedFrom(source.installment.price) : prefill?.price ? typedFrom(prefill.price) : '');
+    setPayments(String(source?.installment?.payments ?? prefill?.payments ?? 12));
     setInterest(source?.installment?.terms === 'confirmed' ? typedFrom(source.installment.interest) : '');
     setReminder(String(source?.reminder_days ?? 3));
     setPostPast(false);

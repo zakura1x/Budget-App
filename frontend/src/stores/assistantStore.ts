@@ -8,7 +8,7 @@
  */
 import { create } from 'zustand';
 import { ApiError } from '../lib/api';
-import { askAssistant, forgetConversation, type AssistantReply } from '../lib/assistant';
+import { askAssistant, forgetConversation, type AskContext, type AssistantReply } from '../lib/assistant';
 import { buzz } from '../lib/haptics';
 import { invalidateGroups } from '../lib/queryKeys';
 
@@ -18,7 +18,7 @@ interface AssistantState {
   /** The question waiting for its answer - drawn as the last bubble with a typing indicator. */
   pending: string | null;
   error: string | null;
-  ask: (question: string) => Promise<void>;
+  ask: (question: string, context?: AskContext) => Promise<void>;
   /** Start over: drop this thread here and on the server. */
   clear: () => void;
   reset: () => void;
@@ -38,12 +38,12 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
   pending: null,
   error: null,
 
-  ask: async (question) => {
+  ask: async (question, context) => {
     const text = question.trim();
     if (!text || get().pending) return;
     set({ pending: text, error: null });
     try {
-      const reply = await askAssistant(text, get().conversationId);
+      const reply = await askAssistant(text, get().conversationId, context);
       set((s) => ({ turns: [...s.turns, reply], conversationId: reply.conversation_id, pending: null }));
       buzz('success');
     } catch (e) {

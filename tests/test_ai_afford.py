@@ -154,6 +154,20 @@ def test_the_new_skills_route(question, skill):
     assert router.by_rules(question, D, {}, {}).skill == skill
 
 
+@pytest.mark.parametrize(
+    "question, item",
+    [
+        ("Can I get a 60,000 laptop in 12 months?", "laptop"),  # was "a 60": it stopped inside the price
+        ("Can I buy a ₱22,500 laptop?", "laptop"),
+        ("Can I buy shoes for 3500 on my card?", "shoes"),
+        ("Kaya ko bang bumili ng ₱5,000 na sapatos?", "sapatos"),
+        ("Can I afford 3500?", None),
+    ],
+)
+def test_the_thing_being_bought_is_read_from_the_words(question, item):
+    assert router.by_rules(question, D, {}, {}).item == item
+
+
 def test_a_goal_named_in_the_question():
     intent = router.by_rules("How's my Japan trip?", D, {}, {}, {7: "Japan trip"})
     assert (intent.skill, intent.goal_id) == ("goals", 7)

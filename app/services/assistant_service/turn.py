@@ -55,6 +55,7 @@ def ask(
     question: str,
     today: Optional[date] = None,
     conversation_id: Optional[str] = None,
+    context: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     text = " ".join((question or "").split())
     if not text:
@@ -66,9 +67,43 @@ def ask(
             f"That's today's {settings.AI_MAX_QUESTIONS_PER_DAY} questions. The assistant is back tomorrow.")
     try:
         with llm_service.concurrency_guard.slot(cipher.user_id):
-            return _turn(db, cipher, text, today or date.today(), conversation_id)
+            return _turn(db, cipher, text, today or date.today(), conversation_id, context)
     except llm_service.ConcurrencyLimitReached as error:
         raise AssistantBusyException(str(error)) from None
+
+
+# Where an Explain link can be tapped, and the skill that explains it (AI-40)
+_SCREENS = {
+    "budget": "budget_status", "review": "review", "accounts": "cash", "projection": "upcoming",
+    "goals": "goals", "emergency": "emergency", "subscriptions": "subscriptions", "payoff": "payoff",
+    "stats": "spending",
+}
+_ALERTS = {
+    "over": "budget_status", "approaching": "budget_status", "pace": "budget_status",
+    "category_over": "budget_status", "card_due": "card", "card_limit_over": "card",
+    "card_limit_approaching": "card", "card_limit_pace": "card", "statement_differs": "card",
+    "subscription_due": "subscriptions", "subscription_cancel_by": "subscriptions",
+}
+
+
+def context_intent(context: Optional[Mapping[str, Any]], ctx: "skills.Context") -> Optional[router.Intent]:
+    """
+    The skill an Explain link asks for, or None. Everything is checked here:
+    the screen and alert against the two tables above, and an account id
+    against the user's own visible accounts - one that is not theirs, or is
+    hidden, is dropped rather than refused, and the question is routed as typed.
+    """
+    if not context:
+        return None
+    account_id = context.get("account_id")
+    account = next((a for a in ctx.visible_accounts if a.id == account_id), None) if isinstance(account_id, int) \
+        else None
+    skill = _ALERTS.get(str(context.get("alert"))) or _SCREENS.get(str(context.get("screen")))
+    if skill is None and account is not None:
+        skill = "card" if account.type == "credit" else "cash"
+    if skill is None:
+        return None
+    return router.Intent(skill=skill, account_id=account.id if account else None)
 
 
 class _Meter:
@@ -102,7 +137,8 @@ def _parse_json(reply: str) -> Mapping:
     return json.loads(match.group(0))
 
 
-def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_id: Optional[str]) -> Dict[str, Any]:
+def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_id: Optional[str],
+          context: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     started = time.perf_counter()
     memory = get_memory()
     conversation = memory.get_or_start(cipher.user_id, conversation_id)
@@ -111,7 +147,13 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
     model_name = settings.WATSONX_CHAT_MODEL
 
     ctx = skills.Context(db=db, cipher=cipher, today=today, intent=router.Intent(skill=None), question=text)
-    intent = router.by_rules(text, today, ctx.category_names, ctx.account_names, ctx.goal_names)
+    intent = router.by_rules(text, today, ctx.category_names, ctx.account_names, ctx.goal_names,
+                             ctx.merchant_names, ctx.plan_names)
+    placed = context_intent(context, ctx)
+    if placed is not None:
+        # AI-40: an Explain link names where it was tapped; that decides the skill, and the server
+        # reads the object itself - the browser names it and never supplies a figure.
+        intent.skill, intent.account_id = placed.skill, placed.account_id or intent.account_id
     if intent.skill is None and service is not None:
         def ask_json(prompt: str) -> Tuple[Mapping, Dict[str, int]]:
             reply, used = service.invoke_with_recovery(model_name, ROUTE_PARAMS, prompt)
@@ -134,7 +176,8 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
         "title": facts.title,
         "facts": list(facts.lines),
         "sources": [{"label": s.label, "route": s.route} for s in facts.sources],
-        "actions": [{"kind": a.kind, "label": a.label, "route": a.route} for a in facts.actions],
+        "actions": [{"kind": a.kind, "label": a.label, "route": a.route, "payload": a.payload}
+                    for a in facts.actions],
         "tone": facts.tone,
         "label": facts.label,
         "verdict": facts.verdict,

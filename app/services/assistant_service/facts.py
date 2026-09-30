@@ -11,7 +11,7 @@ these lines (AI-06, AI-07). `template` is the reply given without the model
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.core.utils.money import CENTS
 
@@ -26,11 +26,16 @@ class Source:
 
 @dataclass(frozen=True)
 class Action:
-    """A button under a reply. A2 only navigates; A4 adds drafts (ARCHITECTURE §8)."""
+    """
+    A button under a reply (ARCHITECTURE §8). Never a side effect: `open_screen`
+    navigates, and the three drafts open an ORDINARY sheet pre-filled from
+    `payload`, where the user checks it and saves through the normal path.
+    """
 
-    kind: str  # open_screen
+    kind: str  # open_screen | draft_transaction | draft_goal | try_installment
     label: str
-    route: str
+    route: str = ""
+    payload: Optional[Dict[str, Any]] = None
 
 
 @dataclass

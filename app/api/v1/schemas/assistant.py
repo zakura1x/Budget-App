@@ -1,7 +1,7 @@
 """Request and response shapes for /assistant (misc/AI ARCHITECTURE §10, AI-01..05)."""
 
 from datetime import date
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,17 @@ class AskIn(BaseModel):
     question: str = Field(max_length=2000)
     today: Optional[date] = None
     conversation_id: Optional[str] = Field(default=None, max_length=40)
+    # AI-40: where an Explain link was tapped. It NAMES a place; the server reads the figures itself.
+    context: Optional["AskContext"] = None
+
+
+class AskContext(BaseModel):
+    screen: Optional[str] = Field(default=None, max_length=20)
+    alert: Optional[str] = Field(default=None, max_length=30)
+    account_id: Optional[int] = None
+
+
+AskIn.model_rebuild()  # AskContext is declared after the model that names it
 
 
 class LinkOut(BaseModel):
@@ -26,8 +37,12 @@ class LinkOut(BaseModel):
     route: str
 
 
-class ActionOut(LinkOut):
-    kind: Literal["open_screen"]
+class ActionOut(BaseModel):
+    kind: Literal["open_screen", "draft_transaction", "draft_goal", "try_installment"]
+    label: str
+    route: str = ""
+    # A draft's fields, for the ordinary sheet to open pre-filled. Nothing is saved until the user does.
+    payload: Optional[Dict[str, Any]] = None
 
 
 class ReplyOut(BaseModel):

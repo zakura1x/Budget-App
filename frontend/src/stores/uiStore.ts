@@ -22,6 +22,10 @@ export interface AddPreset {
   type?: EntryType;
   /** ACC-41 - "a transaction I forgot": the difference the bank's balance showed, as a decimal string. */
   amount?: string;
+  /** misc/AI AI-42 - a draft the assistant set up from "I spent 250 on lunch": checked and saved here, by the user. */
+  categoryId?: number;
+  merchant?: string;
+  note?: string;
 }
 
 interface UiState {

@@ -30,8 +30,8 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { BillSheet } from '../components/BillSheet';
 import { RuleSheet } from '../components/RuleSheet';
@@ -310,6 +310,17 @@ export function Projection() {
   const [bill, setBill] = useState<Bill | null>(null);
   /** REC-27. The kind being set up in the sheet, and the plan being tried - never saved until you say so. */
   const [trySheet, setTrySheet] = useState<RuleKind | null>(null);
+  /** misc/AI AI-44 - an installment the assistant worked out, handed over to be tried here (and saved, or not). */
+  const [tryPrefill, setTryPrefill] = useState<RuleDraft | null>(null);
+  const location = useLocation();
+  useEffect(() => {
+    const asked = (location.state as { tryInstallment?: RuleDraft } | null)?.tryInstallment;
+    if (!asked) return;
+    setTryPrefill({ ...asked, kind: 'installment', type: 'expense' });
+    setTrySheet('installment');
+    navigate('.', { replace: true, state: null }); // once: a refresh must not reopen it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [trial, setTrial] = useState<RuleDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [trialError, setTrialError] = useState<string | null>(null);
@@ -436,8 +447,9 @@ export function Projection() {
         open={trySheet !== null}
         rule={null}
         kind={trySheet ?? 'installment'}
+        prefill={tryPrefill}
         lookups={lookups}
-        onClose={() => setTrySheet(null)}
+        onClose={() => { setTrySheet(null); setTryPrefill(null); }}
         onTry={tryPlan}
       />
     </>
