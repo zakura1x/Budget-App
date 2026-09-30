@@ -334,7 +334,7 @@ security, goals, admin and PWA (Phase 8b, all 2026-09-14) — 43 test files.
 Mounted: `auth`, `health`, `settings`, `accounts`, `statements`, `categories`,
 `tags`, `transactions`, `budgets`, `calendar`, `stats`, `recurring`,
 `subscriptions`, `projection`, `attachments`, `backups`, `data`, `goals`,
-`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1 + A2).
+`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1-A3).
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -613,7 +613,7 @@ auto-lock); they are never persisted in the browser.
   on purpose (user, 2026-09-28) - do not swap in a WebAuthn package without
   asking. `users.passkeys` holds PUBLIC keys only.
 
-**The AI companion** (`misc/AI`, A1 + A2 2026-09-30) - rules worth keeping:
+**The AI companion** (`misc/AI`, A1-A3 2026-09-30) - rules worth keeping:
 
 - **watsonx through the company IAM service**, the way STWRD does it:
   `app/ai/` is STWRD's loader, client and service, copied. The API key lives
@@ -631,8 +631,20 @@ auto-lock); they are never persisted in the browser.
 - **Opt-in** is the server-side `assistant` preference, audited as
   `ASSISTANT_ENABLED` / `ASSISTANT_DISABLED`. Conversations live in
   `assistant_service/memory.py` and `assistantStore`, and both drop on lock.
+- **"Can I afford it?" (A3) is decided by rules**, pure in
+  `app/core/utils/affordability.py`; the model explains the verdict and may
+  not change it. The cash line is Months ahead's own (`skills/afford.timeline`),
+  and only the part of a price the budget does not cover is taken off it -
+  Months ahead already counts the rest of the period's budget as spent. A
+  price comes ONLY from the question's words (`router.find_amount`), never
+  from the model.
+- **The reply checks** (`verifier.check`): every figure is in the facts; the
+  reply does not contradict a verdict; no advice ("you should", an
+  instruction); no talk of "the facts". Any failure shows the template.
 - `scripts/ai_eval.py` is the gate: the golden questions against the real
-  model on in-memory data. Read its replies, not just its percentages.
+  model on in-memory data, with affordability verdicts worked out by hand
+  (`AFFORD_WORKING`). Read its replies, not just its percentages - every
+  wrong answer so far had true numbers in it.
 
 **Phase 15** (2026-09-28): only UX-14 was chosen. Vibration goes through
 `buzz()` in `lib/haptics.ts` and nothing else calls `navigator.vibrate`; it

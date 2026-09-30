@@ -254,11 +254,18 @@ The rules return a **verdict** and **reasons**, never prose:
 
 | Verdict | Rule (all thresholds in one table in the module) |
 |---|---|
-| `yes` | Fits in what is left of the budget period **and** the projected lowest cash point stays above zero **and** the emergency fund is not touched |
-| `yes_over_budget` | Cash stays positive but the budget period goes over — say by how much and what the daily allowance becomes |
-| `tight` | Cash stays positive only by dipping into set-aside / emergency money, or the lowest point falls under one week of essentials |
-| `wait` | Cash goes negative before the next income, but not after it — report the first date it fits |
-| `no` | Cash goes negative even after the next income, or card limit left is less than the price |
+| `no` | The card's available limit is less than the price, or the cash line goes below zero even counting money set aside for goals, and no later date fixes it |
+| `wait` | It goes below zero bought now, but bought on a later income day or month start it never does — that date is reported |
+| `tight` | It only works by using money set aside for goals; or it leaves the lowest point under a week of essential spending; or it fits the budget but cash was already going below zero without it |
+| `yes_over_budget` | Cash never goes below zero, but the budget period goes over — by how much is reported |
+| `yes` | Fits the budget, and cash never goes below zero |
+
+*As built (A3, 2026-09-30).* The cash line is Months ahead's own, rebuilt point by point
+(`afford.timeline`), so the lowest point without the purchase is that screen's. Months ahead
+already counts the rest of this period's budget as spent, so only the part of the price the
+budget does not cover is taken off the line, from the day the money leaves: today in cash,
+the bill's due date on a card, one payment a month on an installment. The verdict is decided
+in the order of the table above.
 
 Alternatives are computed, not invented: the earliest date it fits
 (`wait`), the monthly cost and the new lowest point as an installment (a
@@ -452,6 +459,10 @@ chars). A model failure is **not** an error: it is a 200 with
 ---
 
 ## 12. Capacity, failure and testing
+
+*As built (A3, 2026-09-30):* the verifier has three more refusals beside the figure check:
+`against_verdict`, `advice` and `meta` (see PHASES A3). A reply carries `verdict` and `label`
+for the chip.
 
 *As built (A2, 2026-09-30):* `/assistant/status` also returns `opted_in`,
 `reply_language` and `suggestions`. The conversation store invalidates only

@@ -64,7 +64,9 @@ function Reply({ reply, onAsk, busy }: { reply: AssistantReply; onAsk: (q: strin
   return (
     <Card className="space-y-3">
       {tone && (
-        <span className={`label inline-block rounded-full border-2 px-2.5 py-0.5 ${tone.className}`}>{tone.label}</span>
+        <span className={`label inline-block rounded-full border-2 px-2.5 py-0.5 ${tone.className}`}>
+          {reply.label ?? tone.label}
+        </span>
       )}
       <p className="whitespace-pre-wrap break-words text-body text-ink">{reply.text}</p>
       {!reply.ai_phrased && !plain && (
@@ -240,7 +242,8 @@ export function Assistant() {
         {turns.length === 0 && !pending && (
           <Card className="space-y-3">
             <p className="text-body text-ink-2">
-              Ask about your budget, spending, cash, bills coming up or your cards - in English or Taglish.
+              Ask whether you can afford something, or about your budget, spending, cash, bills, cards and
+              goals - in English or Taglish.
             </p>
             <Chips items={status.suggestions} onPick={send} />
           </Card>

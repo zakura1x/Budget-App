@@ -46,6 +46,11 @@ class Facts:
     # False: answer with the template and never call the model (off-topic, a clarifying question)
     phrase: bool = True
     follow_ups: List[str] = field(default_factory=list)
+    # AI-30: a decided answer (yes | yes_over_budget | tight | wait | no). The model explains it and
+    # may not contradict it - verifier.check refuses a reply that does.
+    verdict: Optional[str] = None
+    label: Optional[str] = None  # the chip's words when the tone's own do not fit ("Wait", "No")
+    verdict_text: Optional[str] = None  # the sentence the reply must lead with
 
 
 def php(amount: Decimal) -> str:
@@ -70,6 +75,16 @@ def pct(ratio: Decimal) -> str:
 
 def days(count: int) -> str:
     return f"{count} day" if count == 1 else f"{count} days"
+
+
+def balance_line(spent: Decimal, earned: Decimal) -> str:
+    """Spending against income as a finished sentence - "income minus spending" was read as a balance."""
+    if earned == 0:
+        return f"Spent: {php(spent)}. No income was recorded in the period."
+    gap = earned - spent
+    if gap >= 0:
+        return f"Spent: {php(spent)}. Income: {php(earned)}. Income was {php(gap)} more than spending."
+    return f"Spent: {php(spent)}. Income: {php(earned)}. Spending was {php(-gap)} more than income."
 
 
 def names(items: List[str]) -> str:

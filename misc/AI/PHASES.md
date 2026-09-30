@@ -190,6 +190,51 @@ under Q4, and ask again when the model changes.
 
 ## A3 — Afford it, and the rest (AI-17 – AI-21, AI-30 – AI-35)
 
+**Status (2026-09-30): built; the gate passed.** `scripts/ai_eval.py` now asks
+56 questions of the real model. Fifteen are affordability questions whose
+verdicts were worked out by hand from the seeded figures before the rules were
+run (`AFFORD_WORKING` in the script). All 15 match.
+
+| Run | Routed right, verdicts included | Replies accepted | p50 | p95 |
+|---|---|---|---|---|
+| `AI_REPLY_LANGUAGE=en` | 100% of 56 | 98% of 52 | 595 ms | 1,449 ms |
+| `AI_REPLY_LANGUAGE=match` | 100% of 56 | 98% of 52 | 671 ms | 1,536 ms |
+
+Built as planned, with these differences and lessons:
+- **The budget-aware cash model.** Months ahead already assumes the rest of
+  this period's budget is spent. So the part of a purchase made now that fits
+  the budget is not taken off the cash line a second time; only the rest is
+  extra. A later period gives no such cover. This is stated in
+  `affordability.py` and in the facts, so a reply can say it.
+- **A sixth case, `cash_already_short`.** When the budget is more than the
+  money, Months ahead is below zero before any purchase. A purchase inside
+  the budget then gets `tight`, with the facts saying the shortfall is not its
+  doing. It first came out as `no`; a test caught it.
+- **The installment check is pure.** The plan was to go through
+  `recurring_service.trial`. That needs an account, a category and terms the
+  question does not give, so the payments are laid on the Months ahead line
+  directly (`affordability.schedule`). Nothing is written either way.
+- **Alternatives are listed only when they do better** than the way asked
+  about (`RANK`), so a reply is not padded with worse options.
+- **Three more reply checks**, all found by reading real replies:
+  `against_verdict` (a reply may not open against the decided verdict, and
+  `tight` is neither a yes nor a no), `advice` ("you should", "I recommend",
+  "advisable", or an instruction opening a sentence or clause), and `meta`
+  ("the facts do not show"). "You need to pay 2,450 on 13 Oct" is a bill
+  stated, not advice, and is allowed.
+- **Facts are written as finished sentences.** "Income minus spending:
+  -10,689" was read as a balance, and "left before buying" as "left after".
+  Each line now says the conclusion itself.
+- `how_to` answers from a hand-written index with no model call and no user
+  data.
+
+Tests: `tests/test_ai_afford.py` (62), with the A1 and A2 files 133 in all.
+
+**Still the user's call:** Taglish replies. The `match` run passes on
+figures, but several replies read awkwardly or wrongly ("Kasya lang kung
+bumili ka noong 15 Dec pa o mamaya" uses a past-tense word for a future date).
+The recommendation is to keep `AI_REPLY_LANGUAGE=en`.
+
 1. `app/core/utils/affordability.py` — pure; one threshold table; returns a
    verdict, reasons and alternatives as data.
 2. `afford` skill: gathers inputs (AI-ARCH §5.3), including the installment

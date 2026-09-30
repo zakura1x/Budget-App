@@ -36,6 +36,9 @@ export interface AssistantReply {
   sources: AssistantLink[];
   actions: (AssistantLink & { kind: 'open_screen' })[];
   tone: Tone | null;
+  /** The chip's words when the tone's own do not fit - an affordability verdict: Yes, Wait, No (AI-30). */
+  label: string | null;
+  verdict: 'yes' | 'yes_over_budget' | 'tight' | 'wait' | 'no' | null;
   follow_ups: string[];
 }
 

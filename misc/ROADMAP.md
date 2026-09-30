@@ -57,7 +57,7 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **UX-13** | Offline writes with sync-on-reconnect | deferred | 15 | L | ⏸️ |
 | **UX-14** | Haptics | deferred | 15 | S | ✅ 2026-09-28 |
 | **UX-15** | Multi-language | deferred | 15 | L | ⬜ |
-| **AI-01…67** | AI companion — ask about your money, "can I afford it?" | new (2026-09-30) | 16 | L | 🔨 A1 + A2 ✅ 2026-09-30 |
+| **AI-01…67** | AI companion — ask about your money, "can I afford it?" | new (2026-09-30) | 16 | L | 🔨 A1–A3 ✅ 2026-09-30 |
 
 **Deliberately NOT on this list** (still ❌ Out in FEATURES.md, for the reasons
 written there): push notifications (BUD-16), bank sync (ACC-10), receipt OCR and
@@ -573,10 +573,10 @@ unwrap a DEK. The PIN always stays as the fallback.
 
 Planned and tracked on its own in [AI/](AI/README.md): architecture, the
 `AI-xx` features and phases A0–A6. It uses watsonx.ai through the company IAM
-service, as STWRD does. A0 (decisions), A1 (plumbing; gate passed,
-p95 1.5 s) and A2 (the Assistant screen and five kinds of question; golden set
-100% routed and figure-checked) were done on 2026-09-30. A3 ("can I afford
-it?" and the rest) is next. Tick features in `misc/AI/FEATURES.md`; this row carries only
+service, as STWRD does. A0 (decisions), A1 (plumbing), A2 (the Assistant screen and five kinds of
+question) and A3 ("can I afford it?" by rules, plus goals, emergency fund,
+subscriptions, debts, the monthly review and how-to) were done on 2026-09-30.
+A4 (explain links, drafts, the Home tile) is next. Tick features in `misc/AI/FEATURES.md`; this row carries only
 the phase.
 
 ---

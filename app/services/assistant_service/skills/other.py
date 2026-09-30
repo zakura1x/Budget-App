@@ -10,8 +10,8 @@ from app.services.assistant_service.router import suggestions
 def off_topic(ctx) -> Facts:
     return Facts(
         skill="off_topic", title="Outside the budget", lines=[],
-        template="I can only help with your own money in this app - your budget, spending, cash, "
-                 "bills coming up and cards. Try one of these:",
+        template="I can only help with your own money in this app - your budget, spending, cash, bills, cards, "
+                 "goals, and whether you can afford something. Try one of these:",
         phrase=False, follow_ups=suggestions()[:4],
     )
 

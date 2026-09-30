@@ -41,6 +41,8 @@ class ReplyOut(BaseModel):
     sources: List[LinkOut]
     actions: List[ActionOut]
     tone: Optional[Literal["ok", "warn", "danger"]] = None
+    label: Optional[str] = None  # the chip's words when the tone's own do not fit ("Wait", "No")
+    verdict: Optional[Literal["yes", "yes_over_budget", "tight", "wait", "no"]] = None  # AI-30
     follow_ups: List[str]
 
 

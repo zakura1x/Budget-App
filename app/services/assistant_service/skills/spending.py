@@ -12,7 +12,7 @@ from typing import Iterable, Optional
 
 from app.core.utils.money import ZERO
 from app.services import stats_service
-from app.services.assistant_service.facts import Action, Facts, Source, day, names, pct, php
+from app.services.assistant_service.facts import Action, Facts, Source, balance_line, day, names, pct, php
 
 TOP = 5
 
@@ -56,7 +56,7 @@ def run(ctx) -> Facts:
     running = start <= ctx.today <= end
     lines = [
         f"Period: {label}" + (f", counted up to today ({day(ctx.today, ctx.today)})." if running else "."),
-        f"Spent: {php(t.spent)}. Income: {php(t.earned)}. Income minus spending: {php(t.net)}.",
+        balance_line(t.spent, t.earned),
         f"Average spending per day: {php(t.average_daily_spend)}.",
     ]
 

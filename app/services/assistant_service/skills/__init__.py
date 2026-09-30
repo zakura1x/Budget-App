@@ -16,7 +16,7 @@ from typing import Callable, Dict, List
 from sqlalchemy.orm import Session
 
 from app.core.crypto.user_cipher import UserCipher
-from app.services import account_service, category_service, transaction_service
+from app.services import account_service, category_service, goal_service, transaction_service
 from app.services.assistant_service.facts import Facts
 from app.services.assistant_service.router import Intent
 
@@ -27,6 +27,7 @@ class Context:
     cipher: UserCipher
     today: date
     intent: Intent
+    question: str = ""  # the user's words - only how_to reads them; every other skill reads the intent
 
     @cached_property
     def categories(self) -> Dict[int, category_service.CategoryView]:
@@ -40,6 +41,14 @@ class Context:
     @cached_property
     def category_names(self) -> Dict[int, str]:
         return {cid: view.name for cid, view in self.categories.items()}
+
+    @cached_property
+    def goals(self) -> List[goal_service.GoalView]:
+        return goal_service.list_goals(self.db, self.cipher, today=self.today)
+
+    @cached_property
+    def goal_names(self) -> Dict[int, str]:
+        return {g.id: g.name for g in self.goals}
 
     @cached_property
     def accounts(self) -> List[account_service.AccountView]:
@@ -65,7 +74,10 @@ class Context:
 
 
 def run(ctx: Context) -> Facts:
-    from app.services.assistant_service.skills import budget_status, card, cash, other, spending, upcoming
+    from app.services.assistant_service.skills import (
+        afford, budget_status, card, cash, emergency, goals, how_to, other, payoff, review, spending,
+        subscriptions, upcoming,
+    )
 
     table: Dict[str, Callable[[Context], Facts]] = {
         "budget_status": budget_status.run,
@@ -73,6 +85,13 @@ def run(ctx: Context) -> Facts:
         "cash": cash.run,
         "upcoming": upcoming.run,
         "card": card.run,
+        "afford": afford.run,
+        "review": review.run,
+        "goals": goals.run,
+        "emergency": emergency.run,
+        "subscriptions": subscriptions.run,
+        "payoff": payoff.run,
+        "how_to": how_to.run,
         "off_topic": other.off_topic,
     }
     skill = table.get(ctx.intent.skill or "")

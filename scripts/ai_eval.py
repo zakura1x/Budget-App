@@ -24,6 +24,7 @@ missing from its facts.
 import argparse
 import logging
 import os
+import re
 import statistics
 import sys
 import time
@@ -67,7 +68,62 @@ GOLDEN = [
     ("May babayaran ba ako this week?", "upcoming", "tl"),
     ("Magkano utang ko sa card?", "card", "tl"),
     ("Kailan due ang BPI Card ko?", "card", "tl"),
+    # A3 - the six skills that look further
+    ("How did I do last month?", "review", "en"),
+    ("How are my savings goals?", "goals", "en"),
+    ("How is my Japan trip goal going?", "goals", "en"),
+    ("Is my emergency fund enough?", "emergency", "en"),
+    ("What subscriptions do I have?", "subscriptions", "en"),
+    ("Which debt should I pay off first?", "payoff", "en"),
+    ("When will I be debt-free?", "payoff", "en"),
+    ("How do I add an expense?", "how_to", "en"),
+    ("What is cash on hand?", "how_to", "en"),
+    ("Sapat ba ang emergency fund ko?", "emergency", "tl"),
+    ("Kumusta ang Japan trip goal ko?", "goals", "tl"),
+    # A3 - affordability. "afford=<verdict>": the verdict was worked out BY HAND from the seeded
+    # figures (see AFFORD_WORKING below) before the rules were run, and must match.
+    ("Can I afford a ₱500 lunch?", "afford=yes", "en"),
+    ("Can I afford a ₱15,000 phone?", "afford=yes", "en"),
+    ("Can I buy a ₱21,000 TV?", "afford=yes_over_budget", "en"),
+    ("Can I buy a ₱22,500 laptop?", "afford=tight", "en"),
+    ("Can I afford a ₱25,000 laptop?", "afford=wait", "en"),
+    ("Can I afford a ₱200,000 car?", "afford=no", "en"),
+    ("Can I buy a ₱40,000 sofa on my BPI Card?", "afford=no", "en"),
+    ("Can I buy a ₱30,000 fridge on my card?", "afford=no", "en"),
+    ("Can I buy a ₱12,000 phone on my card?", "afford=yes", "en"),
+    ("Can I get an ₱18,000 phone in 6 months?", "afford=wait", "en"),
+    ("Can I afford a ₱3,000 bag in 3 months?", "afford=tight", "en"),
+    ("Should I buy ₱1,200 shoes?", "afford=yes", "en"),
+    ("Kaya ko bang bumili ng ₱5,000 na sapatos?", "afford=yes", "tl"),
+    ("Pwede ko bang bilhin ang ₱25,000 na laptop?", "afford=wait", "tl"),
+    ("Kaya ko ba ang ₱200,000 na kotse?", "afford=no", "tl"),
 ]
+
+AFFORD_WORKING = """
+The seeded user on 2026-10-10 (every figure below is from seed()):
+  Cash on hand 33,262.00 = Wallet -1,400 + BPI Savings 45,000 - BPI Card 10,338.
+  Budget 30,000 a month; October spent 9,549, so 20,451.00 is left over 22 days.
+  Ahead: Meralco 2,450 on the 13th, Salary +25,000 on the 15th, Netflix 549 on the 20th (on the card).
+  Months ahead's cash line (the remaining budget taken off at each month's start):
+    Oct  15,810 -> 13th 13,360 -> 15th 38,360 -> 20th 37,811
+    Nov  10,810 -> 13th  8,360 -> 15th 33,360 -> 20th 32,811
+    Dec   5,810 -> 13th  3,360 -> 15th 28,360 -> 20th 27,811      lowest: 3,360 on 13 Dec
+  Card: limit 50,000, 39,662 available; a purchase today is on the bill due 6 Nov.
+  Nothing is set aside for goals. A week of essential spending is 1,659.23 (W).
+
+  500 / 15,000 / 1,200 / 5,000   inside the 20,451 budget -> nothing extra -> lowest stays 3,360 -> yes
+  21,000    549 over budget -> lowest 3,360 - 549 = 2,811 (above W)            -> yes_over_budget
+  22,500  2,049 over budget -> lowest 1,311, above zero but under W            -> tight
+  25,000  4,549 over -> lowest -1,189; bought 15 Dec every later point >= 0    -> wait (15 Dec)
+  200,000 never fits, nothing set aside                                        -> no
+  40,000 on the card: 39,662 available, 338 short                              -> no
+  30,000 on the card: 9,549 extra leaves 6 Nov -> 13 Nov 8,360 - 9,549 < 0;
+         later it is 30,000 at once, more than any point holds                 -> no
+  12,000 on the card: inside the budget, nothing extra                         -> yes
+  18,000 in 6: 3,000 a month; Oct's is in the budget, Nov + Dec are extra ->
+         13 Dec 3,360 - 6,000 < 0; started 15 Nov only one falls before it     -> wait (15 Nov)
+  3,000 in 3: 1,000 a month; Nov + Dec are extra -> 13 Dec 3,360 - 2,000 = 1,360, under W   -> tight
+"""
 
 
 def parse_args():
@@ -110,6 +166,10 @@ def seed(api):
         r = api.post(f"/transactions{q}", {"type": "expense", "amount": amount, "txn_date": when,
                                             "account_id": account, "category_id": cats[category]})
         assert r.status_code == 201, r.text
+    # A goal with nothing set aside yet, so cash on hand stays as worked out in AFFORD_WORKING
+    goal = api.post("/goals", {"name": "Japan trip", "target": "60000.00", "account_id": savings,
+                               "target_date": "2027-03-31"})
+    assert goal.status_code == 201, goal.text
     for body in (
         {"kind": "standard", "type": "income", "name": "Salary", "amount": "25000.00", "account_id": savings,
          "category_id": cats["Salary"], "frequency": "monthly", "start": "2026-10-15"},
@@ -152,7 +212,15 @@ def main() -> int:
         questions = [g for g in questions if args.grep.lower() in g[0].lower()]
     rows, report = [], []
     with TestClient(main_module.app, raise_server_exceptions=True) as client:
-        logging.disable(logging.INFO)  # the request log would bury the report
+        logging.getLogger().setLevel(logging.WARNING)  # the request log would bury the report
+        # ...but keep each turn's own line: it says why a reply was replaced (never what was said)
+        turns = []
+        turn_log = logging.getLogger("app.services.assistant_service.turn")
+        turn_log.setLevel(logging.INFO)
+        turn_log.propagate = False
+        capture = logging.Handler()
+        capture.emit = lambda record: turns.append(record.getMessage())
+        turn_log.addHandler(capture)
         # The first call after a start fetches the key from IAM and builds the client
         # (6-9 s, once per process). Timed on its own so p95 measures ordinary questions.
         from app.ai import llm_service
@@ -171,15 +239,20 @@ def main() -> int:
                 report.append(f"[ERROR {response.status_code}] {question}\n    {response.text[:200]}\n")
                 continue
             body = response.json()
-            rows.append((question, expected, body["skill"], body["ai_phrased"], ms, lang))
-            mark = "ok " if body["skill"] == expected else "MISS"
+            # "afford=wait" also holds the reply to the verdict worked out by hand
+            got = body["skill"] + (f"={body['verdict']}" if "=" in expected else "")
+            rows.append((question, expected, got, body["ai_phrased"], ms, lang))
+            mark = "ok " if got == expected else "MISS"
             phrased = "model" if body["ai_phrased"] else "template"
-            report.append(f"[{mark}] ({lang}) {question}\n    expected {expected}, got {body['skill']}; "
+            reason = re.search(r"reason=(\S+)", turns[-1]) if turns else None
+            if not body["ai_phrased"] and reason and reason.group(1) != "-":
+                phrased += f" ({reason.group(1)})"
+            report.append(f"[{mark}] ({lang}) {question}\n    expected {expected}, got {got}; "
                           f"{phrased}; {ms} ms\n    > {body['text']}\n"
                           + ("".join(f"      | {line}\n" for line in body["facts"]) if args.facts else ""))
 
     routed = sum(1 for r in rows if r[1] == r[2]) / len(rows)
-    phrasable = [r for r in rows if r[2] not in ("off_topic", "clarify", "ERROR")]
+    phrasable = [r for r in rows if r[2].split("=")[0] not in ("off_topic", "clarify", "how_to", "ERROR")]
     phrased = sum(1 for r in phrasable if r[3]) / len(phrasable) if phrasable else 0.0
     times = sorted(r[4] for r in rows)
     p95 = times[min(len(times) - 1, round(0.95 * (len(times) - 1)))]

@@ -22,7 +22,7 @@ const { useAssistantStore } = await import('../stores/assistantStore');
 
 const reply = (question: string, id = 'c1'): AssistantReply => ({
   conversation_id: id, question, text: 'You have ₱4,210.00 left.', ai_phrased: true, skill: 'budget_status',
-  title: 'Budget', facts: ['Left to spend: ₱4,210.00.'], sources: [], actions: [], tone: 'ok', follow_ups: [],
+  title: 'Budget', facts: ['Left to spend: ₱4,210.00.'], sources: [], actions: [], tone: 'ok', label: null, verdict: null, follow_ups: [],
 });
 
 beforeEach(() => {

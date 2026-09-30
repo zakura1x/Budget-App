@@ -9,7 +9,7 @@ references are to [ARCHITECTURE.md](ARCHITECTURE.md) (`AI-ARCH §n`); phases to
 
 | Status | Meaning |
 |---|---|
-| ✅ **Built** | Built and tested (A1 and A2 on 2026-09-30). |
+| ✅ **Built** | Built and tested (A1, A2 and A3 on 2026-09-30). |
 | 📋 **Planned** | In scope, in the phase named. Not built. |
 | 🟡 **Later** | Wanted; the architecture leaves room; not scheduled. |
 | ❌ **Out** | Deliberately not built. Reason given. |
@@ -20,8 +20,8 @@ references are to [ARCHITECTURE.md](ARCHITECTURE.md) (`AI-ARCH §n`); phases to
 | Group | IDs | ✅ | 📋 | 🟡 | ❌ | ❓ |
 |---|---|---|---|---|---|---|
 | 1. Foundation | AI-01 – AI-08 | 8 | 0 | 0 | 0 | 0 |
-| 2. Ask about your money | AI-10 – AI-21 | 7 | 5 | 0 | 0 | 0 |
-| 3. Can I afford it? | AI-30 – AI-35 | 0 | 6 | 0 | 0 | 0 |
+| 2. Ask about your money | AI-10 – AI-21 | 12 | 0 | 0 | 0 | 0 |
+| 3. Can I afford it? | AI-30 – AI-35 | 6 | 0 | 0 | 0 | 0 |
 | 4. In context, and acting on answers | AI-40 – AI-45 | 0 | 6 | 0 | 0 | 0 |
 | 5. Privacy and control | AI-50 – AI-55 | 5 | 0 | 1 | 0 | 0 |
 | 6. Later / out | AI-60 – AI-67 | 1 | 0 | 3 | 4 | 0 |
@@ -54,22 +54,22 @@ Each skill reports the figure its screen shows - a test holds them equal.
 | AI-14 | **What's coming up** | ✅ | A2 | *"What bills are due before payday?"*, *"What's due this week?"* - the Months ahead projection and subscription reminders |
 | AI-15 | **Card questions** | ✅ | A2 | *"How much do I owe on my BPI card?"*, *"When is it due?"*, *"How much limit is left?"* - credit views (`owed_with_plans`, bills, `due_now`) |
 | AI-16 | **"Based on" panel** | ✅ | A2 | Every reply lists the facts behind it and the screens they came from, with a link to each |
-| AI-17 | **Monthly review** | 📋 | A3 | *"How did I do last month?"* - `stats_service.review` (STA-12) |
-| AI-18 | **Goals** | 📋 | A3 | *"How's my Japan fund?"*, *"How much a month to reach it by March?"* - `goal_service` (`monthly_need`, sinking funds GOA-09) |
-| AI-19 | **Emergency fund** | 📋 | A3 | *"Is my emergency fund enough?"* - `safety_service.advice` (GOA-10/11), the rules that fired, the target |
-| AI-20 | **Subscriptions and debts** | 📋 | A3 | *"What am I subscribed to?"*, *"Which debt should I pay first?"* - `subscription_service.overview`, `payoff_service.plan` (REC-35) |
-| AI-21 | **How do I…?** | 📋 | A3 | Help questions about the app answered from a hand-written index - no user data sent |
+| AI-17 | **Monthly review** | ✅ | A3 | *"How did I do last month?"* - `stats_service.review` (STA-12) |
+| AI-18 | **Goals** | ✅ | A3 | *"How's my Japan fund?"*, *"How much a month to reach it by March?"* - `goal_service` (`monthly_need`, sinking funds GOA-09) |
+| AI-19 | **Emergency fund** | ✅ | A3 | *"Is my emergency fund enough?"* - `safety_service.advice` (GOA-10/11), the rules that fired, the target |
+| AI-20 | **Subscriptions and debts** | ✅ | A3 | *"What am I subscribed to?"*, *"Which debt should I pay first?"* - `subscription_service.overview`, `payoff_service.plan` (REC-35) |
+| AI-21 | **How do I…?** | ✅ | A3 | Help questions about the app answered from a hand-written index - no user data sent |
 
 ## 3. Can I afford it?
 
 | ID | Feature | Status | Phase | Scope |
 |---|---|---|---|---|
-| AI-30 | **Affordability verdict** | 📋 | A3 | *"Can I buy a ₱18,000 phone?"* → `yes` · `yes_over_budget` · `tight` · `wait` · `no`, from pure rules in `app/core/utils/affordability.py` over budget left, cash available, the projected lowest point before next income, the emergency fund and goals' monthly needs. The model explains the verdict; it never changes it. AI-ARCH §5.3 |
-| AI-31 | **When it would fit** | 📋 | A3 | For `wait`: the first date the projection says it fits, and what income it waits for |
-| AI-32 | **Pay by card or installment** | 📋 | A3 | *"What if I put it on my card in 6 months?"* - limit left, the bill it lands on, and a what-if (REC-27, `recurring_service.trial`) of the monthly charge and new lowest point. Writes nothing |
-| AI-33 | **Take it from a goal** | 📋 | A3 | Which goal could cover it and how far its date would move |
-| AI-34 | **Effect on the budget** | 📋 | A3 | Over by how much, and the daily allowance for the rest of the period if bought today |
-| AI-35 | **Not advice** | 📋 | A3 | Replies state what the numbers show and what each option does; no "you should". No product, bank, loan or investment is ever named or recommended |
+| AI-30 | **Affordability verdict** | ✅ | A3 | *"Can I buy a ₱18,000 phone?"* → `yes` · `yes_over_budget` · `tight` · `wait` · `no`, from pure rules in `app/core/utils/affordability.py` over budget left, cash available, the projected lowest point before next income, the emergency fund and goals' monthly needs. The model explains the verdict; it never changes it. AI-ARCH §5.3 |
+| AI-31 | **When it would fit** | ✅ | A3 | For `wait`: the first date the projection says it fits, and what income it waits for |
+| AI-32 | **Pay by card or installment** | ✅ | A3 | *"What if I put it on my card in 6 months?"* - limit left, the bill it lands on, and the monthly payments laid on the Months ahead cash line (`affordability.schedule`) and the new lowest point. Writes nothing. Built pure instead of through `recurring_service.trial`, which needs an account and category the question does not give |
+| AI-33 | **Take it from a goal** | ✅ | A3 | Names a goal that already holds enough to cover it. How far that goal's date would move is not worked out yet |
+| AI-34 | **Effect on the budget** | ✅ | A3 | Over by how much, and the daily allowance for the rest of the period if bought today |
+| AI-35 | **Not advice** | ✅ | A3 | Replies state what the numbers show and what each option does; no "you should". No product, bank, loan or investment is ever named or recommended |
 
 ## 4. In context, and acting on answers
 

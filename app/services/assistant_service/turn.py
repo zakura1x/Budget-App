@@ -110,15 +110,16 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
     service = _service()
     model_name = settings.WATSONX_CHAT_MODEL
 
-    ctx = skills.Context(db=db, cipher=cipher, today=today, intent=router.Intent(skill=None))
-    intent = router.by_rules(text, today, ctx.category_names, ctx.account_names)
+    ctx = skills.Context(db=db, cipher=cipher, today=today, intent=router.Intent(skill=None), question=text)
+    intent = router.by_rules(text, today, ctx.category_names, ctx.account_names, ctx.goal_names)
     if intent.skill is None and service is not None:
         def ask_json(prompt: str) -> Tuple[Mapping, Dict[str, int]]:
             reply, used = service.invoke_with_recovery(model_name, ROUTE_PARAMS, prompt)
             meter.add(used)
             return _parse_json(reply), used
 
-        intent = router.merge(intent, router.by_model(text, today, ctx.category_names, ctx.account_names, ask_json))
+        intent = router.merge(intent, router.by_model(text, today, ctx.category_names, ctx.account_names, ask_json,
+                                                      ctx.goal_names))
     ctx.intent = intent
 
     facts = skills.run(ctx)
@@ -135,6 +136,8 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
         "sources": [{"label": s.label, "route": s.route} for s in facts.sources],
         "actions": [{"kind": a.kind, "label": a.label, "route": a.route} for a in facts.actions],
         "tone": facts.tone,
+        "label": facts.label,
+        "verdict": facts.verdict,
         "follow_ups": list(facts.follow_ups),
     }
     memory.append(cipher.user_id, conversation, Turn(question=text, reply=reply))
@@ -160,7 +163,7 @@ def _phrase(service, model_name: str, facts: Facts, question: str, history, mete
         meter.add(used)
     except Exception as error:
         return facts.template, False, llm_service.describe_model_error(error).split(" ")[0]
-    verdict = verifier.check(reply, [*facts.lines, question])
+    verdict = verifier.check(reply, [*facts.lines, question], verdict=facts.verdict)
     if not verdict.ok:
         return facts.template, False, verdict.reason
     return reply.strip(), True, ""
