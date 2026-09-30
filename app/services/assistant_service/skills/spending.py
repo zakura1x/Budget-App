@@ -5,7 +5,14 @@ one.
 
 Reads stats_service.overview - the one call behind the Stats tab - with the
 same span and day the Stats screen would send, so the totals match it.
+
+Those totals already hold the unrecorded losses and gains (a balance set to a
+different figure, ACC-29): a loss is spending and a gain is income, as Stats
+counts them since 2026-09-18. The facts say so, with each part on its own, so
+"how much did I spend including the unrecorded loss?" has its answer.
 """
+
+import re
 
 from datetime import date, timedelta
 from typing import Iterable, Optional
@@ -47,6 +54,39 @@ def _find(shares: Iterable, category_id: int):
     return None
 
 
+def _unrecorded_line(t) -> str:
+    """How much of the totals is balance corrections - the model must never have to subtract."""
+    loss, gain = t.adjustment_losses, t.adjustment_gains
+    if loss == ZERO and gain == ZERO:
+        return "There was no unrecorded loss or gain in the period: both totals are recorded entries only."
+    parts = []
+    if loss > ZERO:
+        parts.append(f"The spending total includes {php(loss)} of unrecorded loss (a balance corrected downward "
+                     f"with no entry for it); recorded expenses alone are {php(t.spent - loss)}")
+    else:
+        parts.append("There was no unrecorded loss")
+    if gain > ZERO:
+        parts.append(f"the income total includes {php(gain)} of unrecorded gain; recorded income alone is "
+                     f"{php(t.earned - gain)}")
+    else:
+        parts.append("there was no unrecorded gain")
+    return "; ".join(parts) + "."
+
+
+def _unrecorded_answer(t, label: str) -> str:
+    loss, gain = t.adjustment_losses, t.adjustment_gains
+    if loss == ZERO and gain == ZERO:
+        return (f"You spent {php(t.spent)} from {label}. There was no unrecorded loss or gain in that time, so "
+                f"that is recorded entries only.")
+    text = f"You spent {php(t.spent)} from {label}"
+    text += f", which includes {php(loss)} of unrecorded loss." if loss > ZERO else ". There was no unrecorded loss."
+    if gain > ZERO:
+        text += f" Income was {php(t.earned)}, which includes {php(gain)} of unrecorded gain."
+    else:
+        text += " There was no unrecorded gain."
+    return text
+
+
 def run(ctx) -> Facts:
     span, on = _range(ctx)
     overview = stats_service.overview(ctx.db, ctx.cipher, span=span, on=on, today=ctx.today)
@@ -57,6 +97,7 @@ def run(ctx) -> Facts:
     lines = [
         f"Period: {label}" + (f", counted up to today ({day(ctx.today, ctx.today)})." if running else "."),
         balance_line(t.spent, t.earned),
+        _unrecorded_line(t),
         f"Average spending per day: {php(t.average_daily_spend)}.",
     ]
 
@@ -93,6 +134,8 @@ def run(ctx) -> Facts:
 
     if focus:
         template = focus
+    elif re.search(r"unrecorded|adjustment|\bloss|\bgain", ctx.question or "", re.IGNORECASE):
+        template = _unrecorded_answer(t, label)
     elif top:
         template = (f"You spent {php(t.spent)} from {label}. Most of it went to "
                     f"{names([f'{_name(ctx, s)} ({php(s.amount)})' for s in top[:3]])}.")

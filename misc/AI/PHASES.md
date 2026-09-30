@@ -380,6 +380,17 @@ The gate, honestly:
 Tests: `test_ai_plumbing.py` gained the wait, the per-day totals and the admin
 route (31); the four AI files are 174.
 
+Found in use, the same day:
+- "Can you compute if how much money did I spent including the unrecorded loss
+  and gain" was answered "How much was it?": the question holds "I spent", so
+  the rules took it for an entry to record. A sentence that is asking (how
+  much, did I, compute, total, magkano...) and names no amount is no longer a
+  draft; with an amount it still is.
+- The spending skill now says how much of each total is unrecorded loss or
+  gain (Stats counts them inside spending and income), with the recorded part
+  beside it, so the model never subtracts. The question joined the golden set
+  (61); the AI tests are 181.
+
 1. Load test: 10 parallel users × 5 questions against the one worker; the
    rest of the app's p95 must not move more than 20% while it runs.
 2. Masking (AI-55), only if the user asks for it after using A2–A4.

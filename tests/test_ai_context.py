@@ -239,3 +239,49 @@ def test_a_context_never_carries_a_figure(api):
                                           "context": {"screen": "budget", "remaining": "999999.00"}})
     assert refused.status_code == 200  # the unknown key is ignored, not trusted
     assert "999,999" not in refused.json()["text"]
+
+
+# ------------------------------------------------- a question that holds "I spent" (2026-09-30)
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Can you compute if how much money did I spent including the unrecorded loss and gain",
+        "How much have I spent this month?",
+        "What's the total I spent on Food?",
+        "Magkano na ang I spent this month?",
+    ],
+)
+def test_a_question_about_what_was_spent_is_not_an_entry_to_record(question):
+    assert router.by_rules(question, D, {1: "Food"}, {}).skill == "spending"
+
+
+def test_an_entry_with_an_amount_is_still_a_draft_when_it_asks():
+    assert router.by_rules("I spent 250 on lunch, how much is left?", D, {}, {}).skill == "draft"
+    assert router.by_rules("I just bought lunch", D, {}, {}).skill == "draft"  # no amount, not asking: ask for it
+
+
+def test_spending_says_how_much_of_it_is_unrecorded_loss(api):
+    signed_up(api)
+    wallet, _, _ = money_world(api)
+    model = install(lambda p: RuntimeError("model down"))
+    question = "Can you compute if how much money did I spent including the unrecorded loss and gain"
+
+    none = ask(api, question).json()
+    assert none["skill"] == "spending" and "no unrecorded loss or gain" in none["text"]
+
+    fixed = api.patch(f"/accounts/{wallet}?today={TODAY}", {"name": "Wallet", "type": "cash", "balance": "15000.00",
+                                                           "balance_action": "adjust"})
+    assert fixed.status_code == 200, fixed.text
+    totals = api.get(f"/stats/overview?span=month&on={TODAY}&today={TODAY}").json()["totals"]
+    assert totals["adjustment_losses"] == "500.00"
+
+    reply = ask(api, question).json()
+    assert reply["skill"] == "spending"
+    # Stats' own total, which already holds the loss - and the loss named on its own
+    assert f"₱{Decimal(totals['spent']):,.2f}" in reply["text"] and "₱500.00 of unrecorded loss" in reply["text"]
+    assert "no unrecorded gain" in reply["text"]
+    line = next(f for f in reply["facts"] if "unrecorded loss" in f)
+    assert f"recorded expenses alone are ₱{Decimal(totals['spent']) - Decimal('500.00'):,.2f}" in line
+    assert "unrecorded loss" in model.prompts[-1]  # the model is handed the split, never asked to subtract

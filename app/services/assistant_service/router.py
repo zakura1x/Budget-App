@@ -53,7 +53,7 @@ _KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "spending": (
         r"\bspen[dt]\b", r"\bspending\b", r"\bexpenses?\b", r"\bwhere did\b", r"\bwent\b",
         r"\bgastos\b", r"\bginastos\b", r"\bnagastos\b", r"\bgumastos\b", r"\bnapunta\b",
-        r"\bcompared?\b", r"\bvs\.?\b", r"\btop categor",
+        r"\bcompared?\b", r"\bvs\.?\b", r"\btop categor", r"\bunrecorded\b",
     ),
     "budget_status": (
         r"\bbudget\b", r"\bleft\b", r"\bremaining\b", r"\ballowance\b", r"\bon track\b", r"\bper day\b",
@@ -87,7 +87,11 @@ _EMERGENCY = (r"\bemergency\b", r"\bsafety net\b", r"\bpang-?emergency\b")
 _DRAFT = (r"\bi (?:just |also )?(?:spent|paid|bought|got paid|received|earned)\b", r"\b(?:log|record) (?:an? |my )?\S",
           r"\badd (?:an? )?(?:expense|entry|income|transaction) (?:of|for)\b", r"\bgumastos ako\b",
           r"\bnagbayad ako\b", r"\bbumili ako\b", r"\bnatanggap ko\b", r"\bsumahod ako\b")
-_INCOME_WORDS = r"\bgot paid\b|\breceived\b|\bearned\b|\bnatanggap ko\b|\bsumahod\b|\bincome\b"
+# ...unless it is ASKING and names no amount: "how much did I spent?" holds "I spent" too, and was
+# answered "How much was it?" (user, 2026-09-30). With an amount it is still an entry to record.
+_ASKING = (r"\bhow (?:much|many)\b", r"\b(?:did|have|has|do) i\b", r"\bmagkano\b", r"\bilan\b",
+           r"\b(?:compute|calculate|total|sum)\b", r"^\s*(?:what|when|where|which|why)\b")
+_INCOME_WORDS =r"\bgot paid\b|\breceived\b|\bearned\b|\bnatanggap ko\b|\bsumahod\b|\bincome\b"
 # "Help me save ₱50,000 for December" - a goal to set up (AI-43)
 _DRAFT_GOAL = (r"\bhelp me save\b", r"\bi want to save\b", r"\bi(?:'d| would) like to save\b",
                r"\bsave up (?:₱|php|p?\d)", r"\b(?:start|make|create|set up) a (?:savings )?goal\b", r"\bnew goal\b",
@@ -346,12 +350,13 @@ def find_goal_name(question: str) -> Optional[str]:
     return None if name.lower() in _MONTHS or name.lower() in _NOT_ITEMS else name[0].upper() + name[1:]
 
 
-def _skill_by_rules(text: str, scores: Dict[str, int], category_id, goal_id, named: bool = False) -> Optional[str]:
+def _skill_by_rules(text: str, scores: Dict[str, int], category_id, goal_id, named: bool = False,
+                    amount=None) -> Optional[str]:
     if _any(text, _HOW_TO):
         return "how_to"
     if _any(text, _DRAFT_GOAL):
         return "draft_goal"
-    if _any(text, _DRAFT):
+    if _any(text, _DRAFT) and not (amount is None and _any(text, _ASKING)):
         return "draft"
     if _any(text, _AFFORD):
         return "afford"
@@ -393,7 +398,7 @@ def by_rules(
     known_merchant = find_name(question, merchants or {})
     method, months = find_method(question)
     skill = _skill_by_rules(text, keyword_scores(question), category_id, goal_id,
-                            named=rule_id is not None or known_merchant is not None)
+                            named=rule_id is not None or known_merchant is not None, amount=find_amount(question))
     intent = Intent(
         skill=skill,
         period=find_period(question, today), window=find_window(question),

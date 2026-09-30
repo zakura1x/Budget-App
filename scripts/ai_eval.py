@@ -47,6 +47,8 @@ GOLDEN = [
     ("How much did I spend on Transport in September?", "spending", "en"),
     ("What are my biggest expenses this month?", "spending", "en"),
     ("Am I spending more than last month?", "spending", "en"),
+    # 2026-09-30: holds "I spent", and was taken for an entry to record
+    ("Can you compute if how much money did I spent including the unrecorded loss and gain", "spending", "en"),
     ("How much cash do I have?", "cash", "en"),
     ("What's my net worth?", "cash", "en"),
     ("How much is in BPI Savings?", "cash", "en"),
