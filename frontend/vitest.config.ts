@@ -1,5 +1,5 @@
 /**
- * Vitest - the caching layer's tests (misc/UX_RESPONSIVENESS_PLAN.md §4.4).
+ * Vitest - the caching layer's tests (misc/archive/UX_RESPONSIVENESS_PLAN.md §4.4).
  *
  * Kept apart from vite.config.ts so the build config stays exactly what it
  * was. These tests cover logic that fails SILENTLY - a freshness guard that

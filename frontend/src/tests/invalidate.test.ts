@@ -1,5 +1,5 @@
 /**
- * `afterWrite` and the key table (misc/UX_RESPONSIVENESS_PLAN.md §2.3/§2.4).
+ * `afterWrite` and the key table (misc/archive/UX_RESPONSIVENESS_PLAN.md §2.3/§2.4).
  *
  * This is the file that decides whether a write reaches the rest of the app.
  * Eleven call sites used to answer that question for themselves and six of

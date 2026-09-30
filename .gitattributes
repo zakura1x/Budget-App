@@ -15,4 +15,4 @@ CLAUDE.md export-ignore
 
 # Screenshots of each phase's changes (made-up local data): kept in the repository and
 # on GitHub, but the server has no use for them, so they stay out of the release zip.
-misc/screenshots/** export-ignore
+misc/archive/screenshots/** export-ignore

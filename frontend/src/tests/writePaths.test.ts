@@ -1,5 +1,5 @@
 /**
- * Every write tells the app what it touched (misc/UX_RESPONSIVENESS_PLAN.md
+ * Every write tells the app what it touched (misc/archive/UX_RESPONSIVENESS_PLAN.md
  * Part 3, and the CLAUDE.md rule "a component never invalidates by hand").
  *
  * This reads the source rather than running it, because what went wrong before

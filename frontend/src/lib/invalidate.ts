@@ -1,5 +1,5 @@
 /**
- * What a write touched, said once (misc/UX_RESPONSIVENESS_PLAN.md §2.4).
+ * What a write touched, said once (misc/archive/UX_RESPONSIVENESS_PLAN.md §2.4).
  *
  * Before this, every sheet that wrote something bumped `ledgerStore.version`
  * by hand and trusted the screens keyed on it to refetch. That signal does

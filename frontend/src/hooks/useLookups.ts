@@ -5,7 +5,7 @@
  * These three are the most fetched answers in the app: seventeen screens and
  * components ask for them, and before the cache every one of them fetched its
  * own copy on every mount (plan §1.2/§1.3). They now come from the query cache
- * (misc/UX_RESPONSIVENESS_PLAN.md §2.2), so the whole app shares one copy of
+ * (misc/archive/UX_RESPONSIVENESS_PLAN.md §2.2), so the whole app shares one copy of
  * each, a second screen needing them costs nothing, and a write refreshes them
  * through `afterWrite` rather than through a counter.
  *

@@ -1868,7 +1868,7 @@ Found while using the app (2026-09-20):
     was a one-legged posting: the only shape for it is a balance adjustment,
     which Stats would read as income (2026-09-18).
 
-Found while building Phase 10 (2026-09-20) - misc/UX_RESPONSIVENESS_PLAN.md:
+Found while building Phase 10 (2026-09-20) - misc/archive/UX_RESPONSIVENESS_PLAN.md:
   - RESOLVED 2026-09-20 (steps 1-6 of that plan): every tab switch used to
     refetch from nothing - each screen held its data in local useState and
     loaded it in a mount effect, so a visit cost 2-7 requests and always showed

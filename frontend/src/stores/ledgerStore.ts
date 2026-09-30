@@ -10,7 +10,7 @@
  * response replaces it, or `failPending` takes it back out.
  *
  * `load` SKIPS the request when the same filters were fetched within the
- * minute (misc/UX_RESPONSIVENESS_PLAN.md step 4), so opening Home again costs
+ * minute (misc/archive/UX_RESPONSIVENESS_PLAN.md step 4), so opening Home again costs
  * nothing. Every write forces it - `afterWrite('transactions')`, and the
  * `Outcome` paths below - so what is on screen can only lag another tab.
  */

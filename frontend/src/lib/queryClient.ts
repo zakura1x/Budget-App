@@ -1,5 +1,5 @@
 /**
- * The one query client (misc/UX_RESPONSIVENESS_PLAN.md §2.1, D1).
+ * The one query client (misc/archive/UX_RESPONSIVENESS_PLAN.md §2.1, D1).
  *
  * It holds what the API returned, in PAGE MEMORY ONLY. Nothing here is ever
  * persisted: no `persistQueryClient`, no storage persister, no IndexedDB

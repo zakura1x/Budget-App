@@ -1,5 +1,5 @@
 /**
- * Where you were on each screen (misc/UX_RESPONSIVENESS_PLAN.md §2.5, step 6).
+ * Where you were on each screen (misc/archive/UX_RESPONSIVENESS_PLAN.md §2.5, step 6).
  *
  * Half of "it reloaded everything" was never the data: every return to a tab
  * started at the top. It used to do that by accident - the screen came back

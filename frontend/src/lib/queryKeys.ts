@@ -1,5 +1,5 @@
 /**
- * Every cache key in one place (misc/UX_RESPONSIVENESS_PLAN.md §2.3), and the
+ * Every cache key in one place (misc/archive/UX_RESPONSIVENESS_PLAN.md §2.3), and the
  * map from "what a write touched" to the keys that go stale with it.
  *
  * A key CARRIES THE CLIENT'S `today` wherever the endpoint takes one. Almost

@@ -270,7 +270,7 @@ past day's typed-bill state cannot be reconstructed.
 >
 > **✅ Built 2026-09-28** — all four and the three fixes; 21 new tests (867 in
 > all, 0 failed), checked in the browser on a local in-memory copy, screenshots
-> in misc/screenshots/phase-12/. Where the build differed from the plan below:
+> in misc/archive/screenshots/phase-12/. Where the build differed from the plan below:
 > - **CAL-07** totals only what leaves cash on hand (each item's `effect`, as
 >   Months ahead does): a loan's installment charge and a card payment between
 >   counted accounts are listed, never counted as money going out.
@@ -347,7 +347,7 @@ month (expense and income splits only).
 >
 > **✅ Built 2026-09-28** — all four; 25 new tests (892 in all, 0 failed),
 > checked in the browser on a local in-memory copy, screenshots in
-> misc/screenshots/phase-13/. Where the build differed from the plan below:
+> misc/archive/screenshots/phase-13/. Where the build differed from the plan below:
 > - **A goal has a kind** — saving, sinking or emergency — and there is at most
 >   ONE emergency fund. A sinking fund may *follow* a yearly bill (`rule_id`,
 >   an expense rule): its target and date come from the bill's next occurrence
@@ -471,7 +471,7 @@ emergency fund first). One tap sets each part aside through `goal_service.add_mo
 >
 > **✅ Built 2026-09-28** — all four; 32 new tests (924 in all, 0 failed),
 > checked in the browser on a local in-memory copy with a VIRTUAL
-> authenticator, screenshots in misc/screenshots/phase-14/. Where the build
+> authenticator, screenshots in misc/archive/screenshots/phase-14/. Where the build
 > differed from the plan below:
 > - **ACC-41** also covers cash (a counted wallet) and member cards; a
 >   balance adjustment dated after the checked day answers the check, so

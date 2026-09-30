@@ -2,8 +2,8 @@
 
 Written 2026-09-23, from one question: *what is the next update or upgrade?*
 
-This is a survey, not a decision. `misc/UX_RESPONSIVENESS_PLAN.md` and
-`misc/BILLS_FIX_PLAN.md` both open with their decisions already made; this one
+This is a survey, not a decision. `misc/archive/UX_RESPONSIVENESS_PLAN.md` and
+`misc/archive/BILLS_FIX_PLAN.md` both open with their decisions already made; this one
 does not. Part 1 is what the docs say is unfinished, Part 2 is what your own
 request log says is slow, Parts 4–5 are what is worth building. The decisions
 you need to make are collected at the end, and nothing here should be built

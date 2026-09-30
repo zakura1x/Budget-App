@@ -248,7 +248,7 @@ first account exists.
   function reloads `ledgerStore` and `budgetStore` and bumps the version every
   screen keys its effect on; bumping `version` at a call site, or calling
   `ledger.load()` there, is how eleven writes used to go missing from Home.
-  The rest of the plan it belongs to is `misc/UX_RESPONSIVENESS_PLAN.md`.
+  The rest of the plan it belongs to is `misc/archive/UX_RESPONSIVENESS_PLAN.md`.
 - `misc/ARCHITECTURE.md` section numbers and `misc/FEATURES.md` feature IDs are
   cited in code comments; keep new comments doing the same.
 

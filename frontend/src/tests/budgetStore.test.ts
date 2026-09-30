@@ -1,5 +1,5 @@
 /**
- * The budget store's freshness rules (misc/UX_RESPONSIVENESS_PLAN.md step 4).
+ * The budget store's freshness rules (misc/archive/UX_RESPONSIVENESS_PLAN.md step 4).
  *
  * `/budgets/current` is the slowest call in the app - ~600 ms - and Home asked
  * for it on every single visit. What is guarded here is that it stops doing

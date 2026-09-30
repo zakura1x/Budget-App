@@ -1,5 +1,5 @@
 /**
- * The ledger store's freshness rules (misc/UX_RESPONSIVENESS_PLAN.md step 4).
+ * The ledger store's freshness rules (misc/archive/UX_RESPONSIVENESS_PLAN.md step 4).
  *
  * Every test here counts CALLS, not results. A guard that skips a fetch it
  * should have made does not throw - it shows yesterday's figure, which is the

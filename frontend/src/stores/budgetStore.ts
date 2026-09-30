@@ -12,7 +12,7 @@
  * matter. With a budget they arrive inside `status` as before.
  *
  * `load` SKIPS the request when what is on screen is still fresh
- * (misc/UX_RESPONSIVENESS_PLAN.md step 4): `/budgets/current` is the slowest
+ * (misc/archive/UX_RESPONSIVENESS_PLAN.md step 4): `/budgets/current` is the slowest
  * call in the app at ~600 ms, and Home asked for it on every single visit.
  * Every write forces it instead (`afterWrite` -> `load(null, { force: true })`),
  * so skipping can only ever hide another tab's change for a minute.

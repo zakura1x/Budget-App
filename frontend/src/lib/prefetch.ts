@@ -1,5 +1,5 @@
 /**
- * Getting there before the finger does (misc/UX_RESPONSIVENESS_PLAN.md §2.5,
+ * Getting there before the finger does (misc/archive/UX_RESPONSIVENESS_PLAN.md §2.5,
  * step 5).
  *
  * Three moments:
