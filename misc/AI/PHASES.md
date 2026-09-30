@@ -339,9 +339,12 @@ resolves to nothing.
 ## A5 — Hardening and deploy (AI-55, if chosen)
 
 **Status (2026-09-30): built as far as this PC reaches.** Still to do on the
-server: read the shared venv's package versions and lower the floors in
-`requirements.txt`, add the `.env` block, run `ai_health.py --measure 20`, and
-the pilot week. `misc/DEPLOY.md` has the steps.
+server: install the packages, add the `.env` block, run
+`ai_health.py --measure 20`, and watch the first week. `misc/DEPLOY.md` has the
+steps. Two decisions by the user the same day: the package floors stay at
+STWRD's versions (the shared venv is upgraded if it is older), and there is no
+pilot list - `AI_ALLOWED_USER_IDS` stays blank, so every account may turn the
+assistant on.
 
 What was built:
 - **Load test** - `scripts/ai_load.py`. The real app as one uvicorn worker in

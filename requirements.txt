@@ -90,9 +90,10 @@ orjson>=3.9.0
 # The same SDK QUOT, DMS and STWRD use; QUOT already has it in the shared
 # venv. Imported only under app/ai, only when a question is asked with
 # AI_ENABLED=True, so the app runs - and every test runs - without them.
-# These floors are STWRD's pins. BEFORE installing on the server, run
-# `pip list` in the shared venv and lower each floor to the version QUOT has
-# (user decision 2026-09-30: never upgrade what QUOT runs), then check with
+# These floors are STWRD's pins, and they stay (user decision 2026-09-30,
+# replacing the earlier "lower them to what QUOT has"): the server installs
+# these versions. If the shared venv holds older ones, pip upgrades them for
+# QUOT too - the dry run names every package it would change, so read it first:
 #     pip install -r requirements.txt --dry-run
 ibm-watsonx-ai>=1.6.3
 requests>=2.32.0

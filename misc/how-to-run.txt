@@ -269,7 +269,8 @@ THE AI ASSISTANT  (misc/AI - watsonx through the company IAM service)
 ═══════════════════════════════════════════════════════════════════
 ON / OFF: AI_ENABLED in .env, then restart. Off means nothing is loaded
 and nothing is called. Each person also turns it on for themselves
-(More -> Assistant); AI_ALLOWED_USER_IDS limits who may.
+(More -> Assistant). AI_ALLOWED_USER_IDS is left blank - every account
+may; account numbers there would limit it to those.
 
 WHAT LEAVES THE SERVER: the question, and the figures and the account,
 category and goal names needed to answer it - to IBM watsonx (us-south).
