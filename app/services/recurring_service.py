@@ -577,7 +577,8 @@ def plans_owed(db: Session, cipher: UserCipher) -> PlansOwed:
         data = record.data
         if data.get("kind") != "installment":
             continue
-        status = _installment_status(record.id, data, context.posted.get(record.id, []))
+        status = _installment_status(record.id, data, context.posted.get(record.id, []),
+                                     context.covered.get(record.id, ZERO))
         if status.closed:
             continue
         account = int(data["account_id"])
@@ -870,7 +871,7 @@ def pay_off(db: Session, cipher: UserCipher, rule_id: int, *, today: Optional[da
         raise BusinessRuleException("Only an installment can be paid off")
     context = _Context.load(db, cipher)
     posted = context.posted.get(rule_id, [])
-    status = _installment_status(rule_id, data, posted)
+    status = _installment_status(rule_id, data, posted, context.covered.get(rule_id, ZERO))
     if status.closed:
         raise BusinessRuleException("This plan is already paid")
 
@@ -1035,7 +1036,7 @@ def pay_plan(
 
     context = _Context.load(db, cipher)
     posted = context.posted.get(rule_id, [])
-    status = _installment_status(rule_id, data, posted)
+    status = _installment_status(rule_id, data, posted, context.covered.get(rule_id, ZERO))
     if status.closed:
         raise BusinessRuleException("This plan is already paid")
     if amount > status.left_to_pay:
@@ -1263,12 +1264,16 @@ class _Context:
     reminders: Dict[int, int]
     receipts: Dict[int, int] = field(default_factory=dict)  # REC-34 - a converted purchase's receipt
     cancelled: Dict[int, date] = field(default_factory=dict)  # SUB-07 - a subscription's cancelled day
+    covered: Dict[int, Decimal] = field(default_factory=dict)  # REC-32 - a loan's plain payments, per plan
 
     @classmethod
     def load(cls, db: Session, cipher: UserCipher) -> "_Context":
         posted: Dict[int, List[TransactionView]] = {}
         days: Dict[int, Set[date]] = {}
+        money_in: List[TransactionView] = []  # every transfer's in leg, for _loan_payments
         for view in transaction_service.views(db, cipher):
+            if view.type == "transfer" and view.direction == "in":
+                money_in.append(view)
             if view.recurring_id is None:
                 continue
             posted.setdefault(view.recurring_id, []).append(view)
@@ -1290,7 +1295,67 @@ class _Context:
                 original = hidden.get(int(rule.data["from_transaction"]), include_deleted=True)
                 if original is not None and original.data.get("attachment_id"):
                     receipts[rule.id] = int(original.data["attachment_id"])
-        return cls(rules, posted, days, reminders, receipts, cancelled)
+        covered = _loan_payments(db, cipher, rules, posted, money_in)
+        return cls(rules, posted, days, reminders, receipts, cancelled, covered)
+
+
+def _loan_payments(
+    db: Session,
+    cipher: UserCipher,
+    rules: Sequence[Any],
+    posted: Mapping[int, Sequence[TransactionView]],
+    money_in: Sequence[TransactionView],
+) -> Dict[int, Decimal]:
+    """
+    REC-32 / ACC-40 (fixed 2026-09-30, user: "I add a payment each month, the
+    bills and plans on this account do not deduct anything"). Money paid into a
+    BORROWED account without a plan's id - the account's monthly payment rule,
+    or a transfer from the add sheet - still pays its plans. It covers their
+    uncovered schedule OLDEST PAYMENT FIRST across every plan on the account,
+    closed ones included (a finished plan was paid by this money too, and must
+    not hand it on to the next one); only what is left after every plan is the
+    loan's own. Returns what each plan gets, which _installment_status adds to
+    the money paid on the plan itself.
+
+    Only a borrowed account: money coming into a debit or savings account that
+    carries a plan is salary, not a payment, and a card's plans are paid
+    through its bills (ACC-35).
+    """
+    plans = [r for r in rules if r.data.get("kind") == "installment"]
+    if not plans:
+        return {}
+    plan_ids = {r.id for r in plans}
+    pool: Dict[int, Decimal] = {}
+    for view in money_in:
+        if view.recurring_id not in plan_ids:
+            pool[view.account_id] = pool.get(view.account_id, ZERO) + view.amount
+    borrowed = {r.id for r in AccountRepository(db, cipher).list() if r.data.get("type") == "borrowed"}
+    covered: Dict[int, Decimal] = {}
+    for account in borrowed:
+        left = pool.get(account, ZERO)
+        if left <= ZERO:
+            continue
+        rows: List[Tuple[date, int, Decimal]] = []
+        for record in plans:
+            data = record.data
+            if int(data["account_id"]) != account:
+                continue
+            # What the plan's own payments already cover, as plans_owed reads it.
+            prepaid = total(money(p["amount"]) for p in data.get("prepayments") or [])
+            own = max(total(v.amount for v in posted.get(record.id, ())
+                            if v.type == "transfer" and v.direction == "in") - prepaid, ZERO)
+            for day, price, interest in installment_plan(data):
+                taken = min(own, price + interest)
+                own -= taken
+                if price + interest - taken > ZERO:
+                    rows.append((day, record.id, price + interest - taken))
+        for _day, rule_id, amount in sorted(rows):
+            if left <= ZERO:
+                break
+            taken = min(left, amount)
+            left -= taken
+            covered[rule_id] = covered.get(rule_id, ZERO) + taken
+    return covered
 
 
 def _expand(db: Session, cipher: UserCipher, records: Sequence[Any], today: date) -> Expansion:
@@ -1384,7 +1449,8 @@ def _view(rule_id: int, data: Mapping[str, Any], context: _Context, today: date)
          if not o.paused and o.on not in posted_days),
         None,
     )
-    installment = _installment_status(rule_id, data, posted) if data.get("kind") == "installment" else None
+    installment = (_installment_status(rule_id, data, posted, context.covered.get(rule_id, ZERO))
+                   if data.get("kind") == "installment" else None)
     pauses = data.get("pauses") or []
     return RuleView(
         id=rule_id,
@@ -1421,7 +1487,10 @@ def _view(rule_id: int, data: Mapping[str, Any], context: _Context, today: date)
     )
 
 
-def _installment_status(rule_id: int, data: Mapping[str, Any], posted: Sequence[TransactionView]) -> InstallmentStatus:
+def _installment_status(
+    rule_id: int, data: Mapping[str, Any], posted: Sequence[TransactionView], covered: Decimal = ZERO
+) -> InstallmentStatus:
+    """`covered` is the plan's share of a loan's plain payments (_Context.covered, _loan_payments)."""
     price = money(data["price"])
     payments = int(data["payments"])
     start = _as_date(data["start"])
@@ -1440,7 +1509,7 @@ def _installment_status(rule_id: int, data: Mapping[str, Any], posted: Sequence[
     paid = total(v.amount for v in posted if v.type == "expense")
     remaining = max(whole - paid, ZERO)
     per_payment = schedule[0].amount if schedule else split_schedule(price, payments)[0]
-    money_paid = total(v.amount for v in posted if v.type == "transfer" and v.direction == "in")
+    money_paid = total(v.amount for v in posted if v.type == "transfer" and v.direction == "in") + covered
     posted_days = {v.recurring_on for v in posted if v.type == "expense" and v.recurring_on is not None}
     to_come = [o for o in schedule if o.on not in posted_days]
     return InstallmentStatus(

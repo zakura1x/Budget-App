@@ -320,6 +320,91 @@ def test_a_borrowed_account_with_no_plan_has_no_dues(session, owner):
     assert view.cash_amount == D("-2000.00")
 
 
+# ------------------------------------ money paid in without the plan's id (2026-09-30)
+
+
+def plan_status(session, owner, rule_id):
+    return recurring_service.get_rule(session, owner, rule_id, today=TODAY).installment
+
+
+def test_the_monthly_payment_rule_pays_the_plan(session, owner, loan):
+    """
+    2026-09-30, user: "I add a payment each month, the bills and plans on this
+    account do not deduct anything". The payment was the account's own "Set a
+    monthly payment" rule, whose transfers carry THAT rule's id, not the plan's.
+    """
+    recurring_service.create_rule(session, owner, {
+        "kind": "standard", "type": "transfer", "name": "Papa bern payment", "account_id": loan.bank,
+        "counter_account_id": loan.person, "frequency": "monthly", "start": "2026-09-15", "amount": "5000.00",
+        "post_past": True,
+    }, today=TODAY)
+    person = next(v for v in views(session, owner) if v.id == loan.person)
+    assert person.dues.overdue == ZERO
+    assert person.dues.due_now == D("5000.00")
+    assert person.dues.left_to_pay == D("180000.00")
+    status = plan_status(session, owner, loan.plan)
+    assert (status.money_paid, status.left_to_pay) == (D("5000.00"), D("180000.00"))
+    assert owed(session, owner, loan.person) == D("180000.00")
+
+
+def test_a_plain_transfer_into_the_loan_pays_the_plan(session, owner, loan):
+    transaction_service.create_transaction(session, owner, {
+        "type": "transfer", "amount": "7000.00", "account_id": loan.bank, "counter_account_id": loan.person,
+        "txn_date": TODAY.isoformat(),
+    }, today=TODAY)
+    person = next(v for v in views(session, owner) if v.id == loan.person)
+    # September's 5,000 and 2,000 of October's.
+    assert person.dues.overdue == ZERO
+    assert person.dues.dues[0].amount == D("3000.00")
+    assert plan_status(session, owner, loan.plan).left_to_pay == D("178000.00")
+
+
+def test_a_plain_payment_after_a_plan_payment_is_not_counted_twice(session, owner, loan):
+    pay(session, owner, loan, "5000.00")  # September's, on the plan
+    transaction_service.create_transaction(session, owner, {
+        "type": "transfer", "amount": "5000.00", "account_id": loan.bank, "counter_account_id": loan.person,
+        "txn_date": TODAY.isoformat(),
+    }, today=TODAY)
+    status = plan_status(session, owner, loan.plan)
+    assert (status.money_paid, status.left_to_pay) == (D("10000.00"), D("175000.00"))
+    person = next(v for v in views(session, owner) if v.id == loan.person)
+    assert person.dues.next_on == date(2026, 11, 15)  # October's is covered early
+
+
+def test_plain_payments_cover_the_oldest_bill_across_plans(session, owner, loan):
+    """Two plans on one loan: the money takes the oldest unpaid payment first, whichever plan it is."""
+    phone = recurring_service.create_rule(session, owner, {
+        "kind": "installment", "name": "Phone", "account_id": loan.person,
+        "category_id": category_service.create_category(session, owner, {"name": "Gadgets"}).id,
+        "frequency": "monthly", "start": "2026-09-01", "price": "12000.00", "payments": 12, "post_past": True,
+    }, today=TODAY)
+    transaction_service.create_transaction(session, owner, {
+        "type": "transfer", "amount": "6000.00", "account_id": loan.bank, "counter_account_id": loan.person,
+        "txn_date": TODAY.isoformat(),
+    }, today=TODAY)
+    # Phone's 1 Sep (1,000), Motorcycle's 15 Sep (5,000).
+    assert plan_status(session, owner, phone.id).money_paid == D("1000.00")
+    assert plan_status(session, owner, loan.plan).money_paid == D("5000.00")
+
+
+def test_money_into_a_debit_account_never_pays_a_plan_on_it(session, owner):
+    """Salary into a bank account that carries a plan is not a payment - only a borrowed account's is."""
+    bank = account_service.create_account(session, owner, {"name": "BDO", "type": "debit",
+                                                           "opening_balance": "1000.00"})
+    wallet = account_service.create_account(session, owner, {"name": "Wallet", "type": "cash",
+                                                             "opening_balance": "9000.00"})
+    plan = recurring_service.create_rule(session, owner, {
+        "kind": "installment", "name": "Laptop", "account_id": bank.id,
+        "category_id": category_service.create_category(session, owner, {"name": "Gadgets"}).id,
+        "frequency": "monthly", "start": "2026-09-15", "price": "6000.00", "payments": 6, "post_past": True,
+    }, today=TODAY)
+    transaction_service.create_transaction(session, owner, {
+        "type": "transfer", "amount": "5000.00", "account_id": wallet.id, "counter_account_id": bank.id,
+        "txn_date": TODAY.isoformat(),
+    }, today=TODAY)
+    assert plan_status(session, owner, plan.id).money_paid == D("0.00")
+
+
 def test_months_ahead_does_not_take_a_due_twice(session, owner, loan):
     """
     ACC-40 / ACC-35. Once cash on hand holds back what is due, Months ahead

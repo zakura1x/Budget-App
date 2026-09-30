@@ -1,7 +1,8 @@
 """
 attachment_service - a receipt photo on a transaction (TXN-15, DAT-17, DAT-19).
 
-One receipt per transaction. The file is checked twice before anything is
+One receipt per transaction - and a transfer's two legs share ONE (2026-09-30),
+so attaching or removing from either leg does it for both. The file is checked twice before anything is
 written - by its extension and by its first bytes, which must agree - and is
 never trusted for anything beyond being stored and handed back. It is sealed
 with the user's DEK and written to uploads/<user_id>/<id>.enc
@@ -17,7 +18,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import PurePath
-from typing import Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -60,6 +61,21 @@ def sniff(content: bytes) -> Optional[str]:
     return None
 
 
+def _legs(transactions: TransactionRepository, record: Any) -> List[Any]:
+    """
+    The rows a receipt belongs on: the transaction, and for a transfer its other
+    leg too (2026-09-30, user: a screenshot of a payment to a loan). A transfer
+    is ONE movement of money, so its proof shows from either account's page.
+    """
+    legs = [record]
+    pair_id = record.data.get("pair_id") if record.data.get("type") == "transfer" else None
+    if pair_id:
+        pair = transactions.get(int(pair_id))
+        if pair is not None:
+            legs.append(pair)
+    return legs
+
+
 def attach(db: Session, cipher: UserCipher, transaction_id: int, filename: str, content: bytes) -> AttachmentView:
     name, mime = _check(filename, content)
     transactions = TransactionRepository(db, cipher)
@@ -70,7 +86,9 @@ def attach(db: Session, cipher: UserCipher, transaction_id: int, filename: str, 
         raise BusinessRuleException("A balance adjustment has no receipt")
 
     repo = AttachmentRepository(db, cipher)
-    previous = record.data.get("attachment_id")
+    legs = _legs(transactions, record)
+    # Before 2026-09-30 a transfer's legs could each carry a receipt of their own.
+    previous = sorted({int(leg.data["attachment_id"]) for leg in legs if leg.data.get("attachment_id")})
     row = repo.create({
         "transaction_id": transaction_id, "filename": name, "mime": mime, "size": len(content),
         "file_key_version": cipher.key_version, "uploaded_on": date.today().isoformat(),
@@ -79,9 +97,10 @@ def attach(db: Session, cipher: UserCipher, transaction_id: int, filename: str, 
     try:
         repo.write_file(row.id, content)
         written = True
-        if previous:
-            repo.soft_delete(previous)
-        transactions.update(transaction_id, {**record.data, "attachment_id": row.id})
+        for old in previous:
+            repo.soft_delete(old)
+        for leg in legs:
+            transactions.update(leg.id, {**leg.data, "attachment_id": row.id})
         audit_service.record(
             db, audit_service.CREATE, user_id=cipher.user_id, entity="attachments", entity_id=row.id,
             cipher=cipher, detail={"transaction_id": transaction_id, "size": len(content)},
@@ -92,8 +111,8 @@ def attach(db: Session, cipher: UserCipher, transaction_id: int, filename: str, 
         if written:
             repo.delete_file(row.id)
         raise
-    if previous:
-        repo.delete_file(previous)
+    for old in previous:
+        repo.delete_file(old)
     return AttachmentView(row.id, transaction_id, name, mime, len(content))
 
 
@@ -117,18 +136,23 @@ def remove(db: Session, cipher: UserCipher, transaction_id: int) -> None:
     record = transactions.get(transaction_id)
     if record is None:
         raise NotFoundException("Transaction not found")
-    attachment_id = record.data.get("attachment_id")
-    if not attachment_id:
+    legs = _legs(transactions, record)
+    ids = sorted({int(leg.data["attachment_id"]) for leg in legs if leg.data.get("attachment_id")})
+    if not ids:
         raise NotFoundException("This transaction has no receipt")
     repo = AttachmentRepository(db, cipher)
-    repo.soft_delete(attachment_id)
-    transactions.update(transaction_id, {**record.data, "attachment_id": None})
-    audit_service.record(
-        db, audit_service.DELETE, user_id=cipher.user_id, entity="attachments", entity_id=attachment_id,
-        cipher=cipher, detail={"transaction_id": transaction_id},
-    )
+    for attachment_id in ids:
+        repo.soft_delete(attachment_id)
+        audit_service.record(
+            db, audit_service.DELETE, user_id=cipher.user_id, entity="attachments", entity_id=attachment_id,
+            cipher=cipher, detail={"transaction_id": transaction_id},
+        )
+    for leg in legs:
+        if leg.data.get("attachment_id"):
+            transactions.update(leg.id, {**leg.data, "attachment_id": None})
     db.commit()
-    repo.delete_file(attachment_id)
+    for attachment_id in ids:
+        repo.delete_file(attachment_id)
 
 
 def _check(filename: str, content: bytes) -> Tuple[str, str]:

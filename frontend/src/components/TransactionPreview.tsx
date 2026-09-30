@@ -5,6 +5,7 @@
  *
  * It shows what the row could not: every split with its category, the tags, the note, the receipt,
  * the plan behind a posted payment, the money back on a purchase, and when the entry was recorded.
+ * The receipt is the one thing it changes: attaching proof alters nothing about the entry.
  *
  * A balance adjustment (ACC-29) has no Edit - it is written when a balance is set, and editing its
  * amount would contradict the record - only Delete, as the sheet has always offered.
@@ -171,7 +172,12 @@ export function TransactionPreview() {
             </button>
           </p>
         )}
-        {row.attachment_id != null && (
+        {/* TXN-15. A receipt or a payment's screenshot is attached right here, not only
+            behind Edit (2026-09-30, user) - it adds proof and changes nothing about the entry.
+            A transfer's two legs share it, so either account's page shows it. */}
+        {!adjustment && !isPending(row) ? (
+          <ReceiptControl transactionId={row.id} attachmentId={row.attachment_id ?? null} />
+        ) : row.attachment_id != null && (
           <ReceiptControl transactionId={row.id} attachmentId={row.attachment_id} readOnly />
         )}
         {adjustment && (

@@ -81,6 +81,45 @@ def test_replacing_and_removing_leave_no_file_behind(session, owner, purchase, u
     assert transaction_service.get_transaction(session, owner, purchase.id).attachment_id is None
 
 
+@pytest.fixture
+def payment(session, owner):
+    """A payment to a loan - the screenshot the user wanted on it (2026-09-30)."""
+    bank = account_service.create_account(session, owner, {"name": "Seabank", "type": "debit",
+                                                           "opening_balance": "9000.00"})
+    person = account_service.create_account(session, owner, {"name": "Papa bern", "type": "borrowed"})
+    legs = transaction_service.create_transaction(session, owner, {
+        "type": "transfer", "amount": "5000.00", "account_id": bank.id, "counter_account_id": person.id}).transactions
+    return next(v for v in legs if v.direction == "out"), next(v for v in legs if v.direction == "in")
+
+
+def receipt_of(session, owner, leg):
+    return transaction_service.get_transaction(session, owner, leg.id).attachment_id
+
+
+def test_a_transfers_two_legs_share_one_receipt(session, owner, payment, uploads):
+    out_leg, in_leg = payment
+    view = attachment_service.attach(session, owner, in_leg.id, "gcash.png", b"\x89PNG\r\n\x1a\n" + b"x" * 50)
+    assert receipt_of(session, owner, out_leg) == receipt_of(session, owner, in_leg) == view.id
+
+    # Replaced from the OTHER leg: still one receipt, one file.
+    again = attachment_service.attach(session, owner, out_leg.id, "b.pdf", PDF)
+    assert receipt_of(session, owner, out_leg) == receipt_of(session, owner, in_leg) == again.id
+    assert sorted(p.name for p in (uploads / str(owner.user_id)).iterdir()) == [f"{again.id}.enc"]
+
+    attachment_service.remove(session, owner, in_leg.id)
+    assert receipt_of(session, owner, out_leg) is None and receipt_of(session, owner, in_leg) is None
+    assert list((uploads / str(owner.user_id)).iterdir()) == []
+
+
+def test_editing_a_transfer_keeps_its_receipt(session, owner, payment):
+    out_leg, in_leg = payment
+    view = attachment_service.attach(session, owner, in_leg.id, "a.jpg", JPEG)
+    transaction_service.update_transaction(session, owner, in_leg.id, {
+        "type": "transfer", "amount": "5500.00", "account_id": out_leg.account_id,
+        "counter_account_id": in_leg.account_id, "txn_date": str(in_leg.txn_date)})
+    assert receipt_of(session, owner, out_leg) == receipt_of(session, owner, in_leg) == view.id
+
+
 def test_receipts_through_the_api(api, uploads):
     assert api.register().status_code == 201
     wallet = api.post("/accounts", {"name": "Wallet", "type": "cash"}).json()["id"]

@@ -463,6 +463,10 @@ def update_transaction(
     if kind == "transfer":
         out_record, in_record = _legs(db, cipher, record)
         out_data, in_data = _clean_transfer(db, cipher, payload, existing=out_record.data)
+        # TXN-15. The legs share one receipt; an edit keeps it (older transfers
+        # may carry it on the in leg only).
+        receipt = out_record.data.get("attachment_id") or in_record.data.get("attachment_id")
+        out_data["attachment_id"] = in_data["attachment_id"] = receipt
         records = [
             repo.update(out_record.id, {**out_data, "pair_id": in_record.id}),
             repo.update(in_record.id, {**in_data, "pair_id": out_record.id}),

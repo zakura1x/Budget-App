@@ -410,7 +410,11 @@ until the user picks `lower` or `shorten`, is charged at once, and is stored in
 `prepayments`. Extra payments are applied inside `installment_plan()`, which
 `occurrences()` reads - never adjust a plan's amounts anywhere else.
 `InstallmentStatus.paid`/`remaining` are CHARGES; `money_paid`/`left_to_pay`
-are MONEY - do not mix them up. `update_rule` pulls `posted_through` back when
+are MONEY - do not mix them up. On a BORROWED account, money paid in WITHOUT a
+plan's id (its monthly payment rule, a transfer from the add sheet) pays its
+plans too, oldest scheduled payment first across every plan on it, closed ones
+included (`recurring_service._loan_payments`, 2026-09-30); only what is left
+after every plan is the loan's own. Never on any other account type. `update_rule` pulls `posted_through` back when
 a start moves earlier. A repeating charge's next occurrence can be paid early
 (REC-33, `pay_now`): it posts with that occurrence's `recurring_on`, which is
 what stops the catch-up charging it again - never post it without one.
@@ -534,7 +538,9 @@ through the same `import_entries` path as the CSV import; it never writes a
 balance adjustment - today's balances are typed and land in the opening
 balance - and `budget_app_backup/` holds real finances, so it stays gitignored.
 Receipts are files at `uploads/<user_id>/<id>.enc`, sealed by
-AttachmentRepository under AAD table `attachment_files`. Uploads are raw
+AttachmentRepository under AAD table `attachment_files`. A transfer's two legs
+share ONE receipt (`attachment_service._legs`, 2026-09-30) and an edit keeps it;
+the preview (TXN-23) attaches one without opening Edit. Uploads are raw
 request bodies (no multipart dependency); never put a secret or filename in a
 URL - IIS logs query strings.
 

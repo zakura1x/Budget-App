@@ -88,7 +88,9 @@ export function ReceiptControl({ transactionId, attachmentId, readOnly = false }
   return (
     <div className="space-y-2 rounded-card border-2 border-stroke bg-surface-2 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="flex-1 text-footnote font-semibold text-ink-2">{current ? 'Receipt attached' : 'Receipt'}</span>
+        <span className="flex-1 text-footnote font-semibold text-ink-2">
+          {current ? 'Receipt attached' : 'Receipt or screenshot'}
+        </span>
         {current && (
           <Button variant="ghost" disabled={busy} onClick={() => void show()}>
             {showing ? 'Hide' : 'View'}
