@@ -308,6 +308,8 @@ class Settings(BaseSettings):
     # One uvicorn worker serves everyone (invariant 7), so keep these low
     AI_MAX_CONCURRENT_PER_USER: int = Field(default=1, ge=1, le=3)
     AI_MAX_CONCURRENT_CALLS: int = Field(default=3, ge=1, le=10)
+    # How long a question waits for one of those places before it is refused as busy (0 = not at all)
+    AI_QUEUE_WAIT_SECONDS: int = Field(default=10, ge=0, le=30)
     AI_MAX_QUESTIONS_PER_DAY: int = Field(default=100, ge=0)  # 0 = no cap
     # Pilot list of user ids, comma-separated; blank = every opted-in user (AI-54)
     AI_ALLOWED_USER_IDS: str = ""

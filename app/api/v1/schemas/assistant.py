@@ -81,6 +81,19 @@ class UsageTodayOut(BaseModel):
     fallbacks: int
 
 
+class UsageDayOut(UsageTodayOut):
+    day: date
+
+
+class AssistantUsageOut(BaseModel):
+    """The Admin screen's line (A5): counts only, every account summed - never whose, never what."""
+
+    enabled: bool
+    model: str
+    pilot_users: Optional[int]  # how many ids AI_ALLOWED_USER_IDS names; None = every opted-in account
+    days: List[UsageDayOut]  # newest first; a day nobody asked is left out
+
+
 class AssistantHealthOut(BaseModel):
     status: str  # disabled | ok | failing
     enabled: bool

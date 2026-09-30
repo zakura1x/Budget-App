@@ -5,6 +5,11 @@
  * last used. Never an email, a name or a figure - those are under each user's
  * own key. Disabling signs someone out everywhere at once; deleting needs the
  * account's number typed and the admin's password.
+ *
+ * The assistant's line (misc/AI, A5) is counts per day with every account
+ * summed: how many questions, how many the app answered itself because the
+ * model failed or was not believed, and the tokens used. Never whose, never
+ * what was asked.
  */
 import { format, parseISO } from 'date-fns';
 import { useCallback, useEffect, useState } from 'react';
@@ -16,10 +21,16 @@ import { Sheet } from '../components/ui/Sheet';
 import { TextField } from '../components/ui/TextField';
 import { Toggle } from '../components/ui/Toggle';
 import { ApiError } from '../lib/api';
+import {
+  checkAssistantHealth, getAssistantUsage, type AssistantHealth, type AssistantUsage,
+} from '../lib/assistant';
 import { adminStatus, adminUsers, deleteUser, setUserActive, type AdminStatus, type AdminUser } from '../lib/security';
 import { useAuthStore } from '../stores/authStore';
 
 const when = (iso: string | null) => (iso ? format(parseISO(iso), 'd MMM yyyy') : 'never');
+const count = (n: number, one: string) => `${n.toLocaleString('en-PH')} ${one}${n === 1 ? '' : 's'}`;
+/** The pilot's gate: a day with more than this share of replies written without the model needs a look. */
+const FALLBACK_LIMIT = 10;
 
 export function Admin() {
   const navigate = useNavigate();
@@ -31,10 +42,31 @@ export function Admin() {
   const [typed, setTyped] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [usage, setUsage] = useState<AssistantUsage | null>(null);
+  const [health, setHealth] = useState<AssistantHealth | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const load = useCallback(() => Promise.all([adminUsers(), adminStatus()])
     .then(([u, s]) => { setUsers(u); setStatus(s); setError(null); })
     .catch((e: Error) => setError(e.message)), []);
+
+  // Its own request: the accounts list must not fail because the assistant's counts did.
+  useEffect(() => {
+    const controller = new AbortController();
+    getAssistantUsage(controller.signal).then(setUsage).catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
+  const check = async () => {
+    setChecking(true);
+    try {
+      setHealth(await checkAssistantHealth());
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'That did not work.');
+    } finally {
+      setChecking(false);
+    }
+  };
 
   useEffect(() => void load(), [load]);
 
@@ -80,6 +112,54 @@ export function Admin() {
             </div>
           )}
         </Card>
+      )}
+
+      {usage && (
+        <>
+          <SectionTitle>Assistant</SectionTitle>
+          <Card className="space-y-2 text-footnote text-ink-2">
+            <p>
+              <span className="font-semibold text-ink">{usage.enabled ? 'On' : 'Off'}</span>
+              {' · '}{usage.model}{' · '}
+              {usage.pilot_users === null ? 'every account that turned it on' : `pilot list of ${usage.pilot_users}`}
+            </p>
+            {usage.days.length === 0 && <p>No questions in the last 7 days.</p>}
+            {usage.days.map((d) => {
+              const share = d.questions ? Math.round((d.fallbacks / d.questions) * 100) : 0;
+              return (
+                <div key={d.day} className="num border-t border-stroke/40 pt-2">
+                  <p className="text-ink">
+                    {format(parseISO(d.day), 'EEE d MMM')} · {count(d.questions, 'question')} · {count(d.users, 'account')}
+                  </p>
+                  <p>
+                    <span className={share > FALLBACK_LIMIT ? 'font-semibold text-ink' : undefined}>
+                      {d.fallbacks.toLocaleString('en-PH')} answered without AI ({share}%)
+                    </span>
+                    {' · '}{count(d.prompt_tokens + d.completion_tokens, 'token')}
+                  </p>
+                </div>
+              );
+            })}
+            {usage.enabled && (
+              <div className="border-t border-stroke/40 pt-2">
+                <Button variant="ghost" block disabled={checking} onClick={() => void check()}>
+                  {checking ? 'Checking…' : 'Check the connection'}
+                </Button>
+                {health && Object.entries(health.checks).map(([name, c]) => (
+                  <p key={name} className="num">
+                    <span className="font-semibold text-ink">{name === 'credentials' ? 'Key' : 'Model'}: {c.ok ? 'working' : 'not working'}</span>
+                    {' · '}{c.detail}{c.ms !== null ? ` · ${c.ms} ms` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
+            <p className="text-caption text-ink-3">
+              Counts only, all accounts together. Questions and replies are never stored or logged. “Answered without
+              AI” is a reply the app wrote itself because the model failed or its reply did not match the figures —
+              above {FALLBACK_LIMIT}% in a day is worth a look.
+            </p>
+          </Card>
+        </>
       )}
 
       <SectionTitle>Accounts</SectionTitle>

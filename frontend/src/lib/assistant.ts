@@ -86,3 +86,34 @@ export const askAssistant = (question: string, conversationId: string | null, co
 
 export const forgetConversation = (conversationId: string) =>
   api<void>(`/assistant/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
+
+/** One day's counts, every account summed - the Admin screen's line (A5). Never whose, never what. */
+export interface AssistantUsageDay {
+  day: string;
+  users: number;
+  questions: number;
+  model_calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  /** Replies the app wrote itself because the model failed or its reply was not believed (AI-08). */
+  fallbacks: number;
+}
+
+export interface AssistantUsage {
+  enabled: boolean;
+  model: string;
+  /** How many accounts the pilot list names; null = every account that turned it on. */
+  pilot_users: number | null;
+  days: AssistantUsageDay[];
+}
+
+export interface AssistantHealth {
+  status: 'disabled' | 'ok' | 'failing';
+  checks: Record<string, { ok: boolean; detail: string; ms: number | null }>;
+}
+
+/** Admin only. Reads the counts and nothing else. */
+export const getAssistantUsage = (signal?: AbortSignal) => api<AssistantUsage>('/assistant/usage', { signal });
+
+/** Admin only. Loads the key and asks the model for one word, so it is asked for, never run on open. */
+export const checkAssistantHealth = () => api<AssistantHealth>('/assistant/health');

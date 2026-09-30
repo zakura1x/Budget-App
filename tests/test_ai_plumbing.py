@@ -121,6 +121,46 @@ def test_one_question_in_flight_per_user_and_a_process_cap():
         pass
 
 
+def test_a_question_waits_for_a_place_before_it_is_refused():
+    """A5: with every place taken, a question waits for one instead of being refused at once."""
+    import threading
+
+    guard = ConcurrencyGuard(per_user=1, per_process=1, wait_seconds=5)
+    holding, release, got = threading.Event(), threading.Event(), []
+
+    def holder():
+        with guard.slot(1):
+            holding.set()
+            release.wait(5)
+
+    def waiter():
+        with guard.slot(2):
+            got.append("answered")
+
+    first = threading.Thread(target=holder)
+    first.start()
+    assert holding.wait(5)
+    second = threading.Thread(target=waiter)
+    second.start()
+    second.join(0.2)
+    assert second.is_alive() and not got  # waiting, not refused
+    release.set()
+    second.join(5)
+    first.join(5)
+    assert got == ["answered"]
+
+    impatient = ConcurrencyGuard(per_user=1, per_process=1, wait_seconds=0.05)
+    with impatient.slot(1):
+        with pytest.raises(ConcurrencyLimitReached, match="busy"):
+            with impatient.slot(2):
+                pass
+        with pytest.raises(ConcurrencyLimitReached, match="in progress"):  # the user's own second one never waits
+            with impatient.slot(1):
+                pass
+    with impatient.slot(2):
+        pass
+
+
 # ------------------------------------------------------------- LLMService
 
 
@@ -347,6 +387,23 @@ def test_usage_counts_per_user_per_day(session, monkeypatch):
     assert usage.questions_left(session, 1, day=today) is None
 
 
+def test_usage_by_day_sums_every_account_newest_first(session):
+    today = date(2026, 10, 8)
+    usage.record(session, 1, day=today, questions=4, model_calls=5, prompt_tokens=900, completion_tokens=100, fallbacks=1)
+    usage.record(session, 2, day=today, questions=1, model_calls=1, prompt_tokens=100, completion_tokens=20)
+    usage.record(session, 1, day=today - timedelta(days=2), questions=3)
+    usage.record(session, 1, day=today - timedelta(days=7), questions=9)  # a week back: outside the window
+    usage.record(session, 1, day=today + timedelta(days=1), questions=9)  # never a day that has not come
+    session.commit()
+    days = usage.daily(session, today=today)
+    assert [d for d, _ in days] == [today, today - timedelta(days=2)]
+    first = days[0][1]
+    assert (first.users, first.questions, first.model_calls, first.prompt_tokens, first.completion_tokens,
+            first.fallbacks) == (2, 5, 6, 1000, 120, 1)
+    assert days[1][1].questions == 3 and days[1][1].fallbacks == 0
+    assert usage.daily(session, today=date(2027, 1, 1)) == []
+
+
 def test_deleting_an_account_removes_its_usage(session):
     from sqlalchemy import func, select
 
@@ -385,3 +442,17 @@ def test_health_route_is_admin_only(api, monkeypatch):
     api.client.cookies.clear()
     api.register(email="bob@example.com")
     assert api.get("/assistant/health").status_code == 403
+
+
+def test_usage_route_is_admin_only_and_calls_nothing(api, monkeypatch):
+    api.register(email="admin@example.com")
+    monkeypatch.setattr(settings, "AI_ENABLED", True)
+    monkeypatch.setitem(settings.__dict__, "ai_allowed_user_ids", frozenset({1, 7}))
+    body = api.get("/assistant/usage").json()
+    assert body == {"enabled": True, "model": settings.WATSONX_CHAT_MODEL, "pilot_users": 2, "days": []}
+    assert llm_service._llm_service is None  # no key loaded, no model asked
+    monkeypatch.setitem(settings.__dict__, "ai_allowed_user_ids", frozenset())
+    assert api.get("/assistant/usage").json()["pilot_users"] is None
+    api.client.cookies.clear()
+    api.register(email="bob@example.com")
+    assert api.get("/assistant/usage").status_code == 403

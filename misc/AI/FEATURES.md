@@ -91,7 +91,7 @@ Each skill reports the figure its screen shows - a test holds them equal.
 | AI-52 | **Nothing logged** | ✅ | A1 | Prompt and reply text are never logged or audited, DEBUG or not; `api_key` joins the redaction filter's named secrets. A security-marked test captures every log record |
 | AI-53 | **Forgotten on lock** | ✅ | A2 | Conversations live in process memory and are dropped with the DEK (lock, sign-out, idle expiry, sweep) - the working set's hook. Nothing in the browser's storage (invariant 10) |
 | AI-54 | **Pilot allow-list** | ✅ | A1 | `AI_ALLOWED_USER_IDS`; blank means every opted-in user |
-| AI-55 | **Mask account names** | 🟡 | A5 | Optional: accounts go to the model as "your savings account (1)" and real names are put back in the reply server-side |
+| AI-55 | **Mask account names** | 🟡 | — | Not chosen in A5 (nobody asked). Optional: accounts go to the model as "your savings account (1)" and real names are put back in the reply server-side |
 
 ## 6. Later / out
 

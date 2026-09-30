@@ -150,6 +150,12 @@ python scripts/env_fingerprint.py        # fingerprints of .env's random keys
 python scripts/env_fingerprint.py --compare E:\budget\.env
                                          # .env against the offline copy
 python scripts/rotate_keys.py --status   # which key version wraps each account
+python scripts/ai_health.py              # the assistant's key and model, from THIS
+                                         # machine. --measure 20 times 20 calls
+python scripts/ai_eval.py --out r.txt    # 60 questions to the REAL model on made-up
+                                         # data; READ r.txt, not just the percentages
+python scripts/ai_load.py                # 10 people asking at once: does the rest
+                                         # of the app stay fast? Made-up data, SQLite
 
 
 ROTATING THE MASTER KEY
@@ -259,6 +265,55 @@ trade for not asking every user to keep 12 words on paper.
 
 
 ═══════════════════════════════════════════════════════════════════
+THE AI ASSISTANT  (misc/AI - watsonx through the company IAM service)
+═══════════════════════════════════════════════════════════════════
+ON / OFF: AI_ENABLED in .env, then restart. Off means nothing is loaded
+and nothing is called. Each person also turns it on for themselves
+(More -> Assistant); AI_ALLOWED_USER_IDS limits who may.
+
+WHAT LEAVES THE SERVER: the question, and the figures and the account,
+category and goal names needed to answer it - to IBM watsonx (us-south).
+Never an email, a note, a receipt or a row. ZBDGT stores no question and
+no reply, in the database or in a log: only how many were asked.
+
+THE KEY IS NOT OURS. The watsonx API key lives in the company IAM
+service, shared with QUOT, DMS and STWRD. ZBDGT fetches it when a
+question is asked, keeps it in memory for 5 minutes, and never writes
+it anywhere. So there is nothing to rotate or back up here.
+
+CHECK IT:  python scripts/ai_health.py     (or Admin -> Check the connection)
+
+  Key: "IBM Cloud rejected the API key from IAM"
+      The key in IAM's record is expired or deleted. It is IAM's record,
+      not ours: tell its owner. Anything else using that record (QUOT,
+      DMS, STWRD) fails the same way. Nothing in ZBDGT's .env fixes it.
+      When the key is replaced the assistant recovers by itself within
+      5 minutes - no restart.
+  Key: "...IAM's record still marks this key expired"
+      The key works, but the record's expiry fields are stale. Harmless
+      here; mention it to IAM's owner.
+  Key: "could not be loaded from IAM" / "IAM returned no credentials"
+      IAM_MANAGEMENT_URL or COMPANY_NAME is wrong (copy both from STWRD's
+      .env), or this machine cannot reach IAM.
+  Model: "timed out after 30s"
+      IBM is slow or unreachable. Questions are answered from the app's
+      own sentences meanwhile ("Answered straight from your figures").
+  Model: "model '...' was not accepted"
+      WATSONX_CHAT_MODEL names a model the project does not have.
+
+While any of these is wrong the rest of the app is untouched, and every
+answer still carries the right figures - they never came from the model.
+
+WATCH IT: Admin shows, per day, questions / answered without AI / tokens
+for all accounts together. Above 10% answered without AI in a day: look at
+logs\app.jsonl for "Assistant turn ... reason=" (timed, unknown_figure,
+advice, ...). The line never holds the question or the reply.
+
+AFTER CHANGING A PROMPT, A SKILL OR THE MODEL: python scripts/ai_eval.py
+and read the replies. Every wrong answer so far had true numbers in it.
+
+
+═══════════════════════════════════════════════════════════════════
 DEPLOY TO THE SERVER  (IIS, same host as QUOT)
 ═══════════════════════════════════════════════════════════════════
 Updates are COPIED to the server (there is no git remote). The zip holds
@@ -283,6 +338,8 @@ EVERY UPDATE
      (local development shares the SAME ZBDGT schema - usually it is
       already applied from your PC)
   g. Recycle the ZBDGT app pool, then open /ZBDGT/api/v1/health.
+  h. The AI assistant stays off until AI_ENABLED=True is in the server's
+     .env - misc/DEPLOY.md, "Turning on the AI assistant".
 
 FIRST DEPLOY
 1. Steps a-c above.

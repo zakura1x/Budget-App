@@ -133,6 +133,71 @@ restart looks exactly like an auto-lock — the next request asks for the PIN.
 
 ---
 
+## Turning on the AI assistant (misc/AI)
+
+The assistant ships switched off (`AI_ENABLED=False`): nothing is loaded, no
+service is called, and the Assistant row is hidden. Turning it on is five
+steps on the server, in this order.
+
+1. **Python packages.** `requirements.txt` adds `ibm-watsonx-ai` and
+   `requests`, which QUOT already has in the shared venv. Never upgrade what
+   QUOT runs, so read what is installed first:
+
+   ```bash
+   C:\inetpub\wwwroot\FAST-PYTHON\.venv\Scripts\pip list | findstr /i "ibm-watsonx-ai requests httpx"
+   ```
+
+   On your PC, lower the two floors in `requirements.txt` to those versions,
+   commit, and make a new release. Then the dry run must show nothing being
+   changed:
+
+   ```bash
+   C:\inetpub\wwwroot\FAST-PYTHON\.venv\Scripts\pip install -r requirements.txt --dry-run
+   ```
+
+2. **The table.** `assistant_usage` (migration `20260930_0005`) was applied
+   from the PC on 2026-09-30. `alembic current` on the server should name it.
+   It holds counts per account per day and nothing else.
+
+3. **`.env`** — add the block from `.env.example` by hand. None of it is a
+   secret: the watsonx key is fetched from the company IAM service when a
+   question is asked and lives only in memory.
+
+   | Setting | Value |
+   |---|---|
+   | `AI_ENABLED` | `True` |
+   | `COMPANY_NAME`, `IAM_MANAGEMENT_URL` | the same two lines as STWRD's `.env` |
+   | `AI_ALLOWED_USER_IDS` | your own account number for the pilot; blank later, for everyone who turns it on |
+   | `AI_REPLY_LANGUAGE` | `en` |
+   | `IAM_REPORT_TEST_STATUS` | `False` — the IAM record is shared with QUOT, DMS and STWRD |
+
+   Refresh the offline `.env` copy the same day.
+
+4. **Check it from the server** before anyone uses it:
+
+   ```bash
+   C:\inetpub\wwwroot\FAST-PYTHON\.venv\Scripts\python scripts\ai_health.py --measure 20
+   ```
+
+   It fetches the key as the app does, asks the model for one word, then
+   times 20 calls. It prints what each check found and never the key. p95
+   should be under 5 seconds. The server must be able to reach
+   `IAM_MANAGEMENT_URL`, `iam.cloud.ibm.com` and `us-south.ml.cloud.ibm.com`.
+
+5. **Recycle the app pool.** Sign in, More → Assistant, turn it on and ask
+   one question. Then More → Admin → *Check the connection*.
+
+**The pilot.** Admin's Assistant lines show, per day and for all accounts
+together, the questions asked, how many the app answered without the model,
+and the tokens used. A day above 10% answered without AI is worth a look
+(`logs\app.jsonl` has one "Assistant turn" line per question with the reason -
+never the question). After a quiet week, blank `AI_ALLOWED_USER_IDS`.
+
+**Turning it off** is `AI_ENABLED=False` and a recycle. Nothing else changes:
+the row disappears, and no figure anywhere depends on the assistant.
+
+---
+
 ## After a deploy — worth doing once
 
 - **Sign in on the phone** and add it to the home screen (PWA).
@@ -169,6 +234,9 @@ additive and the older code ignores it. Ask the DB owner before either.
 | Signed out on every request | `SESSION_COOKIE_SECURE=true` without HTTPS, or `SESSION_COOKIE_PATH` outside `BASE_URL` |
 | Old screens after a deploy | `app\web\static\dist\` was merged instead of replaced — delete `app\` and unzip again. In the browser, reload once so the service worker picks up the new build |
 | Reset emails never arrive | `logs\app.jsonl` says "Email could not be sent" with the reason; check the Gmail App Password |
+| No **Assistant** row under More | `AI_ENABLED` is `False`, or `AI_ALLOWED_USER_IDS` names other accounts |
+| Every reply says **"Answered straight from your figures"** | The model is not answering; the figures are still right. Admin → *Check the connection* names which half failed — see `misc/how-to-run.txt`, *THE AI ASSISTANT* |
+| **"The assistant is busy"** | More than `AI_MAX_CONCURRENT_CALLS` questions were in flight for longer than `AI_QUEUE_WAIT_SECONDS`. Usually IBM answering slowly; it clears by itself |
 
 Logs: `logs\uvicorn.log` (startup and crashes) and `logs\app.jsonl` (one line
 per request, money and key material redacted by design).

@@ -139,6 +139,7 @@ WATSONX_MAX_RETRIES=3
 
 AI_MAX_CONCURRENT_PER_USER=1
 AI_MAX_CONCURRENT_CALLS=3        # one uvicorn worker (invariant 7) - keep low
+AI_QUEUE_WAIT_SECONDS=10         # a question waits this long for one of those places (A5)
 AI_MAX_QUESTIONS_PER_DAY=100
 AI_ALLOWED_USER_IDS=             # pilot list; blank = every opted-in user
 AI_REPLY_LANGUAGE=en             # en | match (reply in the question's language,
@@ -459,6 +460,12 @@ chars). A model failure is **not** an error: it is a 200 with
 ---
 
 ## 12. Capacity, failure and testing
+
+*As built (A5, 2026-09-30):* a question that finds every process place taken waits up to
+`AI_QUEUE_WAIT_SECONDS` in its own pool thread before it is refused - STWRD's guard refuses at
+once, which turned 35 of 50 simultaneous questions away. `GET /assistant/usage` gives the Admin
+screen a week of per-day totals. `scripts/ai_load.py` is the load test; its numbers are in
+PHASES A5.
 
 *As built (A4, 2026-09-30):* actions carry a `payload`; the kinds are `open_screen`,
 `draft_transaction`, `draft_goal` and `try_installment` (there is no `draft_budget`). `/ask` takes

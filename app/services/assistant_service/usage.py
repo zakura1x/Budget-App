@@ -8,8 +8,8 @@ user (AI-04), so read-then-write per (user, day) cannot race itself.
 """
 
 from dataclasses import dataclass
-from datetime import date
-from typing import Optional
+from datetime import date, timedelta
+from typing import List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -88,3 +88,27 @@ def totals(db: Session, *, day: Optional[date] = None) -> UsageTotals:
         ).where(AssistantUsage.day == day)
     ).one()
     return UsageTotals(int(users), *(int(s) for s in sums))
+
+
+def daily(db: Session, *, days: int = 7, today: Optional[date] = None) -> List[Tuple[date, UsageTotals]]:
+    """
+    The last `days` days that saw a question, newest first, every user summed -
+    the Admin screen's line (A5). A day with a fallback rate above 10% is what
+    the pilot watches for; the rate is `fallbacks / questions`.
+    """
+    today = today or date.today()
+    rows = db.execute(
+        select(
+            AssistantUsage.day,
+            func.count(AssistantUsage.id),
+            func.sum(AssistantUsage.questions),
+            func.sum(AssistantUsage.model_calls),
+            func.sum(AssistantUsage.prompt_tokens),
+            func.sum(AssistantUsage.completion_tokens),
+            func.sum(AssistantUsage.fallbacks),
+        )
+        .where(AssistantUsage.day > today - timedelta(days=days), AssistantUsage.day <= today)
+        .group_by(AssistantUsage.day)
+        .order_by(AssistantUsage.day.desc())
+    ).all()
+    return [(day, UsageTotals(int(users), *(int(s or 0) for s in sums))) for day, users, *sums in rows]

@@ -57,7 +57,7 @@ Budget App/
 │   │       │   ├── goals.py
 │   │       │   ├── settings.py
 │   │       │   ├── admin.py             # account management only
-│   │       │   ├── assistant.py         # AI companion: status, admin health (misc/AI)
+│   │       │   ├── assistant.py         # AI companion: ask, status, admin health + usage (misc/AI)
 │   │       │   ├── backup.py            # export / restore / verify
 │   │       │   └── data.py              # CSV import / export
 │   │       └── schemas/
@@ -336,6 +336,7 @@ Budget App/
 │   ├── int_tables.sql                   # raw DDL, 16 tables - generated, do not edit
 │   ├── ai_health.py                     # AI companion: IAM key + model check, --measure N timing
 │   ├── ai_eval.py                       # AI companion gate: golden questions, real model, in-memory data
+│   ├── ai_load.py                       # AI companion A5: 10 asking at once vs the readers' p95, one worker
 │   ├── bootstrap_user.py                # first account + its DEK
 │   ├── seed_categories.py
 │   ├── rotate_keys.py                   # ★ master key: --status/--new-key/--rewrap,

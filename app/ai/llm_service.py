@@ -49,10 +49,18 @@ class ConcurrencyLimitReached(RuntimeError):
 # ==============================================================
 
 class ConcurrencyGuard:
-    """Caps in-flight model calls per user and per process."""
+    """
+    Caps in-flight model calls per user and per process.
 
-    def __init__(self, per_user: int, per_process: int):
+    A user's second question is refused at once. A question that finds every
+    process place taken waits up to `wait_seconds` for one (A5: ten people
+    asking together had 35 of 50 questions refused without it), in its own
+    pool thread, so nothing else is held up.
+    """
+
+    def __init__(self, per_user: int, per_process: int, wait_seconds: float = 0):
         self.per_user = max(1, per_user)
+        self.wait_seconds = max(0.0, wait_seconds)
         self._process = threading.BoundedSemaphore(max(1, per_process))
         self._lock = threading.Lock()
         self._in_flight: Dict[Any, int] = {}
@@ -64,7 +72,10 @@ class ConcurrencyGuard:
                 raise ConcurrencyLimitReached("You already have a question in progress.")
             self._in_flight[user_id] = self._in_flight.get(user_id, 0) + 1
 
-        acquired = self._process.acquire(blocking=False)
+        if self.wait_seconds:
+            acquired = self._process.acquire(timeout=self.wait_seconds)
+        else:
+            acquired = self._process.acquire(blocking=False)
 
         try:
             if not acquired:
@@ -279,6 +290,7 @@ _llm_service_lock = threading.Lock()
 concurrency_guard = ConcurrencyGuard(
     per_user=settings.AI_MAX_CONCURRENT_PER_USER,
     per_process=settings.AI_MAX_CONCURRENT_CALLS,
+    wait_seconds=settings.AI_QUEUE_WAIT_SECONDS,
 )
 
 

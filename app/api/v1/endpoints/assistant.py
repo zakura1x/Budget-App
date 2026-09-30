@@ -9,6 +9,9 @@
 - GET / DELETE /assistant/conversations/{id} - this session's turns, held in
   memory only and gone after a lock (AI-53).
 - GET /assistant/health - admin only: STWRD's health() plus today's usage.
+  It loads the key and asks the model for one word, so it is a button.
+- GET /assistant/usage - admin only: the last week's counts, every account
+  summed. Reads assistant_usage and nothing else - no IAM, no model.
 
 Nothing here writes financial data; the only row written is the usage count.
 Questions travel in POST bodies, never in a URL (IIS logs query strings).
@@ -23,8 +26,10 @@ from app.api.v1.schemas.assistant import (
     AskIn,
     AssistantHealthOut,
     AssistantStatusOut,
+    AssistantUsageOut,
     ConversationOut,
     ReplyOut,
+    UsageDayOut,
     UsageTodayOut,
 )
 from app.core.config import settings
@@ -80,6 +85,17 @@ def conversation(conversation_id: str, ctx: UnlockedContext = Depends(get_unlock
 def forget(conversation_id: str, ctx: UnlockedContext = Depends(get_unlocked_context)) -> Response:
     get_memory().forget(ctx.user.id, conversation_id)
     return Response(status_code=http_status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/usage", response_model=AssistantUsageOut)
+def usage_by_day(ctx: UnlockedContext = Depends(require_admin), db: Session = Depends(get_db)) -> AssistantUsageOut:
+    pilot = settings.ai_allowed_user_ids
+    return AssistantUsageOut(
+        enabled=llm_service.is_enabled(),
+        model=settings.WATSONX_CHAT_MODEL,
+        pilot_users=len(pilot) if pilot else None,
+        days=[UsageDayOut(day=day, **totals.__dict__) for day, totals in usage.daily(db)],
+    )
 
 
 @router.get("/health", response_model=AssistantHealthOut)

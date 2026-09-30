@@ -338,6 +338,45 @@ resolves to nothing.
 
 ## A5 — Hardening and deploy (AI-55, if chosen)
 
+**Status (2026-09-30): built as far as this PC reaches.** Still to do on the
+server: read the shared venv's package versions and lower the floors in
+`requirements.txt`, add the `.env` block, run `ai_health.py --measure 20`, and
+the pilot week. `misc/DEPLOY.md` has the steps.
+
+What was built:
+- **Load test** - `scripts/ai_load.py`. The real app as one uvicorn worker in
+  a child process, SQLite in a temporary folder, 13 made-up accounts: 3 read
+  Home's requests in a loop, 10 ask 5 questions each at the same time, real
+  model.
+- **A question now waits for a place** (`AI_QUEUE_WAIT_SECONDS`, default 10).
+  The first run found the fault the test was for: with 3 places and STWRD's
+  refuse-at-once guard, 35 of 50 questions came back "busy". With the wait all
+  50 are answered (p50 2.3 s, p95 3.0 s, max under 6 s). A user's own second
+  question is still refused at once.
+- **Admin line** - `GET /assistant/usage` (admin only; reads the table, calls
+  nothing) and an Assistant card on the Admin screen: per day, questions,
+  accounts, answered without AI with its share, tokens; and a *Check the
+  connection* button on the health route.
+- **Docs** - `misc/DEPLOY.md` (*Turning on the AI assistant*, three
+  troubleshooting rows), `misc/how-to-run.txt` (*THE AI ASSISTANT*).
+
+The gate, honestly:
+- "The rest of the app's p95 must not move more than 20%" **is not met as
+  written.** Four runs: 5 askers +20% and +31%, 10 askers +35%, +45% and +65%.
+  In milliseconds that is a p95 of 23-28 ms becoming 32-45 ms; the median
+  moves by 1-2 ms and the worst single read was 132 ms. Two idle runs differ
+  by 5-30% on their own, so a 20% line on a 26 ms figure is inside the noise.
+- The cause is work, not waiting. A turn costs 22-56 ms of Python (profiled
+  with a fake model) against 5-16 ms for a read, because a skill calls the
+  same services the screens do. Ten people asking slow the readers the way
+  more readers would. No read ever waited on a model call.
+- Ten askers is twice `MAX_USERS` (5). SQLite stood in for SQL Server, so the
+  server's own numbers are still to be seen.
+- Not chosen: masking (AI-55). Nobody has asked for it.
+
+Tests: `test_ai_plumbing.py` gained the wait, the per-day totals and the admin
+route (31); the four AI files are 174.
+
 1. Load test: 10 parallel users × 5 questions against the one worker; the
    rest of the app's p95 must not move more than 20% while it runs.
 2. Masking (AI-55), only if the user asks for it after using A2–A4.

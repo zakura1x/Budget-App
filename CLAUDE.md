@@ -334,7 +334,7 @@ security, goals, admin and PWA (Phase 8b, all 2026-09-14) — 43 test files.
 Mounted: `auth`, `health`, `settings`, `accounts`, `statements`, `categories`,
 `tags`, `transactions`, `budgets`, `calendar`, `stats`, `recurring`,
 `subscriptions`, `projection`, `attachments`, `backups`, `data`, `goals`,
-`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1-A4).
+`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1-A5).
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -613,7 +613,7 @@ auto-lock); they are never persisted in the browser.
   on purpose (user, 2026-09-28) - do not swap in a WebAuthn package without
   asking. `users.passkeys` holds PUBLIC keys only.
 
-**The AI companion** (`misc/AI`, A1-A4 2026-09-30) - rules worth keeping:
+**The AI companion** (`misc/AI`, A1-A5 2026-09-30) - rules worth keeping:
 
 - **watsonx through the company IAM service**, the way STWRD does it:
   `app/ai/` is STWRD's loader, client and service, copied. The API key lives
@@ -654,6 +654,12 @@ auto-lock); they are never persisted in the browser.
   words only, no model is called, and the model can never route to `draft`,
   `draft_goal` or `find`. `find` sends the one merchant or bill asked about -
   never a note.
+- **A question may wait for a place; a read never waits for the model (A5).**
+  `/ask` is a plain `def`, so the model wait sits in a pool thread. The guard
+  refuses a user's own second question at once and lets anyone else's wait
+  `AI_QUEUE_WAIT_SECONDS` for one of `AI_MAX_CONCURRENT_CALLS` places. The
+  Admin line (`GET /assistant/usage`) is counts per day with every account
+  summed, and calls nothing. `scripts/ai_load.py` is the load test.
 - `scripts/ai_eval.py` is the gate: the golden questions against the real
   model on in-memory data, with affordability verdicts worked out by hand
   (`AFFORD_WORKING`). Read its replies, not just its percentages - every

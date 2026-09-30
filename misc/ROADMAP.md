@@ -57,7 +57,7 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **UX-13** | Offline writes with sync-on-reconnect | deferred | 15 | L | ⏸️ |
 | **UX-14** | Haptics | deferred | 15 | S | ✅ 2026-09-28 |
 | **UX-15** | Multi-language | deferred | 15 | L | ⬜ |
-| **AI-01…67** | AI companion — ask about your money, "can I afford it?" | new (2026-09-30) | 16 | L | 🔨 A1–A4 ✅ 2026-09-30 |
+| **AI-01…67** | AI companion — ask about your money, "can I afford it?" | new (2026-09-30) | 16 | L | 🔨 A1–A5 built 2026-09-30; server steps and pilot left |
 
 **Deliberately NOT on this list** (still ❌ Out in FEATURES.md, for the reasons
 written there): push notifications (BUD-16), bank sync (ACC-10), receipt OCR and
@@ -578,7 +578,9 @@ question) and A3 ("can I afford it?" by rules, plus goals, emergency fund,
 subscriptions, debts, the monthly review and how-to) were done on 2026-09-30.
 A4 (Explain links, drafted entries and goals that the user saves, the what-if
 hand-off, finding a merchant's entries, the Home tile) was done the same day.
-A5 (load test, deploy notes) is next. Tick features in `misc/AI/FEATURES.md`; this row carries only
+A5 (load test, a wait for a free place, the Admin line, deploy notes) was
+built the same day; its server steps (package versions, `.env`, the pilot
+week) are in `misc/DEPLOY.md`. Tick features in `misc/AI/FEATURES.md`; this row carries only
 the phase.
 
 ---
