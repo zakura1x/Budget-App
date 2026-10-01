@@ -480,3 +480,44 @@ def test_the_card_look_ahead_shows_the_typed_bills(session, owner):
     assert [(b.due, b.left) for b in card.bills] == [
         (date(2026, 10, 15), Decimal("7754.49")), (date(2026, 11, 15), Decimal("4120.80")),
         (date(2026, 12, 15), Decimal("2384.78")), (date(2027, 1, 15), Decimal("1641.90"))]
+
+
+def send(session, owner, card, to, amount, on):
+    return transaction_service.create_transaction(session, owner, {
+        "type": "transfer", "amount": amount, "account_id": card.id, "counter_account_id": to.id,
+        "txn_date": on.isoformat()}, today=on)
+
+
+def test_money_sent_from_the_card_joins_the_bill_of_its_statement(session, owner):
+    """Reported 2026-10-01: ₱510 sent to Mama Lala from the Maribank card was on no bill."""
+    card, _ = billed_card(session, owner)
+    mama = account_service.create_account(session, owner, {"name": "Mama Lala", "type": "lent"})
+    beyond = views(session, owner, date(2026, 9, 17))[1]["Maribank"].credit.not_on_bill
+    send(session, owner, card, mama, "510.00", TODAY)  # closes 15 Sep -> due 15 Oct
+    send(session, owner, card, mama, "90.00", date(2026, 9, 17))  # closes 15 Oct -> due 15 Nov
+    bills = bills_of(session, owner, date(2026, 9, 17))
+    october, november = bills[date(2026, 10, 15)], bills[date(2026, 11, 15)]
+    assert (october.from_purchases, october.amount) == (Decimal("510.00"), Decimal("3510.00"))
+    assert (november.from_purchases, november.amount) == (Decimal("90.00"), Decimal("1090.00"))
+    line = next(x for x in october.lines if x.kind == "purchase")
+    assert line.amount == Decimal("510.00")
+    credit = views(session, owner, date(2026, 9, 17))[1]["Maribank"].credit
+    assert credit.not_on_bill == beyond  # the card owes 600 more and its bills say so: none of it is off a bill
+
+
+def test_money_sent_into_the_card_is_still_a_payment_not_a_charge(session, owner):
+    card, _ = billed_card(session, owner)
+    wallet = account_service.create_account(session, owner, {"name": "Wallet", "type": "cash", "opening_balance": "9000.00"})
+    send(session, owner, wallet, card, "1000.00", TODAY)
+    october = bills_of(session, owner)[date(2026, 10, 15)]
+    assert (october.from_purchases, october.paid, october.left) == (
+        Decimal("0.00"), Decimal("1000.00"), Decimal("2000.00"))
+
+
+def test_money_sent_before_the_list_was_typed_is_not_added_again(session, owner):
+    card, _ = billed_card(session, owner, bills=False)
+    mama = account_service.create_account(session, owner, {"name": "Mama Lala", "type": "lent"})
+    send(session, owner, card, mama, "510.00", TODAY)  # the card's app already shows it
+    account_service.set_bills(session, owner, card.id, [{"due": "2026-10-15", "amount": "3000.00"}], today=TODAY)
+    bill = bills_of(session, owner)[date(2026, 10, 15)]
+    assert (bill.from_purchases, bill.amount) == (Decimal("0.00"), Decimal("3000.00"))

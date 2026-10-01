@@ -902,7 +902,8 @@ def _covered_rows(db: Session, cipher: UserCipher, account_id: int, day: date) -
             if str(data.get("txn_date")) == day.isoformat():
                 payments.append(record.id)
             continue
-        if data.get("type") != "expense" or data.get("recurring_id"):
+        sent_out = data.get("type") == "transfer" and data.get("direction") == "out"  # billed like a purchase
+        if (data.get("type") != "expense" and not sent_out) or data.get("recurring_id"):
             continue
         try:
             on = date.fromisoformat(str(data.get("card_posted_on") or data.get("txn_date")))
@@ -1532,6 +1533,13 @@ def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dic
                 Charge(view.card_posted_on or view.txn_date, view.amount, True, False, view.created_at, True, view.id,
                        name=view.merchant or view.notes,
                        category_id=view.splits[0].category_id if len(view.splits) == 1 else None))
+        elif view.type == "transfer" and view.direction == "out":
+            # Money sent FROM the card (fixed 2026-10-01, user: ₱510 to Mama Lala from the Maribank
+            # card joined no bill). The card lent it, so the bank bills it like a purchase - on the
+            # statement it posts in. Only a card reads these: _bills is never built for another type.
+            charges.setdefault(view.account_id, []).append(
+                Charge(view.card_posted_on or view.txn_date, view.amount, True, False, view.created_at, True, view.id,
+                       name=view.notes or view.merchant or "Transfer"))
     start = date.fromordinal(when.toordinal() + 1)
     for item in recurring_service.upcoming(db, cipher, start, date.fromordinal(when.toordinal() + 366 * 3)):
         if item.type == "expense" and not item.occurrence.paused:
