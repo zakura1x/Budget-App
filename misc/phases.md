@@ -1752,8 +1752,8 @@ scripts/
 - ✅ A3 · "Can I afford it?" by rules, plus goals, emergency fund, subscriptions, debts, review, how-to — 2026-09-30
 - ✅ A4 · Explain links, drafted entries and goals the user saves, find, Home's Ask tile — 2026-09-30
 - ✅ A5 · load test, a wait for a free place, the Admin line, deploy notes — 2026-09-30 (the 20% p95 gate is not met as written; PHASES A5)
-- ✅ A6 · saved conversations, off by default (`assistant_threads`, migration 0006 not yet applied) — 2026-10-01 (1,126 backend tests, 193 of them the AI's)
-- ☐ On the server: packages, the `.env` block, `ai_health.py --measure 20`, migration 0006, the first week
+- ✅ A6 · saved conversations, off by default (`assistant_threads`, migration 0006 applied) — 2026-10-01 (1,126 backend tests, 193 of them the AI's)
+- ☐ On the server: packages, the `.env` block, `ai_health.py --measure 20`, the first week
 
 ---
 

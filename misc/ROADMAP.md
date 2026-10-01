@@ -580,7 +580,7 @@ A4 (Explain links, drafted entries and goals that the user saves, the what-if
 hand-off, finding a merchant's entries, the Home tile) was done the same day.
 A5 (load test, a wait for a free place, the Admin line, deploy notes) was
 built the same day, and A6 (saved conversations, off by default) on
-2026-10-01. The server steps (packages, `.env`, migration 0006, the first
+2026-10-01. The server steps (packages, `.env`, the first
 week) are in `misc/DEPLOY.md`. Tick features in `misc/AI/FEATURES.md`; this row carries only
 the phase.
 

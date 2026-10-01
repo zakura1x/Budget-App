@@ -413,7 +413,7 @@ list only; a week with no fallback rate above 10%.
 ## A6 — Saved history (optional, AI-60)
 
 **Status (2026-10-01): built; the gate's checks passed.** The user asked for it
-on 2026-10-01. Migration `20261001_0006` still has to be applied to ZBDGT.
+on 2026-10-01. Migration `20261001_0006` was applied to ZBDGT the same day.
 
 What was built:
 - **`assistant_threads`** (Shape B, `AssistantThread`,
