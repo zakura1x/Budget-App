@@ -332,6 +332,12 @@ Consequence: history does not survive a lock. That is the same promise the
 rest of the app makes about decrypted data, and it is the right default for a
 first release.
 
+*As built (A6, 2026-10-01):* `assistant_threads` exists as described below, written only by
+`assistant_service/history.py` and only while the user's `assistant_history_days` preference is 30,
+90 or 365 (default 0). Rows are hard-deleted on request, on expiry, and when keeping or the
+assistant is turned off. Draft buttons are left out of a saved reply, so the table needs no
+`references.py` entries. Memory-only remains the default; see PHASES A6.
+
 **A6 (optional): encrypted history.** If saved history is wanted, it becomes a
 **Shape B** table, `assistant_threads`, one row per conversation, payload
 `{title, turns: [...]}` sealed under the user's DEK through a new

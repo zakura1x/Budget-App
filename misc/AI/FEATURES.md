@@ -9,7 +9,7 @@ references are to [ARCHITECTURE.md](ARCHITECTURE.md) (`AI-ARCH §n`); phases to
 
 | Status | Meaning |
 |---|---|
-| ✅ **Built** | Built and tested (A1 to A4 on 2026-09-30). |
+| ✅ **Built** | Built and tested (A1 to A5 on 2026-09-30, A6 on 2026-10-01). |
 | 📋 **Planned** | In scope, in the phase named. Not built. |
 | 🟡 **Later** | Wanted; the architecture leaves room; not scheduled. |
 | ❌ **Out** | Deliberately not built. Reason given. |
@@ -24,7 +24,7 @@ references are to [ARCHITECTURE.md](ARCHITECTURE.md) (`AI-ARCH §n`); phases to
 | 3. Can I afford it? | AI-30 – AI-35 | 6 | 0 | 0 | 0 | 0 |
 | 4. In context, and acting on answers | AI-40 – AI-45 | 6 | 0 | 0 | 0 | 0 |
 | 5. Privacy and control | AI-50 – AI-55 | 5 | 0 | 1 | 0 | 0 |
-| 6. Later / out | AI-60 – AI-67 | 1 | 0 | 3 | 4 | 0 |
+| 6. Later / out | AI-60 – AI-67 | 2 | 0 | 2 | 4 | 0 |
 
 ---
 
@@ -97,7 +97,7 @@ Each skill reports the figure its screen shows - a test holds them equal.
 
 | ID | Feature | Status | Phase | Scope |
 |---|---|---|---|---|
-| AI-60 | **Saved history** | 🟡 | A6 | Conversations kept across locks as a Shape B table under the user's DEK - then part of backup, restore, DEK rotation, deletion and integrity checks. AI-ARCH §7 |
+| AI-60 | **Saved history** | ✅ | A6 | Off by default. The user chooses to keep conversations for 30, 90 or 365 days (`assistant_history_days`); each is then an `assistant_threads` row (Shape B) sealed under their DEK, listed on the empty Assistant screen to carry on or delete, and deleted for good when it runs out, when they pick "Until the app locks", or when they turn the assistant off. It goes through backup, restore, DEK rotation, account deletion and the integrity check like every encrypted table. Draft buttons are not saved. AI-ARCH §7 |
 | AI-61 | **Weekly nudge** | 🟡 | — | A short written summary on Home once a week. Needs a model call without the user asking, which A1–A5 never make |
 | AI-62 | **Receipt reading** | 🟡 | — | Read amount and merchant from a photo. Would send an image of a receipt to IBM; a separate privacy decision |
 | AI-63 | **Taglish** | ✅ | A2 | Questions in English, Filipino or Taglish are understood from A2. Replies follow the question's language (`AI_REPLY_LANGUAGE=match`) only if the Taglish golden questions pass the A2 language gate; otherwise English only (user, 2026-09-30). Template replies are English either way. Built: the switch and both prompts; the gate numbers passed (100% routed, 100% figure-checked). **Decided 2026-09-30: replies stay English** - the user read the Taglish replies and found them awkward; the `match` switch stays in the code for a better model |

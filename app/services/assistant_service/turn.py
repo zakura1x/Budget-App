@@ -9,8 +9,9 @@ the verifier rejects all end in the skill's template, marked ai_phrased=false
 (AI-08). The only errors are the caller's (too long, over the daily cap,
 already asking), and those are raised before anything is counted.
 
-Nothing here writes financial data. The one write is the usage count, which
-is committed with the turn. Logs carry the skill, how it was routed, whether
+Nothing here writes financial data. The writes are the usage count and, when
+the user keeps conversations (A6), the sealed thread - both committed with the
+turn. Logs carry the skill, how it was routed, whether
 the model phrased the reply, why not, counts and elapsed_ms - never the
 question or the reply (AI-52).
 """
@@ -33,7 +34,7 @@ from app.core.exceptions import (
     AssistantQuestionTooLongException,
     ValidationException,
 )
-from app.services.assistant_service import router, skills, usage, verifier
+from app.services.assistant_service import history, router, skills, usage, verifier
 from app.services.assistant_service.facts import Facts
 from app.services.assistant_service.memory import Turn, get_memory
 from app.services.assistant_service.prompts import PROMPT_VERSION, answer_prompt
@@ -141,7 +142,12 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
           context: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     started = time.perf_counter()
     memory = get_memory()
-    conversation = memory.get_or_start(cipher.user_id, conversation_id)
+    conversation = memory.get(cipher.user_id, conversation_id)
+    if conversation is None and conversation_id:
+        saved = history.load(db, cipher, conversation_id)  # A6: a kept thread, continued after an unlock
+        conversation = memory.adopt(cipher.user_id, saved) if saved else None
+    if conversation is None:
+        conversation = memory.get_or_start(cipher.user_id, conversation_id)
     meter = _Meter()
     service = _service()
     model_name = settings.WATSONX_CHAT_MODEL
@@ -184,6 +190,7 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
         "follow_ups": list(facts.follow_ups),
     }
     memory.append(cipher.user_id, conversation, Turn(question=text, reply=reply))
+    history.save(db, cipher, conversation)
     usage.record(db, cipher.user_id, questions=1, model_calls=meter.calls, prompt_tokens=meter.prompt_tokens,
                  completion_tokens=meter.completion_tokens, fallbacks=int(facts.phrase and not phrased))
     db.commit()

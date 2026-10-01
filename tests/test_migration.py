@@ -49,7 +49,7 @@ def test_schema_is_created_before_the_version_table(offline_sql):
 def test_all_sixteen_tables_are_created(offline_sql):
     blocks = create_blocks(offline_sql)
     model_tables = {t.name for t in Base.metadata.sorted_tables}
-    assert len(model_tables) == 16
+    assert len(model_tables) == 17
     assert model_tables <= set(blocks)
 
 

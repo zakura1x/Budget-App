@@ -153,9 +153,12 @@ steps on the server, in this order.
    If the dry run lists an upgrade, open QUOT once afterwards and check that
    its own assistant still answers.
 
-2. **The table.** `assistant_usage` (migration `20260930_0005`) was applied
-   from the PC on 2026-09-30. `alembic current` on the server should name it.
-   It holds counts per account per day and nothing else.
+2. **The tables.** `assistant_usage` (migration `20260930_0005`) was applied
+   from the PC on 2026-09-30; it holds counts per account per day and nothing
+   else. `assistant_threads` (migration `20261001_0006`, A6) holds the
+   conversations a user chose to keep, encrypted like every other data table.
+   If `alembic current` does not name `20261001_0006`, tell the DB owner and
+   run `alembic upgrade head` (*Database migrations* above).
 
 3. **`.env`** — add the block from `.env.example` by hand. None of it is a
    secret: the watsonx key is fetched from the company IAM service when a

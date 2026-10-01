@@ -178,7 +178,8 @@ This project adds one rule of its own, and it is absolute:
 ## 4. Data model
 
 Everything lives in the **`ZBDGT` schema** of the shared SQL Server database.
-Sixteen tables, in two shapes (the sixteenth, `assistant_usage`, since 2026-09-30).
+Seventeen tables, in two shapes (`assistant_usage` since 2026-09-30, `assistant_threads` since
+2026-10-01 - both the AI companion's, §15).
 
 ### 4.1 The two table shapes
 
@@ -242,7 +243,7 @@ distinction matters: `row_created` leaks only *when you used the app*, which is
 unavoidable, while `txn_date` — which leaks your actual financial timeline —
 stays inside the ciphertext.
 
-### 4.2 The sixteen tables
+### 4.2 The seventeen tables
 
 | Shape | Table | Holds |
 |---|---|---|
@@ -262,6 +263,7 @@ stays inside the ciphertext.
 | B | `tags` | name, colour |
 | B | `attachments` | filename, mime, size, on-disk ref (file itself encrypted) |
 | B | `user_preferences` | theme, week start, month start day, **carry-over toggle**, alert thresholds |
+| B | `assistant_threads` | A saved AI companion conversation: title, dates, the questions and replies. Only for a user who chose to keep conversations (misc/AI A6, migration `20261001_0006`) |
 
 ### 4.3 The cost of Shape B, stated plainly
 
@@ -861,7 +863,7 @@ row id, the swapped ciphertext fails to authenticate. This is why
 > Inserts are therefore two-step — insert with a placeholder payload to obtain
 > the identity value, then encrypt with the real AAD and update, inside one
 > transaction. `EncryptedRepository.create()` (`app/db/repositories/`) is the only
-> place this awkwardness lives, shared by all eleven data tables.
+> place this awkwardness lives, shared by all twelve data tables.
 >
 > The column type `EncryptedPayload` backs this up: it refuses to write anything
 > that is not a sealed envelope, so a dict, a string or JSON bytes assigned to a
@@ -1544,3 +1546,37 @@ from Phase 3 on is still design. The things most likely to need revision:
 - **It shares a browser origin with every other app on
   `delca.noahapplication.com`** (§10.3). A scripting bug in any of them could
   use a logged-in session. Only a subdomain removes that entirely.
+
+---
+
+## 15. The AI companion
+
+Built 2026-09-30 to 2026-10-01 and documented in full in `misc/AI/`
+(README, ARCHITECTURE, FEATURES, PHASES). What the rest of the system needs to
+know:
+
+- **It is a reader.** `/assistant/ask` answers a question about the user's own
+  money by calling the same services the screens call (`budget_service`,
+  `stats_service`, `projection_service`, `safety_service` ...) and handing the
+  model finished, formatted figures. The model words the answer; it never
+  computes a figure, never reads the database and never writes. Every reply
+  is checked (`assistant_service/verifier.py`) and replaced by the app's own
+  sentence if any number in it is not in the figures.
+- **"Can I afford it?" is decided by rules** (`app/core/utils/affordability.py`)
+  over the Months ahead cash line (§4.5); the model explains the verdict.
+- **The model is IBM watsonx.ai**, reached the way STWRD reaches it: the API
+  key is fetched from the company IAM service at run time and held in memory
+  only (`app/ai/`). `AI_ENABLED=False` loads and calls nothing. What leaves
+  the server is the question and the figures that answer it (§5's boundary
+  has one deliberate opening here, which the user opts in to).
+- **Two tables.** `assistant_usage` (Shape A) counts questions, model calls,
+  tokens and fallbacks per user per day - never content. `assistant_threads`
+  (Shape B) holds a conversation only if the user chose to keep conversations;
+  by default a conversation lives in process memory and is dropped with the
+  DEK, like the working set (§5.5).
+- **One worker still holds.** The model wait runs in a pool thread; at most
+  `AI_MAX_CONCURRENT_CALLS` are in flight and others wait
+  `AI_QUEUE_WAIT_SECONDS` for a place. `scripts/ai_load.py` measures what
+  questions do to the rest of the app.
+- **Nothing is logged** but counts, the skill and `elapsed_ms` - never a
+  question or a reply.

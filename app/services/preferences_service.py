@@ -38,6 +38,8 @@ EDITABLE = (
     "haptics",
     # AI-50 (misc/AI): the AI companion, off until the user opts in after reading what is sent
     "assistant",
+    # AI-60 (misc/AI A6): keep conversations this many days; 0 = memory only, gone on lock
+    "assistant_history_days",
 )
 THEMES = ("system", "light", "dark")
 # UX-05: the colour palette, independent of light/dark (every palette has both).
@@ -64,6 +66,14 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
         cleaned["haptics"] = _bool(changes["haptics"], "haptics")
     if "assistant" in changes:
         cleaned["assistant"] = _bool(changes["assistant"], "assistant")
+    if "assistant_history_days" in changes:
+        from app.services.assistant_service.history import KEEP_CHOICES
+
+        days = changes["assistant_history_days"]
+        if isinstance(days, bool) or days not in KEEP_CHOICES:
+            raise ValidationException(
+                f"assistant_history_days must be one of: {', '.join(map(str, KEEP_CHOICES))}")
+        cleaned["assistant_history_days"] = days
     if "budget_suggestion_nudge" in changes:
         cleaned["budget_suggestion_nudge"] = _bool(changes["budget_suggestion_nudge"], "budget_suggestion_nudge")
     if "payday_prompt_min" in changes:
@@ -130,6 +140,11 @@ def update_preferences(db: Session, cipher: UserCipher, changes: Mapping[str, An
             db, audit_service.ASSISTANT_ENABLED if cleaned["assistant"] else audit_service.ASSISTANT_DISABLED,
             user_id=cipher.user_id, entity="user_preferences",
         )
+    if data.get("assistant_history_days") == 0 or not data.get("assistant"):
+        # AI-60: no longer keeping conversations, or no assistant at all - the saved ones go now, for good
+        from app.services.assistant_service import history
+
+        history.purge(db, cipher)
     db.commit()
     return data
 

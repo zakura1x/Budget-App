@@ -12,6 +12,7 @@ class AssistantStatusOut(BaseModel):
     questions_left_today: Optional[int]  # None = no daily cap
     reply_language: Literal["en", "match"]  # AI-63
     suggestions: List[str]
+    history_days: int = 0  # AI-60 - how long conversations are kept; 0 = gone on lock
 
 
 class AskIn(BaseModel):
@@ -64,6 +65,21 @@ class ReplyOut(BaseModel):
 class ConversationOut(BaseModel):
     conversation_id: str
     turns: List[ReplyOut]
+
+
+class SavedConversationOut(BaseModel):
+    """One kept conversation in the list (A6) - its title is the first question, cut short."""
+
+    conversation_id: str
+    title: str
+    started_at: str
+    updated_at: str
+    turns: int
+
+
+class SavedConversationsOut(BaseModel):
+    history_days: int  # 0 = nothing is kept, and the list is empty
+    conversations: List[SavedConversationOut]
 
 
 class HealthCheckOut(BaseModel):

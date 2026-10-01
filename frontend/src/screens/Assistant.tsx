@@ -11,6 +11,10 @@
  * did not check out) says so in one quiet line - the figures are the app's
  * own either way (AI-08). The thread lives in assistantStore, in memory, and
  * goes on lock.
+ *
+ * A6 (AI-60): the user may choose to KEEP conversations for 30, 90 or 365
+ * days. Then the server seals each one under their key, the empty screen
+ * lists them to carry on or delete, and "Until I lock" deletes them all.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -19,9 +23,10 @@ import { GoalSheet } from '../components/GoalSheets';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { format, parseISO } from 'date-fns';
 import {
-  getAssistantStatus, type AskContext, type AssistantAction, type AssistantReply, type DraftGoal,
-  type Tone,
+  getAssistantStatus, listConversations, type AskContext, type AssistantAction, type AssistantReply,
+  type DraftGoal, type SavedConversation, type Tone,
 } from '../lib/assistant';
 import { afterWrite } from '../lib/invalidate';
 import { keys, STALE } from '../lib/queryKeys';
@@ -30,6 +35,14 @@ import { usePreferencesStore } from '../stores/preferencesStore';
 import { useUiStore } from '../stores/uiStore';
 
 const MAX_CHARS = 500;
+
+/** AI-60 - how long a conversation is kept; 0 = gone when the app locks (the A1-A5 promise, still the default). */
+const KEEP: { value: 0 | 30 | 90 | 365; label: string }[] = [
+  { value: 0, label: 'Until the app locks' },
+  { value: 30, label: '30 days' },
+  { value: 90, label: '90 days' },
+  { value: 365, label: '1 year' },
+];
 
 // ok / warn / danger are money state - exactly what a reply's tone is (CLAUDE.md, Design)
 const TONES: Record<Tone, { label: string; className: string }> = {
@@ -152,8 +165,9 @@ function OptIn({ onTurnOn, busy }: { onTurnOn: () => void; busy: boolean }) {
           AI account - the same service the company's other apps use.
         </li>
         <li>
-          <span className="font-bold">What is kept:</span> nothing. Budget App holds the conversation in memory only;
-          it is gone when the app locks.
+          <span className="font-bold">What is kept:</span> nothing, unless you choose to. Budget App holds the
+          conversation in memory and it is gone when the app locks. You can choose to keep conversations for a
+          while; they are then stored encrypted under your own key, like the rest of your budget.
         </li>
         <li>
           <span className="font-bold">What it can do:</span> read and explain. It never adds, changes or deletes
@@ -162,6 +176,41 @@ function OptIn({ onTurnOn, busy }: { onTurnOn: () => void; busy: boolean }) {
       </ul>
       <Button block size="lg" disabled={busy} onClick={onTurnOn}>Turn on the assistant</Button>
       <p className="text-footnote text-ink-3">You can turn it off again at the bottom of this screen.</p>
+    </Card>
+  );
+}
+
+/** A6 - the kept conversations, newest first: tap to carry one on, or delete it for good. */
+function Saved({ items, onOpen, onDelete, busy }: {
+  items: SavedConversation[]; onOpen: (id: string) => void; onDelete: (id: string) => void; busy: boolean;
+}) {
+  const [doomed, setDoomed] = useState<string | null>(null);
+  if (items.length === 0) return null;
+  return (
+    <Card className="space-y-1">
+      <p className="label text-ink-2">Earlier conversations</p>
+      {items.map((c) => (
+        <div key={c.conversation_id} className="flex items-center gap-2 border-t border-stroke/40 pt-2 first-of-type:border-t-0">
+          <button type="button" disabled={busy} onClick={() => onOpen(c.conversation_id)}
+            className="min-h-tap min-w-0 flex-1 text-left disabled:opacity-40">
+            <span className="block truncate text-body font-semibold text-ink">{c.title}</span>
+            <span className="block text-footnote text-ink-3">
+              {format(parseISO(c.updated_at), 'd MMM')} · {c.turns} {c.turns === 1 ? 'question' : 'questions'}
+            </span>
+          </button>
+          {doomed === c.conversation_id ? (
+            <Button variant="ghost" className="text-danger" disabled={busy}
+              onClick={() => { setDoomed(null); onDelete(c.conversation_id); }}>
+              Delete
+            </Button>
+          ) : (
+            <Button variant="ghost" aria-label={`Delete "${c.title}"`} disabled={busy}
+              onClick={() => setDoomed(c.conversation_id)}>
+              ✕
+            </Button>
+          )}
+        </div>
+      ))}
     </Card>
   );
 }
@@ -177,6 +226,8 @@ export function Assistant() {
   const error = useAssistantStore((s) => s.error);
   const ask = useAssistantStore((s) => s.ask);
   const clear = useAssistantStore((s) => s.clear);
+  const open = useAssistantStore((s) => s.open);
+  const remove = useAssistantStore((s) => s.remove);
   const changePrefs = usePreferencesStore((s) => s.change);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -192,6 +243,13 @@ export function Assistant() {
     [goalDraft],
   );
   const asked = useRef(false);
+  const keepDays = status?.history_days ?? 0;
+  const { data: saved } = useQuery({
+    queryKey: keys.assistantConversations(),
+    queryFn: ({ signal }) => listConversations(signal),
+    staleTime: STALE.assistant,
+    enabled: Boolean(status?.enabled && status.opted_in && keepDays > 0),
+  });
 
   useEffect(() => {
     if (turns.length || pending) endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
@@ -202,6 +260,17 @@ export function Assistant() {
     try {
       await changePrefs({ assistant: on });
       if (!on) clear();
+    } finally {
+      setSaving(false);
+      afterWrite('assistant', 'preferences');
+    }
+  };
+
+  // AI-60. Shorter keeps what fits; "until the app locks" deletes every kept conversation on the server.
+  const setKeep = async (days: 0 | 30 | 90 | 365) => {
+    setSaving(true);
+    try {
+      await changePrefs({ assistant_history_days: days });
     } finally {
       setSaving(false);
       afterWrite('assistant', 'preferences');
@@ -288,7 +357,7 @@ export function Assistant() {
         title="Assistant"
         subtitle="Ask about your money"
         action={turns.length > 0
-          ? <Button variant="ghost" onClick={clear} disabled={Boolean(pending)}>New chat</Button>
+          ? <Button variant="ghost" onClick={() => clear(keepDays > 0)} disabled={Boolean(pending)}>New chat</Button>
           : undefined}
       />
 
@@ -301,6 +370,10 @@ export function Assistant() {
             </p>
             <Chips items={status.suggestions} onPick={send} />
           </Card>
+        )}
+        {turns.length === 0 && !pending && keepDays > 0 && (
+          <Saved items={saved?.conversations ?? []} busy={saving}
+            onOpen={(id) => void open(id)} onDelete={(id) => void remove(id)} />
         )}
 
         {turns.map((reply, i) => (
@@ -348,6 +421,24 @@ export function Assistant() {
         />
         <Button type="submit" disabled={!draft.trim() || Boolean(pending) || left === 0}>Ask</Button>
       </form>
+
+      <label className="mt-3 flex items-center justify-between gap-3 px-1 text-footnote text-ink-2">
+        <span>Keep conversations</span>
+        <select
+          value={keepDays}
+          disabled={saving}
+          onChange={(e) => void setKeep(Number(e.target.value) as 0 | 30 | 90 | 365)}
+          className="min-h-tap rounded-xl border-2 border-stroke bg-surface px-3 text-body text-ink"
+        >
+          {KEEP.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+        </select>
+      </label>
+      {keepDays > 0 && (
+        <p className="px-1 pt-1 text-caption text-ink-3">
+          Kept encrypted under your own key, and deleted after {keepDays === 365 ? 'a year' : `${keepDays} days`} untouched.
+          Choosing “Until the app locks” deletes them all now.
+        </p>
+      )}
 
       <p className="px-1 pt-3 text-footnote text-ink-3">
         {left != null && `${left} ${left === 1 ? 'question' : 'questions'} left today. `}

@@ -2,13 +2,17 @@
  * The AI companion's conversation, in memory only (misc/AI ARCHITECTURE §7, §11).
  *
  * Not a query: it is a thread the user builds one question at a time, and the
- * server keeps its own copy only until the key goes. Never persisted (invariant
- * 10); App.tsx calls `reset()` in the lock effect beside `queryClient.clear()`,
- * so a lock wipes the page's copy in the same moment as the server's.
+ * server keeps its own copy only until the key goes - unless the user keeps
+ * conversations (A6), when the server also seals it. Never persisted here
+ * (invariant 10); App.tsx calls `reset()` in the lock effect beside
+ * `queryClient.clear()`, so a lock wipes the page's copy in the same moment as
+ * the server's memory.
  */
 import { create } from 'zustand';
 import { ApiError } from '../lib/api';
-import { askAssistant, forgetConversation, type AskContext, type AssistantReply } from '../lib/assistant';
+import {
+  askAssistant, forgetConversation, getConversation, type AskContext, type AssistantReply,
+} from '../lib/assistant';
 import { buzz } from '../lib/haptics';
 import { invalidateGroups } from '../lib/queryKeys';
 
@@ -19,8 +23,15 @@ interface AssistantState {
   pending: string | null;
   error: string | null;
   ask: (question: string, context?: AskContext) => Promise<void>;
-  /** Start over: drop this thread here and on the server. */
-  clear: () => void;
+  /**
+   * Start over. A conversation that is not kept is dropped on the server too;
+   * a kept one (`kept`, A6) stays in the saved list.
+   */
+  clear: (kept?: boolean) => void;
+  /** A6 - carry on a kept conversation: its turns come back from the server. */
+  open: (conversationId: string) => Promise<void>;
+  /** A6 - delete a kept conversation for good; if it is the open one, start over. */
+  remove: (conversationId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -56,10 +67,33 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
     }
   },
 
-  clear: () => {
+  clear: (kept = false) => {
     const id = get().conversationId;
     set({ conversationId: null, turns: [], pending: null, error: null });
-    if (id) void forgetConversation(id).catch(() => undefined);
+    if (id && !kept) void forgetConversation(id).catch(() => undefined);
+  },
+
+  open: async (conversationId) => {
+    if (get().pending) return;
+    set({ error: null });
+    try {
+      const found = await getConversation(conversationId);
+      set({ conversationId: found.conversation_id, turns: found.turns });
+    } catch {
+      set({ error: "That conversation isn't there any more." });
+      invalidateGroups(['assistant']);
+    }
+  },
+
+  remove: async (conversationId) => {
+    try {
+      await forgetConversation(conversationId);
+      if (get().conversationId === conversationId) set({ conversationId: null, turns: [], error: null });
+    } catch {
+      set({ error: "Couldn't delete that conversation. Try again." });
+    } finally {
+      invalidateGroups(['assistant']);
+    }
   },
 
   reset: () => set({ conversationId: null, turns: [], pending: null, error: null }),

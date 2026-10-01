@@ -412,6 +412,54 @@ list only; a week with no fallback rate above 10%.
 
 ## A6 — Saved history (optional, AI-60)
 
+**Status (2026-10-01): built; the gate's checks passed.** The user asked for it
+on 2026-10-01. Migration `20261001_0006` still has to be applied to ZBDGT.
+
+What was built:
+- **`assistant_threads`** (Shape B, `AssistantThread`,
+  `AssistantThreadRepository`) and migration `20261001_0006`. One row per
+  conversation: `conversation_id`, `title` (the first question, cut to 60
+  characters), `started_at`, `updated_at`, `turns`.
+- **`assistant_service/history.py`**, the only writer. `turn.ask` saves after
+  each turn, in the same commit as the usage count. A conversation id the
+  memory no longer holds (after a lock) is read back from its row and carried
+  on.
+- **The choice is the user's, and off by default.** `assistant_history_days`
+  is 0 (gone on lock, as before), 30, 90 or 365. Setting it to 0, or turning
+  the assistant off, deletes every saved thread at once. A thread untouched
+  for longer than the setting is deleted the next time the list is read. At
+  most 50 are kept.
+- **Deleting is for good.** Threads use `hard_delete`, not the soft delete the
+  rest of the app uses: a conversation the user deleted must not sit in the
+  table marked hidden.
+- **Draft buttons are not saved.** Their payloads name accounts and categories
+  by id, and `references.py` lists no references for this table, so a restore
+  into another account would have left them pointing at the wrong rows.
+  `open_screen` buttons are kept.
+- **Step 2 needed almost nothing.** DEK rotation, account deletion, the Admin
+  row counts and the integrity check all loop over `ENCRYPTED_MODELS` or
+  `ORDER`, so adding the model and one `ORDER` entry was enough. The
+  "ORDER covers every encrypted table" test failed until that entry was added,
+  as planned. The working-set drop already covered memory; saved rows are not
+  cached.
+- **API:** `GET /assistant/conversations` (the list, newest first),
+  `GET /assistant/conversations/{id}` (memory, then the saved row), `DELETE`
+  (both). `/assistant/status` carries `history_days`.
+- **Screen:** a "Keep conversations" choice under the question box; with it
+  on, "Earlier conversations" on the empty screen, each with a two-tap delete.
+  "New chat" leaves a kept conversation in the list. The opt-in card now says
+  conversations are kept only if the user chooses.
+
+Checked in the running app on made-up data: chose 90 days, asked, locked and
+unlocked, opened the conversation from the list, started a new chat (it stayed
+listed), chose "Until the app locks" (the list emptied and the row was gone).
+
+Tests: `tests/test_ai_history.py` (13) - nothing kept by default, the payload
+sealed, carried on after an unlock, draft buttons dropped, delete is for good,
+both ways of turning it off, expiry, the 50 cap, another user cannot read or
+delete one, DEK rotation re-seals it, account deletion removes it, and backup
+and restore carry it. The store gained three vitest cases (83 in all).
+
 Only if losing history on lock turns out to matter in use.
 
 1. `assistant_threads` (Shape B) + `AssistantThreadRepository(EncryptedRepository)`.

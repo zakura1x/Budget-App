@@ -43,6 +43,9 @@ ORDER: Tuple[str, ...] = (
     "user_preferences",
     "transactions",
     "attachments",
+    # misc/AI A6: saved conversations. No references - draft buttons, which name rows
+    # by id, are left out when a thread is saved (assistant_service.history).
+    "assistant_threads",
 )
 
 REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
@@ -92,6 +95,7 @@ REFERENCES: Mapping[str, Tuple[Ref, ...]] = {
         ("converted_to", "recurring_rules"),
     ),
     "attachments": (("transaction_id", "transactions"),),
+    "assistant_threads": (),
 }
 
 # Links that say WHICH row, not what a row IS - left out of a merge's

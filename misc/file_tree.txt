@@ -27,7 +27,8 @@ Budget App/
 │   └── versions/
 │       ├── 20260914_0001_baseline_budget_schema.py
 │       ├── 20260914_0002 / 0003, 20260928_0004
-│       └── 20260930_0005_assistant_usage.py
+│       ├── 20260930_0005_assistant_usage.py
+│       └── 20261001_0006_assistant_threads.py
 │
 ├── app/
 │   ├── main.py                          # lifespan, middleware, /health
@@ -116,13 +117,14 @@ Budget App/
 │   │   ├── session.py
 │   │   ├── types.py                     # EncryptedPayload TypeDecorator
 │   │   │
-│   │   ├── models/                      # 16 tables, schema ZBDGT
+│   │   ├── models/                      # 17 tables, schema ZBDGT
 │   │   │   ├── encrypted_row.py         # the Shape B mixin every data table uses
 │   │   │   ├── user.py                  # A: email_bidx, profile_enc, password_hash,
 │   │   │   │                            #    pin_hash, dek_wrapped
 │   │   │   ├── refresh_token.py         # A: hashed, family_id, parent_id
 │   │   │   ├── login_attempt.py         # A: email_bidx, hashed IP
 │   │   │   ├── assistant_usage.py       # A: AI companion counts per user per day
+│   │   │   ├── assistant_thread.py      # B: a kept AI conversation (misc/AI A6)
 │   │   │   ├── audit_log.py             # A: plaintext verb, encrypted detail
 │   │   │   ├── account.py               # B: encrypted payload (no currency)
 │   │   │   ├── category.py              # B
@@ -145,6 +147,7 @@ Budget App/
 │   │       ├── account_repository.py
 │   │       ├── category_repository.py
 │   │       ├── tag_repository.py
+│   │       ├── assistant_thread_repository.py   # misc/AI A6: kept conversations
 │   │       ├── transaction_repository.py   # subclasses EncryptedRepository
 │   │       ├── budget_repository.py
 │   │       ├── recurring_repository.py  # rules AND the subscriptions metadata rows
@@ -159,7 +162,8 @@ Budget App/
 │   ├── services/                        # ALL business logic. Plaintext only.
 │   │   ├── assistant_service/           # AI companion (misc/AI): turn, router (rules, then
 │   │   │                                #   the model), skills/ (one per question kind), facts,
-│   │   │                                #   verifier (figure check), prompts, memory, usage
+│   │   │                                #   verifier (figure check), prompts, memory, usage,
+│   │   │                                #   history (kept conversations, A6)
 │   │   ├── auth_service/
 │   │   │   ├── auth_service.py
 │   │   │   ├── passwords.py             # bcrypt direct (passlib breaks on bcrypt 5)
@@ -333,7 +337,7 @@ Budget App/
 │   ├── backup.py                        # ★ full encrypted export
 │   ├── restore.py                       # ★ fresh | merge | verify
 │   ├── verify_backup.py                 # round-trip fidelity check (DAT-14)
-│   ├── int_tables.sql                   # raw DDL, 16 tables - generated, do not edit
+│   ├── int_tables.sql                   # raw DDL, 17 tables - generated, do not edit
 │   ├── ai_health.py                     # AI companion: IAM key + model check, --measure N timing
 │   ├── ai_eval.py                       # AI companion gate: golden questions, real model, in-memory data
 │   ├── ai_load.py                       # AI companion A5: 10 asking at once vs the readers' p95, one worker
@@ -361,6 +365,7 @@ Budget App/
 │   ├── test_ai_assistant.py             # AI companion A2: verifier, router, skills vs screens, turn
 │   ├── test_ai_afford.py                # AI companion A3: the verdict rules, prices, six more skills
 │   ├── test_ai_context.py               # AI companion A4: Explain contexts, drafts write nothing, find
+│   ├── test_ai_history.py               # AI companion A6: kept conversations, sealed, deleted for good
 │   ├── test_scripts.py
 │   ├── test_db_mssql.py                 # SQL Server only; skipped by default
 │   ├── test_key_rotation.py             #   ...and older backups still open (retired key)

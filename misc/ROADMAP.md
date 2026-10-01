@@ -57,7 +57,7 @@ but a feature is worth little if the data behind it cannot be recovered.
 | **UX-13** | Offline writes with sync-on-reconnect | deferred | 15 | L | ⏸️ |
 | **UX-14** | Haptics | deferred | 15 | S | ✅ 2026-09-28 |
 | **UX-15** | Multi-language | deferred | 15 | L | ⬜ |
-| **AI-01…67** | AI companion — ask about your money, "can I afford it?" | new (2026-09-30) | 16 | L | 🔨 A1–A5 built 2026-09-30; server steps and pilot left |
+| **AI-01…67** | AI companion — ask about your money, "can I afford it?" | new (2026-09-30) | 16 | L | 🔨 A1–A6 built 2026-09-30 – 10-01; server steps left |
 
 **Deliberately NOT on this list** (still ❌ Out in FEATURES.md, for the reasons
 written there): push notifications (BUD-16), bank sync (ACC-10), receipt OCR and
@@ -579,7 +579,8 @@ subscriptions, debts, the monthly review and how-to) were done on 2026-09-30.
 A4 (Explain links, drafted entries and goals that the user saves, the what-if
 hand-off, finding a merchant's entries, the Home tile) was done the same day.
 A5 (load test, a wait for a free place, the Admin line, deploy notes) was
-built the same day; its server steps (package versions, `.env`, the pilot
+built the same day, and A6 (saved conversations, off by default) on
+2026-10-01. The server steps (packages, `.env`, migration 0006, the first
 week) are in `misc/DEPLOY.md`. Tick features in `misc/AI/FEATURES.md`; this row carries only
 the phase.
 

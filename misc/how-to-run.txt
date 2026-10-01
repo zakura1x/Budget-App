@@ -274,8 +274,11 @@ may; account numbers there would limit it to those.
 
 WHAT LEAVES THE SERVER: the question, and the figures and the account,
 category and goal names needed to answer it - to IBM watsonx (us-south).
-Never an email, a note, a receipt or a row. ZBDGT stores no question and
-no reply, in the database or in a log: only how many were asked.
+Never an email, a note, a receipt or a row. ZBDGT logs no question and no
+reply, ever. It stores them only for a person who chose "Keep conversations"
+(30 / 90 / 365 days) on the Assistant screen - then encrypted under their
+own key in assistant_threads, and inside their backups. Choosing "Until the
+app locks", or turning the assistant off, deletes them for good.
 
 THE KEY IS NOT OURS. The watsonx API key lives in the company IAM
 service, shared with QUOT, DMS and STWRD. ZBDGT fetches it when a

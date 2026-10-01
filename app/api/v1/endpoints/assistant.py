@@ -6,14 +6,18 @@
 - POST /assistant/ask - one question. Refused when the assistant is off for
   this user (503) or they have not opted in (403); a model failure is NOT an
   error - the reply is the skill's own sentence, with ai_phrased false.
-- GET / DELETE /assistant/conversations/{id} - this session's turns, held in
-  memory only and gone after a lock (AI-53).
+- GET /assistant/conversations - the kept conversations (A6, AI-60), newest
+  first; empty unless the user keeps them. Prunes the expired ones.
+- GET / DELETE /assistant/conversations/{id} - one conversation: from memory,
+  or from its sealed row when the user keeps them. DELETE removes both, for
+  good.
 - GET /assistant/health - admin only: STWRD's health() plus today's usage.
   It loads the key and asks the model for one word, so it is a button.
 - GET /assistant/usage - admin only: the last week's counts, every account
   summed. Reads assistant_usage and nothing else - no IAM, no model.
 
-Nothing here writes financial data; the only row written is the usage count.
+Nothing here writes financial data; the rows written are the usage count and,
+for a user who keeps conversations, their sealed threads.
 Questions travel in POST bodies, never in a URL (IIS logs query strings).
 """
 
@@ -28,6 +32,8 @@ from app.api.v1.schemas.assistant import (
     AssistantStatusOut,
     AssistantUsageOut,
     ConversationOut,
+    SavedConversationOut,
+    SavedConversationsOut,
     ReplyOut,
     UsageDayOut,
     UsageTodayOut,
@@ -38,7 +44,7 @@ from app.core.exceptions import AssistantDisabledException, AssistantNotOptedInE
 from app.db.session import get_db
 from app.services import preferences_service
 from app.services.assistant_service import router as assistant_router
-from app.services.assistant_service import turn, usage
+from app.services.assistant_service import history, turn, usage
 from app.services.assistant_service.memory import get_memory
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -57,6 +63,7 @@ def status(ctx: UnlockedContext = Depends(get_unlocked_context), db: Session = D
         questions_left_today=usage.questions_left(db, ctx.user.id) if allowed else 0,
         reply_language=settings.AI_REPLY_LANGUAGE,
         suggestions=assistant_router.suggestions() if allowed else [],
+        history_days=history.keep_days(db, ctx.cipher),
     )
 
 
@@ -73,17 +80,34 @@ def ask(body: AskIn, ctx: UnlockedContext = Depends(get_unlocked_context), db: S
     return ReplyOut(**reply)
 
 
+@router.get("/conversations", response_model=SavedConversationsOut)
+def saved_conversations(ctx: UnlockedContext = Depends(get_unlocked_context),
+                        db: Session = Depends(get_db)) -> SavedConversationsOut:
+    days, threads = history.summaries(db, ctx.cipher)
+    db.commit()  # what ran out of its keeping time was deleted on the way
+    return SavedConversationsOut(history_days=days,
+                                 conversations=[SavedConversationOut(**t.__dict__) for t in threads])
+
+
 @router.get("/conversations/{conversation_id}", response_model=ConversationOut)
-def conversation(conversation_id: str, ctx: UnlockedContext = Depends(get_unlocked_context)) -> ConversationOut:
-    found = get_memory().get(ctx.user.id, conversation_id)
+def conversation(conversation_id: str, ctx: UnlockedContext = Depends(get_unlocked_context),
+                 db: Session = Depends(get_db)) -> ConversationOut:
+    memory = get_memory()
+    found = memory.get(ctx.user.id, conversation_id)
+    if found is None:
+        saved = history.load(db, ctx.cipher, conversation_id)
+        found = memory.adopt(ctx.user.id, saved) if saved else None
     if found is None:
         raise NotFoundException("That conversation has ended")
     return ConversationOut(conversation_id=found.id, turns=[ReplyOut(**t.reply) for t in found.turns])
 
 
 @router.delete("/conversations/{conversation_id}", status_code=http_status.HTTP_204_NO_CONTENT)
-def forget(conversation_id: str, ctx: UnlockedContext = Depends(get_unlocked_context)) -> Response:
+def forget(conversation_id: str, ctx: UnlockedContext = Depends(get_unlocked_context),
+           db: Session = Depends(get_db)) -> Response:
     get_memory().forget(ctx.user.id, conversation_id)
+    if history.delete(db, ctx.cipher, conversation_id):
+        db.commit()
     return Response(status_code=http_status.HTTP_204_NO_CONTENT)
 
 

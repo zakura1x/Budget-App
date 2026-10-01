@@ -9,6 +9,10 @@ the database, a log or the browser's storage.
 
 Bounded per user, oldest out: at most MAX_CONVERSATIONS conversations of
 MAX_TURNS turns each.
+
+A6: when the user keeps conversations, history.py also writes each one to a
+sealed row, and a saved one opened after an unlock is `adopt`ed back in here.
+The rule above does not change - this copy still goes with the key.
 """
 
 import secrets
@@ -31,6 +35,7 @@ class Turn:
 class Conversation:
     id: str
     turns: List[Turn] = field(default_factory=list)
+    thread_id: Optional[int] = None  # A6 - its assistant_threads row, once saved
 
     def history(self) -> List[Tuple[str, str]]:
         return [(t.question, t.reply["text"]) for t in self.turns]
@@ -59,6 +64,16 @@ class ConversationMemory:
                     conversations.popitem(last=False)
             conversations.move_to_end(found.id)
             return found
+
+    def adopt(self, user_id: int, conversation: Conversation) -> Conversation:
+        """A saved conversation read back after an unlock (A6), held here like any other."""
+        with self._lock:
+            conversations = self._by_user.setdefault(user_id, OrderedDict())
+            conversations[conversation.id] = conversation
+            conversations.move_to_end(conversation.id)
+            while len(conversations) > MAX_CONVERSATIONS:
+                conversations.popitem(last=False)
+            return conversation
 
     def append(self, user_id: int, conversation: Conversation, turn: Turn) -> None:
         with self._lock:

@@ -11,11 +11,13 @@ import type { AssistantReply } from '../lib/assistant';
 
 const ask = vi.fn<(question: string, conversationId: string | null, context?: unknown) => Promise<AssistantReply>>();
 const forget = vi.fn<(id: string) => Promise<void>>();
+const load = vi.fn<(id: string) => Promise<{ conversation_id: string; turns: AssistantReply[] }>>();
 
 vi.mock('../lib/assistant', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/assistant')>()),
   askAssistant: (question: string, id: string | null, context?: unknown) => ask(question, id, context),
   forgetConversation: (id: string) => forget(id),
+  getConversation: (id: string) => load(id),
 }));
 
 const { useAssistantStore } = await import('../stores/assistantStore');
@@ -29,6 +31,7 @@ beforeEach(() => {
   ask.mockReset();
   forget.mockReset();
   forget.mockResolvedValue(undefined);
+  load.mockReset();
   useAssistantStore.getState().reset();
 });
 
@@ -84,5 +87,40 @@ describe('forgetting', () => {
     useAssistantStore.getState().clear();
     expect(forget).toHaveBeenCalledWith('c1');
     expect(useAssistantStore.getState().turns).toHaveLength(0);
+  });
+
+  it('a new chat leaves a KEPT conversation in the saved list (A6)', async () => {
+    ask.mockResolvedValueOnce(reply('How much is left?'));
+    await useAssistantStore.getState().ask('How much is left?');
+    useAssistantStore.getState().clear(true);
+    expect(forget).not.toHaveBeenCalled();
+    expect(useAssistantStore.getState().conversationId).toBeNull();
+  });
+});
+
+describe('kept conversations (A6)', () => {
+  it('opening one carries it on with its own id', async () => {
+    load.mockResolvedValueOnce({ conversation_id: 'saved', turns: [reply('Earlier', 'saved')] });
+    await useAssistantStore.getState().open('saved');
+    ask.mockResolvedValueOnce(reply('And now?', 'saved'));
+    await useAssistantStore.getState().ask('And now?');
+    expect(ask.mock.calls[0]![1]).toBe('saved');
+    expect(useAssistantStore.getState().turns.map((t) => t.question)).toEqual(['Earlier', 'And now?']);
+  });
+
+  it('deleting the open one starts over; deleting another leaves it', async () => {
+    load.mockResolvedValueOnce({ conversation_id: 'saved', turns: [reply('Earlier', 'saved')] });
+    await useAssistantStore.getState().open('saved');
+    await useAssistantStore.getState().remove('other');
+    expect(useAssistantStore.getState().turns).toHaveLength(1);
+    await useAssistantStore.getState().remove('saved');
+    expect(forget.mock.calls.map((c) => c[0])).toEqual(['other', 'saved']);
+    expect(useAssistantStore.getState().turns).toHaveLength(0);
+  });
+
+  it('one that has gone says so instead of failing silently', async () => {
+    load.mockRejectedValueOnce(new ApiError(404, 'NOT_FOUND', 'gone'));
+    await useAssistantStore.getState().open('expired');
+    expect(useAssistantStore.getState().error).toMatch(/isn't there/);
   });
 });

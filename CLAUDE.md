@@ -159,7 +159,8 @@ browser timer.
 - **Shape A — operational, readable, indexed:** `users`, `refresh_tokens`,
   `login_attempts`, `audit_log`, `assistant_usage` (the AI companion's daily
   counts - never content, 2026-09-30).
-- **Shape B — encrypted (`EncryptedRowMixin`):** the other eleven tables. Only
+- **Shape B — encrypted (`EncryptedRowMixin`):** the other twelve tables
+  (`assistant_threads`, the AI companion's kept conversations, since 2026-10-01). Only
   `id`, `user_id`, `key_version`, `is_deleted` and the row timestamps are
   plaintext; everything else is one `VARBINARY(MAX)` JSON blob. The only index
   a Shape B table can usefully have is `(user_id, is_deleted)`.
@@ -334,7 +335,7 @@ security, goals, admin and PWA (Phase 8b, all 2026-09-14) — 43 test files.
 Mounted: `auth`, `health`, `settings`, `accounts`, `statements`, `categories`,
 `tags`, `transactions`, `budgets`, `calendar`, `stats`, `recurring`,
 `subscriptions`, `projection`, `attachments`, `backups`, `data`, `goals`,
-`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1-A5).
+`security`, `admin`, `assistant` (AI companion, `misc/AI`, A1-A6).
 
 **The working set is live** (`app/core/crypto/working_set.py`). Every read of
 transactions goes through `TransactionRepository.cached()`, and writes reach
@@ -619,7 +620,7 @@ auto-lock); they are never persisted in the browser.
   on purpose (user, 2026-09-28) - do not swap in a WebAuthn package without
   asking. `users.passkeys` holds PUBLIC keys only.
 
-**The AI companion** (`misc/AI`, A1-A5 2026-09-30) - rules worth keeping:
+**The AI companion** (`misc/AI`, A1-A6 2026-09-30 to 10-01) - rules worth keeping:
 
 - **watsonx through the company IAM service**, the way STWRD does it:
   `app/ai/` is STWRD's loader, client and service, copied. The API key lives
@@ -631,8 +632,9 @@ auto-lock); they are never persisted in the browser.
   a number that is not in the facts or the question, and the skill's
   template answers instead. A new skill must report the figure its screen
   shows; `test_ai_assistant.py` holds each one to its endpoint.
-- **It never writes.** No `/assistant` route changes financial data. The only
-  write is the `assistant_usage` count (Shape A, counts only).
+- **It never writes financial data.** No `/assistant` route changes it. The
+  writes are the `assistant_usage` count (Shape A, counts only) and, for a
+  user who chose to keep conversations, their `assistant_threads` row.
 - **Question and reply text is never logged** - counts, skill and `elapsed_ms` only.
 - **Opt-in** is the server-side `assistant` preference, audited as
   `ASSISTANT_ENABLED` / `ASSISTANT_DISABLED`. Conversations live in
@@ -666,6 +668,13 @@ auto-lock); they are never persisted in the browser.
   `AI_QUEUE_WAIT_SECONDS` for one of `AI_MAX_CONCURRENT_CALLS` places. The
   Admin line (`GET /assistant/usage`) is counts per day with every account
   summed, and calls nothing. `scripts/ai_load.py` is the load test.
+- **Kept conversations are the user's choice and off by default (A6).**
+  `assistant_history_days` is 0 (memory only, gone on lock), 30, 90 or 365.
+  `assistant_service/history.py` is the only writer of `assistant_threads`;
+  it hard-deletes (a deleted conversation must be gone, not hidden) on
+  request, on expiry, and when keeping or the assistant is turned off. A saved
+  reply keeps no draft button - their ids would not survive a restore, and
+  `references.py` lists none for this table.
 - `scripts/ai_eval.py` is the gate: the golden questions against the real
   model on in-memory data, with affordability verdicts worked out by hand
   (`AFFORD_WORKING`). Read its replies, not just its percentages - every

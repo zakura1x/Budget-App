@@ -66,6 +66,8 @@ export const keys = {
   health: () => ['health'] as const,
   /** misc/AI - may this user ask, opted in, questions left today. Never a conversation: that is assistantStore. */
   assistantStatus: () => ['assistant', 'status'] as const,
+  /** A6 - the KEPT conversations' titles and dates, read from the server; empty unless the user keeps them. */
+  assistantConversations: () => ['assistant', 'conversations'] as const,
 };
 
 /** How long each answer stays fresh before a background refetch (plan §2.3). */

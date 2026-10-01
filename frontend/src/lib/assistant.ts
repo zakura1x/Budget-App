@@ -4,7 +4,8 @@
  * A question goes in a POST body - never a URL, which IIS would log. Nothing
  * here is kept in the browser's storage (invariant 10): the conversation
  * lives in `assistantStore`, in memory, and is dropped on lock like every
- * other answer the API gives.
+ * other answer the API gives. A conversation the user chose to KEEP (A6,
+ * AI-60) is kept by the server, sealed under their key, and read back here.
  */
 import { api } from './api';
 import { localToday } from './transactions';
@@ -17,6 +18,8 @@ export interface AssistantStatus {
   questions_left_today: number | null;
   reply_language: 'en' | 'match';
   suggestions: string[];
+  /** AI-60 - how many days conversations are kept; 0 = gone on lock. */
+  history_days: number;
 }
 
 export interface AssistantLink {
@@ -84,6 +87,23 @@ export const askAssistant = (question: string, conversationId: string | null, co
     body: { question, today: localToday(), conversation_id: conversationId, context: context ?? null },
   });
 
+/** A6 - one kept conversation in the list. */
+export interface SavedConversation {
+  conversation_id: string;
+  title: string;
+  started_at: string;
+  updated_at: string;
+  turns: number;
+}
+
+export const listConversations = (signal?: AbortSignal) =>
+  api<{ history_days: number; conversations: SavedConversation[] }>('/assistant/conversations', { signal });
+
+export const getConversation = (conversationId: string) =>
+  api<{ conversation_id: string; turns: AssistantReply[] }>(
+    `/assistant/conversations/${encodeURIComponent(conversationId)}`);
+
+/** Forgets it in memory and, when it was kept, deletes the saved copy for good. */
 export const forgetConversation = (conversationId: string) =>
   api<void>(`/assistant/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
 

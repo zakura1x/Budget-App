@@ -59,6 +59,8 @@ def default_preferences() -> dict:
         "haptics": True,
         # AI-50 (misc/AI): the AI companion sends figures to IBM watsonx, so it waits for an opt-in.
         "assistant": False,
+        # AI-60 (misc/AI A6): conversations stay in memory and go on lock unless the user chooses to keep them.
+        "assistant_history_days": 0,
     }
 
 

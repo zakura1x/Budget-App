@@ -184,6 +184,8 @@ export interface Preferences {
   haptics?: boolean;
   /** AI-50 (misc/AI): opted in to the AI companion. */
   assistant?: boolean;
+  /** AI-60 (misc/AI A6): keep conversations this many days; 0 = gone on lock. */
+  assistant_history_days?: 0 | 30 | 90 | 365;
   [key: string]: unknown;
 }
 

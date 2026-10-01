@@ -39,6 +39,9 @@
 | 12. Settings & UX | `UX` | 15 | 2 | 3 | 0 | 20 |
 | **Total** | | **200** | **4** | **17** | **0** | **220** |
 
+The AI companion (2026-09-30) has its own list, `AI-01` to `AI-67`, in
+[AI/FEATURES.md](AI/FEATURES.md); it is not counted above.
+
 > **2026-09-14 — the recovery phrase is out.** SEC-14/15/16/20/22 moved to ❌
 > Out and two features came in: password reset by email (SEC-30) and an
 > offline copy of `.env` kept by the server owner (SEC-31). §13 records why.

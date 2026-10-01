@@ -396,6 +396,30 @@ UPDATE [ZBDGT].alembic_version SET version_num='20260930_0005' WHERE [ZBDGT].ale
 
 GO
 
+-- Running upgrade 20260930_0005 -> 20261001_0006
+
+CREATE TABLE [ZBDGT].assistant_threads (
+    id BIGINT NOT NULL IDENTITY(1,1), 
+    user_id INTEGER NOT NULL, 
+    key_version TINYINT NOT NULL, 
+    payload VARBINARY(max) NOT NULL, 
+    is_deleted BIT NOT NULL DEFAULT 0, 
+    row_created DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(), 
+    row_updated DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(), 
+    CONSTRAINT [PK_assistant_threads] PRIMARY KEY (id), 
+    CONSTRAINT [FK_assistant_threads_user_id_users] FOREIGN KEY(user_id) REFERENCES [ZBDGT].users (id)
+);
+
+GO
+
+CREATE INDEX [IX_assistant_threads_user] ON [ZBDGT].assistant_threads (user_id, is_deleted);
+
+GO
+
+UPDATE [ZBDGT].alembic_version SET version_num='20261001_0006' WHERE [ZBDGT].alembic_version.version_num = '20260930_0005';
+
+GO
+
 COMMIT;
 
 GO

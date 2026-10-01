@@ -215,3 +215,4 @@ class PreferencesIn(BaseModel):
     safety_earners: Optional[Literal["1", "2+"]] = None
     haptics: Optional[bool] = None  # UX-14
     assistant: Optional[bool] = None  # AI-50 - opt in to the AI companion (misc/AI)
+    assistant_history_days: Optional[Literal[0, 30, 90, 365]] = None  # AI-60 - 0 = gone on lock

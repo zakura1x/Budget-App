@@ -168,6 +168,7 @@ graph TD
         TG["tags"]
         AT["attachments"]
         UP["user_preferences"]
+        TH["assistant_threads<br/>kept AI conversations"]
     end
 
     US --> ENC
@@ -609,3 +610,32 @@ The three things most likely to change:
 Start with [phases.md](phases.md) — its Phase 1 section says what was built,
 what was built differently from the plan, and what is left: your first
 account (the sign-up screen), and the benchmark run on the server.
+
+---
+
+## 14. The AI companion (misc/AI)
+
+A question about your own money, from the Assistant screen, an *Explain* link
+or Home's Ask tile. Python finds the answer; the model only words it.
+
+```mermaid
+graph TD
+    Q["Your question<br/>(POST body, never a URL)"] --> R{"Rules<br/>understand it?"}
+    R -->|yes| S["Skill<br/>calls the screen's own service"]
+    R -->|no| MR["Model: which skill?<br/>(JSON, checked)"] --> S
+    S --> F["Facts<br/>finished figures, dates, a verdict"]
+    F --> MA["watsonx words the answer<br/>key from company IAM, memory only"]
+    MA --> V{"Every number<br/>in the facts?"}
+    V -->|yes| OUT["Reply + 'Based on' list"]
+    V -->|no, or model failed| T["The app's own sentence"] --> OUT
+    OUT --> MEM["Conversation in memory<br/>gone on lock"]
+    OUT -.->|"only if you keep conversations"| TH["assistant_threads<br/>sealed under your key"]
+    OUT --> U["assistant_usage<br/>counts only"]
+
+    style MA fill:#fef3c7,stroke:#92400e
+    style TH fill:#fee2e2,stroke:#991b1b
+```
+
+It never writes your data: "I spent 250 on lunch" opens the ordinary add
+sheet pre-filled, and you save it. "Can I afford it?" is decided by rules over
+the Months ahead cash line, never by the model.

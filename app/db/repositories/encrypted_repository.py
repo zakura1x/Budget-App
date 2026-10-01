@@ -134,7 +134,9 @@ class EncryptedRepository:
         on user_id (`user_preferences`), where the constraint cannot see
         `is_deleted`, so a row that is only marked deleted still occupies the
         slot and refuses its replacement. Used by a fresh restore
-        (`restore_service`) and nowhere else. The caller commits.
+        (`restore_service`), and by saved AI conversations
+        (`assistant_service.history`, A6), which the user deletes or lets
+        expire and which must then be gone, not hidden. The caller commits.
         """
         result = self.session.execute(
             delete(self.model).where(self.model.id == row_id, self.model.user_id == self.cipher.user_id)

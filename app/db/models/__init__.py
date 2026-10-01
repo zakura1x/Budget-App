@@ -1,15 +1,17 @@
 """
-The sixteen tables of schema ZBDGT (ARCHITECTURE.md section 4.2).
+The seventeen tables of schema ZBDGT (ARCHITECTURE.md section 4.2).
 
 Importing this package registers every model on Base.metadata - alembic/env.py
 depends on that, or autogenerate would see an empty schema.
 
 Shape A (operational):  users, refresh_tokens, login_attempts, audit_log,
                         assistant_usage (misc/AI, counts only)
-Shape B (encrypted):    the eleven in ENCRYPTED_MODELS
+Shape B (encrypted):    the twelve in ENCRYPTED_MODELS (assistant_threads since
+                        2026-10-01, misc/AI A6)
 """
 
 from app.db.models.account import Account
+from app.db.models.assistant_thread import AssistantThread
 from app.db.models.assistant_usage import AssistantUsage
 from app.db.models.attachment import Attachment
 from app.db.models.audit_log import AuditLog
@@ -40,6 +42,7 @@ ENCRYPTED_MODELS = (
     Tag,
     Attachment,
     UserPreference,
+    AssistantThread,
 )
 
 ENCRYPTED_TABLES = {model.__tablename__: model for model in ENCRYPTED_MODELS}

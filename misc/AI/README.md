@@ -5,9 +5,12 @@ money: *"Can I buy a ₱18,000 phone this month?"*, *"Where did my money go in
 September?"*, *"What bills are due before payday?"*, *"How long until my
 emergency fund is full?"*.
 
-**Status: plan only (2026-09-30). Nothing here is built.** Code that this plan
-names as *existing* was checked against the repo on that date; everything
-under `app/ai/` and `app/services/assistant_service/` is proposed.
+**Status (2026-10-01): A1–A6 built and committed.** Each phase in
+[PHASES.md](PHASES.md) carries an "as built" note saying what changed from the
+plan. What is left is on the server: install the packages, add the `.env`
+block, check the connection, and watch the first week (`misc/DEPLOY.md`,
+*Turning on the AI assistant*). The plan text below is kept as it was written;
+where the build differs, the "as built" notes win.
 
 | File | What it holds |
 |---|---|
