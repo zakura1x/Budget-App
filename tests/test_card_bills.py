@@ -143,6 +143,21 @@ def test_the_limit_counts_purchases_minus_refunds_in_the_open_cycle(session, own
     assert (credit.period_days, credit.period_days_elapsed) == (30, 14)
 
 
+
+def test_money_sent_from_the_card_uses_up_the_limit(session, owner, setup):
+    """User, 2026-10-01: a transfer out of the card is borrowed like a purchase - it joins the bill and the limit."""
+    limited(session, owner, setup)
+    mama = account_service.create_account(session, owner, {"name": "Mama Lala", "type": "lent"})
+    buy(session, owner, setup, "2000.00", "2026-09-20")
+    transaction_service.create_transaction(session, owner, {
+        "type": "transfer", "amount": "510.00", "account_id": setup.card,
+        "counter_account_id": mama.id, "txn_date": "2026-09-21"})
+    pay(session, owner, setup, "1000.00", "2026-09-22")  # money INTO the card still does not lower it
+
+    credit = card_view(session, owner, setup, date(2026, 9, 30))
+    assert (credit.limit_spent, credit.limit_left) == (D("2510.00"), D("7490.00"))
+    assert credit.period_spend == D("2510.00")
+
 def test_the_limit_raises_pace_then_approaching_then_over(session, owner, setup):
     """The §21 walk-through, day by day."""
     limited(session, owner, setup)

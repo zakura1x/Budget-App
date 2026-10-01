@@ -1589,11 +1589,13 @@ def _statement(
 
 def _is_purchase(posting: Posting) -> bool:
     """
-    What uses up a spending limit: money spent on the card. A payment, a
-    transfer or a balance adjustment is not a purchase - the adjustment
-    because nobody knows what that money was (ACC-29).
+    What uses up a spending limit: money spent on the card, and money SENT from
+    it (a transfer out, 2026-10-01 - the user: it is borrowed from the card like
+    a purchase, and it joins the bill like one). A payment into the card or a
+    balance adjustment is not - the adjustment because nobody knows what that
+    money was (ACC-29).
     """
-    return posting.amount < ZERO and posting.kind in (None, "expense")
+    return posting.amount < ZERO and posting.kind in (None, "expense", "transfer")
 
 
 def _posting_lag(data: Mapping[str, Any]) -> int:

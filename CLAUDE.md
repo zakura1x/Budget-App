@@ -387,7 +387,8 @@ references in backup_service like any other, left out of a merge key. Anything
 else joins the bills: a one-off PURCHASE lands on the bill of the statement it
 posts in (`card_posted_on` first), as `Bill.from_purchases` - and so does a
 TRANSFER OUT of the card (money sent from it, 2026-10-01), which the bank
-bills the same way and `_covered_rows` covers the same way - and a plan created
+bills the same way and `_covered_rows` covers the same way; it uses up the
+card's own spending limit too (`_is_purchase`) - and a plan created
 later adds its payments as before. Lists saved on 2026-09-17 keep only
 `bills_saved_at` (a creation-time comparison), older ones only `bills_from`.
 Months ahead takes new purchases with the typed part - money already spent.

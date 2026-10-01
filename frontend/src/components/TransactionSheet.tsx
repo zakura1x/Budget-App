@@ -703,11 +703,13 @@ export function TransactionSheet() {
   };
 
   // ACC-23. What is left of your own limit on the chosen card after this
-  // purchase - only for a new expense dated inside the card's open cycle.
+  // purchase - only for a new expense, or money sent FROM the card (a transfer
+  // uses up the limit too, 2026-10-01), dated inside the card's open cycle.
   const chosen = accounts.find((a) => a.id === accountId);
   const limitHint = (() => {
     const credit = chosen?.credit;
-    if (!chosen || editing || kind !== 'expense' || !credit?.spending_limit || credit.limit_left === null) return null;
+    if (!chosen || editing || (kind !== 'expense' && kind !== 'transfer') || !credit?.spending_limit
+      || credit.limit_left === null) return null;
     if (txnDate < credit.period_start || txnDate > credit.period_closes) return null;
     const left = centavos(credit.limit_left) - amountCents;
     const ceiling = centavos(credit.spending_limit);
