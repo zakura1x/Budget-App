@@ -8,7 +8,7 @@ never disagree with the app (a test holds each skill to its endpoint). Each
 takes a Context and returns Facts; none writes anything.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from functools import cached_property
 from typing import Callable, Dict, List
@@ -28,6 +28,7 @@ class Context:
     today: date
     intent: Intent
     question: str = ""  # the user's words - only how_to reads them; every other skill reads the intent
+    follow_ups: List[str] = field(default_factory=list)  # the last reply's - small talk offers them again
 
     @cached_property
     def categories(self) -> Dict[int, category_service.CategoryView]:
@@ -111,6 +112,7 @@ def run(ctx: Context) -> Facts:
         "draft": draft.transaction,
         "draft_goal": draft.goal,
         "off_topic": other.off_topic,
+        "chat": other.chat,
     }
     skill = table.get(ctx.intent.skill or "")
     return skill(ctx) if skill else other.clarify(ctx)

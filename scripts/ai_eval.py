@@ -106,6 +106,22 @@ GOLDEN = [
     ("Kaya ko ba ang ₱200,000 na kotse?", "afford=no", "tl"),
 ]
 
+# Conversations (2026-10-01, user: "not adaptive... not communicative"): each turn
+# after the first leans on the one before. (message, expected skill); "spending@last_month"
+# also checks the period the follow-up kept.
+CHATS = [
+    [("How much did I spend this month?", "spending"), ("What about last month?", "spending"),
+     ("And on Food?", "spending"), ("Why is it so high?", "spending"), ("thanks!", "chat")],
+    [("Can I afford a ₱15,000 phone?", "afford=yes"), ("What if it's only 8,000?", "afford=yes"),
+     ("How about on installment for 6 months?", "afford"), ("ok", "chat")],
+    [("Hi", "chat"), ("How much cash do I have?", "cash"), ("And my card?", "card")],
+    [("How much is left in my budget?", "budget_status"), ("Is that good?", "budget_status"),
+     ("How much per day then?", "budget_status")],
+    [("What bills are due before payday?", "upcoming"), ("How much is Meralco?", "upcoming"),
+     ("When is it due?", "upcoming"), ("Can you explain that more?", "upcoming")],
+    [("Magkano natitira sa budget ko?", "budget_status"), ("Eh sa Food?", "budget_status"), ("Salamat", "chat")],
+]
+
 AFFORD_WORKING = """
 The seeded user on 2026-10-10 (every figure below is from seed()):
   Cash on hand 33,262.00 = Wallet -1,400 + BPI Savings 45,000 - BPI Card 10,338.
@@ -240,15 +256,25 @@ def main() -> int:
         cold_ms = int((time.perf_counter() - started) * 1000)
         api = harness.ApiClient(client, settings.API_PREFIX)
         seed(api)
-        for question, expected, lang in questions:
+        # Single questions, then conversations: each chat turn carries the conversation id on.
+        cid = None
+        chat_turns = [] if (args.only or args.grep) else [
+            (q, e, "chat", n) for n, chat in enumerate(CHATS) for q, e in chat]
+        plan = [(q, e, lang, None) for q, e, lang in questions] + chat_turns
+        last_chat = None
+        for question, expected, lang, chat_no in plan:
+            if chat_no != last_chat:
+                cid, last_chat = None, chat_no
             started = time.perf_counter()
-            response = api.post("/assistant/ask", {"question": question, "today": TODAY})
+            response = api.post("/assistant/ask", {"question": question, "today": TODAY,
+                                                   "conversation_id": cid if chat_no is not None else None})
             ms = int((time.perf_counter() - started) * 1000)
             if response.status_code != 200:
                 rows.append((question, expected, "ERROR", False, ms, lang))
                 report.append(f"[ERROR {response.status_code}] {question}\n    {response.text[:200]}\n")
                 continue
             body = response.json()
+            cid = body["conversation_id"]
             # "afford=wait" also holds the reply to the verdict worked out by hand
             got = body["skill"] + (f"={body['verdict']}" if "=" in expected else "")
             rows.append((question, expected, got, body["ai_phrased"], ms, lang))
@@ -263,13 +289,14 @@ def main() -> int:
 
     routed = sum(1 for r in rows if r[1] == r[2]) / len(rows)
     # Replies with no model call by design are not counted for or against the model
-    unphrased = ("off_topic", "clarify", "how_to", "draft", "draft_goal", "ERROR")
+    unphrased = ("off_topic", "clarify", "how_to", "draft", "draft_goal", "chat", "ERROR")
     phrasable = [r for r in rows if r[2].split("=")[0] not in unphrased]
     phrased = sum(1 for r in phrasable if r[3]) / len(phrasable) if phrasable else 0.0
     times = sorted(r[4] for r in rows)
     p95 = times[min(len(times) - 1, round(0.95 * (len(times) - 1)))]
     summary = [
-        f"Questions: {len(rows)}  (language setting: {args.language})",
+        f"Questions: {len(rows)}, {len(chat_turns)} of them turns of {len(CHATS) if chat_turns else 0} "
+        f"conversations  (language setting: {args.language})",
         f"Routed right: {routed:.0%}  (gate 90%)",
         f"Model replies that passed the figure check: {phrased:.0%} of {len(phrasable)}  (gate 95%)",
         f"Time: p50 {int(statistics.median(times))} ms, p95 {p95} ms, max {times[-1]} ms  (gate p95 8000 ms)",

@@ -677,6 +677,12 @@ auto-lock); they are never persisted in the browser.
   request, on expiry, and when keeping or the assistant is turned off. A saved
   reply keeps no draft button - their ids would not survive a restore, and
   `references.py` lists none for this table.
+- **A conversation, not separate questions (2026-10-01).** `router.small_talk`
+  answers hello / thanks / ok as skill `chat` with no model call;
+  `router.follow_up` continues the previous turn's intent (`Turn.intent`,
+  memory only) for "and...", "what about...", "what if...", "why?", replacing
+  only the slots the new message names. Never carry from `NOT_CARRIED`
+  (drafts, how-to, off-topic, chat).
 - `scripts/ai_eval.py` is the gate: the golden questions against the real
   model on in-memory data, with affordability verdicts worked out by hand
   (`AFFORD_WORKING`). Read its replies, not just its percentages - every

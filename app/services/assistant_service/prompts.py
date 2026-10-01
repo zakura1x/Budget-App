@@ -14,7 +14,7 @@ from typing import Iterable, Tuple
 from app.core.config import settings
 from app.services.assistant_service.facts import Facts
 
-PROMPT_VERSION = "answer-5"
+PROMPT_VERSION = "answer-6"
 HISTORY_TURNS = 6
 
 _RULES = """You are the budget companion inside a personal budget app. Answer the question using ONLY the facts below.
@@ -37,7 +37,8 @@ _LANGUAGE = {
 }
 
 
-def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]]) -> str:
+def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]], *, continues: bool = False,
+                  elaborate: bool = False) -> str:
     language = _LANGUAGE.get(settings.AI_REPLY_LANGUAGE, _LANGUAGE["en"])
     parts = [_RULES.format(language=language)]
     if facts.verdict_text:
@@ -45,6 +46,15 @@ def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]
         # kept turning "It's tight" into "No," and "which first?" into advice when left to paraphrase it.
         parts.append(f"- The answer is already decided. Your reply MUST begin with this exact sentence: "
                      f"\"{facts.verdict_text}\" After it you may add at most two short sentences of detail.")
+    if continues:
+        # 2026-10-01: "what about last month?" was answered from the facts' "period before" line - the
+        # month before last. A follow-up asks the previous question again, for what these facts cover.
+        parts.append(f"- This message continues the previous question. Answer that same question for what the "
+                     f"facts below are about ({facts.title}) - not for the period before it.")
+    if elaborate:
+        parts.append("- The user wants more than the last answer gave: why, what it means, or more detail. Use "
+                     "facts the conversation has not mentioned yet, in up to 4 sentences, instead of repeating "
+                     "the last answer.")
     parts += ["", f"Facts ({facts.title}):"]
     parts += [f"- {line}" for line in facts.lines]
     turns = list(history)[-HISTORY_TURNS:]
@@ -54,5 +64,8 @@ def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]
             parts += [f"User: {asked}", f"Assistant: {answered}"]
     # The language is said again here, last: a Taglish question pulled the reply into Taglish otherwise
     answer = "Answer (in English):" if settings.AI_REPLY_LANGUAGE != "match" else "Answer:"
-    parts += ["", f"Question: {question}", answer]
+    # A follow-up's own words lean on the last turn ("last month" from a September reply read as August);
+    # the facts' title says plainly what it is asking about.
+    asked = f"{question} (meaning: {facts.title})" if continues and facts.title else question
+    parts += ["", f"Question: {asked}", answer]
     return "\n".join(parts)

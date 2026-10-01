@@ -366,6 +366,7 @@ Budget App/
 │   ├── test_ai_afford.py                # AI companion A3: the verdict rules, prices, six more skills
 │   ├── test_ai_context.py               # AI companion A4: Explain contexts, drafts write nothing, find
 │   ├── test_ai_history.py               # AI companion A6: kept conversations, sealed, deleted for good
+│   ├── test_ai_conversation.py          # AI companion: small talk, follow-ups that continue the last turn
 │   ├── test_scripts.py
 │   ├── test_db_mssql.py                 # SQL Server only; skipped by default
 │   ├── test_key_rotation.py             #   ...and older backups still open (retired key)

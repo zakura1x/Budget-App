@@ -153,13 +153,25 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
     model_name = settings.WATSONX_CHAT_MODEL
 
     ctx = skills.Context(db=db, cipher=cipher, today=today, intent=router.Intent(skill=None), question=text)
-    intent = router.by_rules(text, today, ctx.category_names, ctx.account_names, ctx.goal_names,
-                             ctx.merchant_names, ctx.plan_names)
+    previous = next((t for t in reversed(conversation.turns[-3:])
+                     if t.intent is not None and t.intent.skill not in router.NOT_CARRIED), None)
+    if conversation.turns:
+        ctx.follow_ups = list(conversation.turns[-1].reply.get("follow_ups") or [])
+    chatter = router.small_talk(text)
+    if chatter is not None:
+        intent = router.Intent(skill="chat", item=chatter)  # hello / thanks / ok: no figures, no model
+    else:
+        intent = router.by_rules(text, today, ctx.category_names, ctx.account_names, ctx.goal_names,
+                                 ctx.merchant_names, ctx.plan_names)
     placed = context_intent(context, ctx)
     if placed is not None:
         # AI-40: an Explain link names where it was tapped; that decides the skill, and the server
         # reads the object itself - the browser names it and never supplies a figure.
         intent.skill, intent.account_id = placed.skill, placed.account_id or intent.account_id
+    elif chatter is None:
+        carried = router.follow_up(text, intent, previous.intent if previous else None)
+        if carried is not None:
+            intent = carried  # "and last month?", "why?" - the previous question, continued
     if intent.skill is None and service is not None:
         def ask_json(prompt: str) -> Tuple[Mapping, Dict[str, int]]:
             reply, used = service.invoke_with_recovery(model_name, ROUTE_PARAMS, prompt)
@@ -167,11 +179,13 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
             return _parse_json(reply), used
 
         intent = router.merge(intent, router.by_model(text, today, ctx.category_names, ctx.account_names, ask_json,
-                                                      ctx.goal_names))
+                                                      ctx.goal_names,
+                                                      (previous.question, previous.intent.skill) if previous else None))
     ctx.intent = intent
 
     facts = skills.run(ctx)
-    reply_text, phrased, reason = _phrase(service, model_name, facts, text, conversation.history(), meter)
+    reply_text, phrased, reason = _phrase(service, model_name, facts, text, conversation.history(), meter,
+                                          continues=intent.carried, elaborate=router.asks_for_more(text))
 
     reply = {
         "conversation_id": conversation.id,
@@ -189,7 +203,7 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
         "verdict": facts.verdict,
         "follow_ups": list(facts.follow_ups),
     }
-    memory.append(cipher.user_id, conversation, Turn(question=text, reply=reply))
+    memory.append(cipher.user_id, conversation, Turn(question=text, reply=reply, intent=intent))
     history.save(db, cipher, conversation)
     usage.record(db, cipher.user_id, questions=1, model_calls=meter.calls, prompt_tokens=meter.prompt_tokens,
                  completion_tokens=meter.completion_tokens, fallbacks=int(facts.phrase and not phrased))
@@ -202,14 +216,16 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
     return reply
 
 
-def _phrase(service, model_name: str, facts: Facts, question: str, history, meter: _Meter) -> Tuple[str, bool, str]:
+def _phrase(service, model_name: str, facts: Facts, question: str, history, meter: _Meter, *,
+            continues: bool = False, elaborate: bool = False) -> Tuple[str, bool, str]:
     """(text, ai_phrased, why not). The template whenever the model is off, fails, or is not believed."""
     if not facts.phrase:
         return facts.template, False, ""
     if service is None:
         return facts.template, False, "disabled"
     try:
-        reply, used = service.invoke_with_recovery(model_name, _answer_params(), answer_prompt(facts, question, history))
+        prompt = answer_prompt(facts, question, history, continues=continues, elaborate=elaborate)
+        reply, used = service.invoke_with_recovery(model_name, _answer_params(), prompt)
         meter.add(used)
     except Exception as error:
         return facts.template, False, llm_service.describe_model_error(error).split(" ")[0]

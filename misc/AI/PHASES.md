@@ -410,7 +410,40 @@ list only; a week with no fallback rate above 10%.
 
 ---
 
-## A6 — Saved history (optional, AI-60)
+## After A6 — a conversation, not a string of strangers (2026-10-01)
+
+The user found the assistant "not adaptive to the message, not communicative".
+Six multi-turn conversations against the real model showed why: every message
+was read on its own.
+- "Hi", "thanks!", "Salamat" and "ok" were told the assistant only talks
+  about money, or got an unrelated budget answer.
+- "What about last month?" became a monthly review; "and on Food?" went back
+  to this month; "how about on installment for 6 months?" lost the price; "eh
+  sa Food?" left the budget question.
+- "Why is it so high?", "Is that good?" and "Can you explain that more?"
+  jumped to another skill, or repeated the last answer.
+
+What changed:
+- **`router.small_talk`**: a message that is only a greeting, thanks or an
+  ok gets a short friendly reply (skill `chat`, no model call) and the last
+  answer's follow-up questions.
+- **`router.follow_up`**: a message that asks about the last answer ("why",
+  "is that good", "explain"), opens like a follow-up ("and", "what about",
+  "what if", "eh", "paano kung") or is short and names only a month, category,
+  account, price or bill continues the previous turn's intent - its skill,
+  unless its own keywords name another, and every slot it does not replace.
+  The intent rides on each turn in memory (`Turn.intent`).
+- **The prompt (`answer-6`)** says when a message continues the last one and
+  spells out what it is asking about ("What about last month? (meaning:
+  Spending, 1 Sep to 30 Sep)") - the model had answered with the facts'
+  "period before" line, the month before last. "Why" and "explain" ask it to
+  use facts the conversation has not mentioned yet. The ROUTE prompt names the
+  previous question.
+- **`scripts/ai_eval.py`** gained `CHATS`: the six conversations, 22 turns.
+  83 questions: 100% routed, 99% accepted, p95 1.6 s.
+
+Tests: `tests/test_ai_conversation.py`.
+
 
 **Status (2026-10-01): built; the gate's checks passed.** The user asked for it
 on 2026-10-01. Migration `20261001_0006` was applied to ZBDGT the same day.

@@ -29,6 +29,9 @@ MAX_TURNS = 20
 class Turn:
     question: str
     reply: Dict[str, Any]  # the reply exactly as the API returned it
+    # What the question was taken to mean - the next message may continue it (router.follow_up).
+    # Memory only: a kept thread (A6) reopened after an unlock carries on without it.
+    intent: Any = None
 
 
 @dataclass
