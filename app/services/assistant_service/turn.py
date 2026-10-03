@@ -195,8 +195,12 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
     ctx.intent = intent
 
     facts = skills.run(ctx)
+    said = bool(facts.verdict_text) and any(facts.verdict_text in t.reply.get("text", "") or
+                                             f"Verdict: {facts.verdict_text}" in t.reply.get("facts", [])
+                                             for t in conversation.turns[-2:])
     reply_text, phrased, reason = _phrase(service, model_name, facts, text, conversation.history(), meter,
-                                          continues=intent.carried, elaborate=router.asks_for_more(text))
+                                          continues=intent.carried, elaborate=router.asks_for_more(text),
+                                          verdict_said=said)
 
     reply = {
         "conversation_id": conversation.id,
@@ -228,18 +232,23 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
 
 
 def _phrase(service, model_name: str, facts: Facts, question: str, history, meter: _Meter, *,
-            continues: bool = False, elaborate: bool = False) -> Tuple[str, bool, str]:
+            continues: bool = False, elaborate: bool = False, verdict_said: bool = False) -> Tuple[str, bool, str]:
     """(text, ai_phrased, why not). The template whenever the model is off, fails, or is not believed."""
     if not facts.phrase:
         return facts.template, False, ""
     if service is None:
         return facts.template, False, "disabled"
     try:
-        prompt = answer_prompt(facts, question, history, continues=continues, elaborate=elaborate)
+        prompt = answer_prompt(facts, question, history, continues=continues, elaborate=elaborate,
+                               verdict_said=verdict_said)
         reply, used = service.invoke_with_recovery(model_name, _answer_params(), prompt)
         meter.add(used)
     except Exception as error:
         return facts.template, False, llm_service.describe_model_error(error).split(" ")[0]
+    if verdict_said and facts.verdict_text and reply.strip().startswith(facts.verdict_text):
+        # Told not to, it still opened with the sentence it had already said: drop it, keep what is new
+        rest = reply.strip()[len(facts.verdict_text):].strip()
+        reply = rest or reply
     verdict = verifier.check(reply, [*facts.lines, question], verdict=facts.verdict)
     if not verdict.ok:
         return facts.template, False, verdict.reason

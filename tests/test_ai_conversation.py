@@ -183,6 +183,7 @@ def test_a_draft_takes_what_it_was_for_from_the_next_message(api):
     assert more["skill"] == "draft"
     payload = more["actions"][0]["payload"]
     assert (payload["amount"], payload["notes"]) == ("7000.00", "motorcycle installment plan")
+    assert "for motorcycle installment plan" in more["text"]  # the reply says what it took in
 
 
 # ------------------------------------------------- misc/AI-Test IMG_4148-4149, 2026-10-03

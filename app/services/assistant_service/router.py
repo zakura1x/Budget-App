@@ -94,7 +94,8 @@ _AFFORD = (r"\bafford\b", r"\bcan i (?:buy|get|purchase|spend|splurge)\b", r"\bs
            r"\bif i (?:pay|paid|buy|bought|spend|spent|get|got|purchase|send|sent)\b",
            r"\b(?:will|would) (?:my )?(?:budget|money|cash)(?: still)? (?:be )?(?:enough|sufficient|last)\b",
            r"\b(?:is|be) my budget (?:still )?(?:enough|sufficient)\b",
-           r"\bkung (?:magbabayad|magbayad|bumili|gumastos|gagastos) ako\b", r"\bsapat ba\b")
+           r"\bkung (?:magbabayad|magbayad|bumili|gumastos|gagastos) ako\b",
+           r"\bsapat ba (?:ang )?(?:budget|pera)\b")  # "sapat ba ang emergency fund ko?" is the emergency fund
 # Said as a possibility, not as something that happened - never a draft
 _HYPOTHETICAL = (r"\bif i\b", r"\bwhat if\b", r"\bsuppose\b", r"\bkung\b", r"\bwill (?:my|i|it)\b",
                  r"\bwould (?:my|i|it)\b", r"\b(?:enough|sufficient|sapat)\b")

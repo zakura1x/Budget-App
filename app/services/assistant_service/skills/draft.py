@@ -50,6 +50,8 @@ def transaction(ctx) -> Facts:
         parts.append(category.name)
     if intent.merchant:
         parts.append(f"at {intent.merchant}")
+    if intent.item:
+        parts.append(f"for {intent.item}")  # "it is for the motorcycle plan" fills this in (router.follow_up)
     if account is not None:
         parts.append(f"from {account.name}" if kind == "expense" else f"into {account.name}")
     parts.append("today" if on == today else day(on, today))

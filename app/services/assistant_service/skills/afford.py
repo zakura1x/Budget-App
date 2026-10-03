@@ -190,6 +190,13 @@ def run(ctx) -> Facts:
                    ", even counting the money set aside for goals." if set_aside > ZERO
                    else ", and waiting for your next income does not fix it.")),
     }[result.verdict]
+    if plan is not None and planned is not None and result.verdict in ("yes", "yes_over_budget"):
+        # 2026-10-03: "I will not pay the 5000 this 30th, instead I will pay 7000 today" was answered as if
+        # nothing had changed. The decided sentence says what the payment replaces.
+        instead = f"paying {php(price)} today instead of the {php(planned.amount)} due {day(planned.on, today)}"
+        verdict_text = (f"Yes - {instead} {fits}." if result.verdict == "yes" else
+                        f"Yes - {instead} keeps your cash above zero, but it goes over your budget by "
+                        f"{php(result.over_budget_by)}.")
     lines.append(f"Verdict: {verdict_text}")
 
     if budget is not None:

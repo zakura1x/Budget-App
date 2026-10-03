@@ -14,7 +14,7 @@ from typing import Iterable, Tuple
 from app.core.config import settings
 from app.services.assistant_service.facts import Facts
 
-PROMPT_VERSION = "answer-6"
+PROMPT_VERSION = "answer-7"
 HISTORY_TURNS = 6
 
 _RULES = """You are the budget companion inside a personal budget app. Answer the question using ONLY the facts below.
@@ -38,10 +38,15 @@ _LANGUAGE = {
 
 
 def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]], *, continues: bool = False,
-                  elaborate: bool = False) -> str:
+                  elaborate: bool = False, verdict_said: bool = False) -> str:
     language = _LANGUAGE.get(settings.AI_REPLY_LANGUAGE, _LANGUAGE["en"])
     parts = [_RULES.format(language=language)]
-    if facts.verdict_text:
+    if facts.verdict_text and verdict_said:
+        # 2026-10-03: every follow-up opened with the same decided sentence, word for word - it read as if
+        # the message had not been heard. Already said, so it is answered as what it is.
+        parts.append(f"- You already told the user: \"{facts.verdict_text}\" Do not repeat that sentence. "
+                     f"Answer this message directly, and do not contradict it.")
+    elif facts.verdict_text:
         # AI-30/35: the rules decided. The reply opens with the decided sentence word for word - the model
         # kept turning "It's tight" into "No," and "which first?" into advice when left to paraphrase it.
         parts.append(f"- The answer is already decided. Your reply MUST begin with this exact sentence: "
@@ -54,7 +59,8 @@ def answer_prompt(facts: Facts, question: str, history: Iterable[Tuple[str, str]
     if elaborate:
         parts.append("- The user wants more than the last answer gave: why, what it means, or more detail. Use "
                      "facts the conversation has not mentioned yet, in up to 4 sentences, instead of repeating "
-                     "the last answer.")
+                     "the last answer. Give only reasons the facts themselves state - never a benefit, a risk or "
+                     "a consequence of your own (no interest, fees or savings the facts do not mention).")
     parts += ["", f"Facts ({facts.title}):"]
     parts += [f"- {line}" for line in facts.lines]
     turns = list(history)[-HISTORY_TURNS:]
