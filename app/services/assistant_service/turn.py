@@ -181,9 +181,17 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
             meter.add(used)
             return _parse_json(reply), used
 
+        recent = [(t.question, t.intent.skill) for t in conversation.turns[-4:] if t.intent is not None]
         intent = router.merge(intent, router.by_model(text, today, ctx.category_names, ctx.account_names, ask_json,
                                                       ctx.goal_names,
-                                                      (previous.question, previous.intent.skill) if previous else None))
+                                                      (previous.question, previous.intent.skill) if previous else None,
+                                                      recent))
+    if intent.skill is None and chatter is None and placed is None and previous is not None:
+        # Nothing could place it - no rule, and no model (down, failed, or unsure). Inside a conversation it
+        # continues the last question rather than starting over with "I'm not sure what you mean".
+        loose = router.follow_up(text, intent, previous.intent, loose=True)
+        if loose is not None:
+            intent = loose
     ctx.intent = intent
 
     facts = skills.run(ctx)

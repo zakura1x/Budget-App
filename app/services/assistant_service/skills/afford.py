@@ -83,7 +83,8 @@ def _scheduled(ctx, projection):
         return None, None
     items = [i for m in projection.months for i in m.items if not i.paused and i.type == "expense"]
     own = [i for i in items if i.rule_id == plan.id]
-    billed = [i for i in items if i.rule_id == 0 and i.account_id == plan.account_id and i.kind == "bill"]
+    billed = [i for i in items if i.rule_id == 0 and i.account_id == plan.account_id
+              and i.kind in ("bill", "bill_now")]
     found = min(own or billed, key=lambda i: i.on, default=None)
     return plan, found
 
@@ -136,7 +137,13 @@ def run(ctx) -> Facts:
     plan, planned = _scheduled(ctx, projection) if intent.rule_id else (None, None)
     if plan is not None:
         item = f"the {plan.name} payment"
+        method, months, card = "now", 1, None  # a payment on a plan already made is paid, not financed again
     points, waits = timeline(projection, skip=planned)
+    if planned is not None and planned.kind == "bill_now":
+        # The payment due now is ALREADY held back from cash on hand (ACC-35/40: due_now replaces the
+        # balance). Paying a different amount instead releases what was held, then takes the price - so
+        # 7,000 in place of a held 5,000 costs 2,000 more, not 7,000.
+        points = [(on, value + planned.amount) for on, value in points]
     set_aside = total(v.set_aside for v in ctx.visible_accounts)
     essentials = safety_service.essentials(ctx.db, ctx.cipher, today=today)
     week = (essentials.monthly / _WEEKS_PER_MONTH).quantize(Decimal("0.01")) if essentials.monthly > ZERO else None
@@ -177,6 +184,8 @@ def run(ctx) -> Facts:
                 else "Not yet.",
         "no": ("No - the card's available limit is short by "
                f"{php(result.limit_short)}." if "card_limit" in result.reasons
+               else (f"No - your cash is already heading below zero without it, to {php(result.lowest_without)}, "
+                     f"and this takes it to {php(result.lowest)}.") if result.lowest_without < ZERO
                else "No - your cash would go below zero" + (
                    ", even counting the money set aside for goals." if set_aside > ZERO
                    else ", and waiting for your next income does not fix it.")),
@@ -259,12 +268,19 @@ def run(ctx) -> Facts:
                 f"{day(result.fits_from, today)}." if result.fits_from else f"Not yet for {item}.",
         "no": (f"No - {card.name if card else 'the card'} doesn't have enough limit left; it's short by "
                f"{php(result.limit_short)}." if "card_limit" in result.reasons
+               # 2026-10-03: a "No" that blamed the payment when cash was going below zero without it
+               else (f"No, not right now - but not because of this alone. Even without it, Months ahead has your "
+                     f"cash going to {php(result.lowest_without)}; with it, {php(result.lowest)}.")
+               if result.lowest_without < ZERO
                else f"No, not right now. {item[0].upper() + item[1:]} would take your cash to {php(result.lowest)}, "
                     f"and waiting a few months doesn't fix it."),
     }[result.verdict]
+    if plan is not None and planned is not None:
+        template += (f" This counts the {php(price)} in place of the {php(planned.amount)} {plan.name} payment due "
+                     f"{day(planned.on, today)}.")
 
     actions = [Action("open_screen", "Open months ahead", "/projection")]
-    if method == "installment" or result.verdict in ("tight", "wait", "no"):
+    if plan is None and (method == "installment" or result.verdict in ("tight", "wait", "no")):
         # AI-44: the same plan in the app's own what-if (REC-27), where it can be tried and saved
         actions.insert(0, Action("try_installment", "Try it as an installment", "/projection", {
             "name": (intent.item or "Purchase")[:60], "price": str(price),

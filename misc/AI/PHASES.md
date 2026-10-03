@@ -458,6 +458,26 @@ The user's own screenshot (`misc/AI-Test`, 2026-10-03) showed two more:
   the loan's or card's bill it lands on), says it is already scheduled, and
   counts the price once in its place rather than on top.
 
+Two more screenshots the same day (IMG_4148/4149): "If I paid 7000 bill for
+my installment plan motorcycle today, will my budget still be sufficient?",
+then "What I meant is that I will not pay for the 5000 this 30th, instead I
+will pay 7000 today", which got "I'm not sure what you mean".
+- "installment plan" was read as a way to PAY, so the plan payment was
+  checked as a new purchase in 6 monthly payments. A message naming one of the
+  user's plans no longer sets a method; the payment is paid now.
+- A payment due now on a counted loan or card is already held back from cash
+  on hand (ACC-35/40). Paying another amount in its place now releases what
+  was held before taking the price.
+- A "No" when cash was going below zero WITHOUT the purchase now says so
+  ("not because of this alone"), instead of blaming the purchase.
+- Corrections ("what I meant", "I mean", "actually", "instead", "ibig kong
+  sabihin") continue the last question.
+- **The root of "it treats every message as new"**: a message the rules could
+  not place went to the model, and with the model down - or unsure - it got
+  "I'm not sure". Inside a conversation such a message now continues the last
+  question (`follow_up(loose=True)`), and the ROUTE prompt sees the last four
+  turns, not only the last question.
+
 On the same day IBM began rejecting the IAM key (IAM: expired 2026-05-14), so
 the model could not be asked; routing was checked with every conversation,
 and every reply fell back to the template as designed.

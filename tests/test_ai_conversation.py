@@ -183,3 +183,71 @@ def test_a_draft_takes_what_it_was_for_from_the_next_message(api):
     assert more["skill"] == "draft"
     payload = more["actions"][0]["payload"]
     assert (payload["amount"], payload["notes"]) == ("7000.00", "motorcycle installment plan")
+
+
+# ------------------------------------------------- misc/AI-Test IMG_4148-4149, 2026-10-03
+
+
+def _five_thousand_on_the_30th(api):
+    papa = api.post("/accounts", {"name": "Papa Bern", "type": "borrowed"}).json()["id"]
+    vehicle = api.post("/categories", {"name": "Vehicle"}).json()["id"]
+    made = api.post("/recurring?today=2026-10-10", {
+        "kind": "installment", "type": "expense", "name": "Motorcycle", "account_id": papa,
+        "category_id": vehicle, "frequency": "monthly", "start": "2026-10-30", "price": "60000.00", "payments": 12})
+    assert made.status_code == 201, made.text
+
+
+def _money(line, label):
+    import re
+    found = re.search(label + r" (-?)₱([\d,]+\.\d\d)", line)
+    return Decimal(found.group(1) + found.group(2).replace(",", ""))
+
+
+def test_paying_more_today_in_place_of_a_held_payment_costs_only_the_difference(api):
+    """The 5,000 due on the 30th is already held back from cash on hand; 7,000 instead costs 2,000 more."""
+    signed_up(api)
+    money_world(api)
+    _five_thousand_on_the_30th(api)
+    install(first_fact)
+    reply = ask(api, "If I paid 7000 bill for my installment plan motorcycle today, Will my budget still be "
+                     "sufficient for the month?").json()
+    assert reply["skill"] == "afford" and reply["title"].startswith("Paying the Motorcycle payment")
+    assert any("already scheduled: ₱5,000.00 on 30 Oct" in f for f in reply["facts"])
+    lowest = next(f for f in reply["facts"] if f.startswith("With it, your lowest") or "stays" in f)
+    if lowest.startswith("With it"):
+        assert _money(lowest, "Without it, the lowest is") - _money(lowest, "is") <= Decimal("2000.00")
+    assert not any(a["kind"] == "try_installment" for a in reply["actions"])  # a plan payment is not a purchase
+
+
+def test_what_i_meant_corrects_the_last_question_instead_of_starting_over(api):
+    signed_up(api)
+    money_world(api)
+    _five_thousand_on_the_30th(api)
+    install(first_fact)
+    first = ask(api, "If I paid 7000 bill for my installment plan motorcycle today, Will my budget still be "
+                     "sufficient for the month?").json()
+    meant = ask(api, "What I meant is that I will not pay for the 5000 this 30th instead I will pay 7000 today",
+                first["conversation_id"]).json()
+    assert meant["skill"] == "afford" and meant["title"] == first["title"]  # the same plan payment, 7,000
+
+
+def test_a_message_nothing_can_place_continues_the_conversation_when_the_model_is_down(api):
+    signed_up(api)
+    money_world(api)
+    install(lambda prompt: RuntimeError("IBM rejected the key"))
+    first = ask(api, "Can I afford a 15,000 phone?").json()
+    vague = ask(api, "hmm I will think about the one with the bigger screen", first["conversation_id"]).json()
+    assert vague["skill"] == "afford"  # not "I'm not sure what you mean"
+    alone = ask(api, "hmm I will think about the one with the bigger screen").json()
+    assert alone["skill"] == "clarify"  # with no conversation there is nothing to continue
+
+
+def test_a_no_says_when_cash_was_short_without_it():
+    from app.core.utils import affordability as rules
+
+    today = date(2026, 10, 10)
+    result = rules.decide(rules.Inputs(
+        price=Decimal("7000.00"), today=today, method="now", months=1,
+        timeline=[(today, Decimal("1000.00")), (date(2026, 10, 30), Decimal("-30000.00"))],
+        wait_dates=[], set_aside=Decimal("0"), essentials_week=None))
+    assert result.verdict == "no" and result.lowest_without == Decimal("-30000.00")

@@ -414,6 +414,10 @@ def by_rules(
     rule_id = find_name(question, plans or {})
     known_merchant = find_name(question, merchants or {})
     method, months = find_method(question)
+    if find_name(question, plans or {}) is not None:
+        # "my installment plan motorcycle": the word names the PLAN, not a way to pay (2026-10-03 - a
+        # 7,000 plan payment was checked as a new purchase in 6 monthly payments)
+        method = months = None
     skill = _skill_by_rules(text, keyword_scores(question), category_id, goal_id,
                             named=rule_id is not None or known_merchant is not None, amount=find_amount(question))
     intent = Intent(
@@ -499,7 +503,11 @@ _ELABORATE = (r"^\s*(?:but )?(?:why|bakit|how come|explain|can you explain|could
 # "it is for the motorcycle installment plan", "that's for Food", "para sa kuryente" - more about the
 # last message (2026-10-03: this got "I'm not sure what you're asking").
 _CLARIFY = (r"^\s*(?:it'?s|it is|its|it was|that'?s|that is|that was|this is|this was|they'?re|para sa|para yan|"
-            r"para ito|yung|for (?:the|my|a|an)\b)")
+            r"para ito|yung|for (?:the|my|a|an)\b|"
+            # a correction of the last message (2026-10-03: "What I meant is that I will not pay for the 5000
+            # this 30th, instead I will pay 7000 today" was answered "I'm not sure what you mean")
+            r"what i meant|what i mean|i meant|i mean|actually|no,? i|no,? what|sorry,? i|ibig kong sabihin|"
+            r"ang ibig kong sabihin|instead)")
 _CLARIFIED = re.compile(r"\b(?:for|para sa)\s+(?:the |my |a |an |ang |sa )?(.{2,60}?)\s*[.?!]*$", re.IGNORECASE)
 # What a follow-up can never continue: each of these answers one message on its own
 NOT_CARRIED = ("draft", "draft_goal", "how_to", "off_topic", "clarify", "chat", None)
@@ -520,7 +528,7 @@ def small_talk(question: str) -> Optional[str]:
     return None
 
 
-def follow_up(question: str, rules: Intent, previous: Optional[Intent]) -> Optional[Intent]:
+def follow_up(question: str, rules: Intent, previous: Optional[Intent], loose: bool = False) -> Optional[Intent]:
     """
     This message read as a continuation of `previous`, or None when it stands on
     its own. It continues when it is asking about the last answer ("why?", "is
@@ -532,6 +540,11 @@ def follow_up(question: str, rules: Intent, previous: Optional[Intent]) -> Optio
     another ("and my card?" moves to the card). Every slot this message does
     not fill is the previous one's, so "what if it's only 8,000?" keeps the
     item and "and on Food?" keeps last month.
+
+    `loose` is for a message nothing else could place - the rules found no
+    skill and the model either is not there or did not answer. Inside a
+    conversation it is far likelier to continue the last question than to be
+    a new one, so it does, instead of "I'm not sure what you mean".
     """
     if previous is None:
         return None
@@ -554,7 +567,8 @@ def follow_up(question: str, rules: Intent, previous: Optional[Intent]) -> Optio
     names_something = any(v is not None for v in (rules.period, rules.window, rules.category_id, rules.account_id,
                                                   rules.goal_id, rules.amount, rules.method, rules.rule_id))
     short = len(text.split()) <= 6
-    if not (elaborate or marker or (short and rules.skill is None and names_something)):
+    if not (elaborate or marker or (short and rules.skill is None and names_something)
+            or (loose and rules.skill is None)):
         return None
     scores = keyword_scores(question)
     skill = rules.skill if (scores and rules.skill is not None and rules.skill != "how_to" and not elaborate) \
@@ -586,6 +600,7 @@ def by_model(
     ask_json: Callable[[str], Tuple[Mapping, Dict[str, int]]],
     goals: Optional[Mapping[int, str]] = None,
     previous: Optional[Tuple[str, str]] = None,
+    recent: Optional[List[Tuple[str, str]]] = None,
 ) -> Optional[Intent]:
     """
     The model's reading, validated. None when it failed or answered outside the
@@ -594,9 +609,13 @@ def by_model(
     """
     goals = goals or {}
     earlier = ""
+    if recent:
+        # The conversation so far, oldest first: a message often only makes sense after the one before it
+        earlier = "Earlier in this conversation:\n" + "".join(
+            f"- {json.dumps(q, ensure_ascii=False)} (skill: {s})\n" for q, s in recent[-4:])
     if previous and previous[1] not in NOT_CARRIED:
-        earlier = (f"The previous question in this conversation was {json.dumps(previous[0], ensure_ascii=False)}"
-                   f" (skill: {previous[1]}). If this one continues it, keep that skill.\n")
+        earlier += (f"The previous question was {json.dumps(previous[0], ensure_ascii=False)} (skill: {previous[1]}). "
+                    f"If this message continues, corrects or explains it, keep that skill.\n")
     prompt = ROUTE_PROMPT.format(
         categories=json.dumps(sorted(set(categories.values())), ensure_ascii=False),
         accounts=json.dumps(sorted(set(accounts.values())), ensure_ascii=False),
