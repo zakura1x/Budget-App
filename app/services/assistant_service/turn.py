@@ -155,6 +155,9 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
     ctx = skills.Context(db=db, cipher=cipher, today=today, intent=router.Intent(skill=None), question=text)
     previous = next((t for t in reversed(conversation.turns[-3:])
                      if t.intent is not None and t.intent.skill not in router.NOT_CARRIED), None)
+    last = conversation.turns[-1] if conversation.turns else None
+    if last is not None and last.intent is not None and last.intent.skill == "draft":
+        previous = last  # "it is for the motorcycle plan" right after a draft fills in that draft (router.follow_up)
     if conversation.turns:
         ctx.follow_ups = list(conversation.turns[-1].reply.get("follow_ups") or [])
     chatter = router.small_talk(text)

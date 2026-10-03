@@ -120,6 +120,10 @@ CHATS = [
     [("What bills are due before payday?", "upcoming"), ("How much is Meralco?", "upcoming"),
      ("When is it due?", "upcoming"), ("Can you explain that more?", "upcoming")],
     [("Magkano natitira sa budget ko?", "budget_status"), ("Eh sa Food?", "budget_status"), ("Salamat", "chat")],
+    # misc/AI-Test, 2026-10-03: a what-if was drafted as an entry, and the clarification was not understood
+    [("If I paid a 7000 bill for papa bern, Will my budget be sufficient for the month?", "afford=yes"),
+     ("It is for Meralco", "afford"), ("Why?", "afford")],
+    [("I paid 7000 for the bill today", "draft"), ("It is for the motorcycle installment plan", "draft")],
 ]
 
 AFFORD_WORKING = """

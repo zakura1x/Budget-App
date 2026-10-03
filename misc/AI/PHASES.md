@@ -444,6 +444,24 @@ What changed:
 
 Tests: `tests/test_ai_conversation.py`.
 
+The user's own screenshot (`misc/AI-Test`, 2026-10-03) showed two more:
+- "If I paid a 7000 bill for papa bern, will my budget be sufficient for the
+  month?" was drafted as an entry - "I paid" and an amount. A payment asked
+  about IF it happens ("if I paid", "will my budget be enough", "sapat ba",
+  "kung bumili ako") is now an affordability question, never a draft.
+- "It is for the motorcycle installment plan" got "I'm not sure". A message
+  that says what the last one was FOR ("it is for...", "that's for...", "para
+  sa...") continues it, without turning "installment plan" into a request to
+  pay in installments or moving it to another month. After a draft it fills
+  in what the entry was for. When it names one of the user's plans, the
+  affordability answer finds that plan's next scheduled payment (its own, or
+  the loan's or card's bill it lands on), says it is already scheduled, and
+  counts the price once in its place rather than on top.
+
+On the same day IBM began rejecting the IAM key (IAM: expired 2026-05-14), so
+the model could not be asked; routing was checked with every conversation,
+and every reply fell back to the template as designed.
+
 
 **Status (2026-10-01): built; the gate's checks passed.** The user asked for it
 on 2026-10-01. Migration `20261001_0006` was applied to ZBDGT the same day.

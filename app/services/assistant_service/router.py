@@ -88,7 +88,16 @@ _HOW_TO = (r"^\s*how (?:do|can|should) i (?!afford)", r"\bhow to\b", r"\bpaano\b
            r"daily allowance|allowance|emergency fund|months ahead|typed bills?)\b")
 _AFFORD = (r"\bafford\b", r"\bcan i (?:buy|get|purchase|spend|splurge)\b", r"\bshould i (?:buy|get)\b",
            r"\bkaya ko(?: bang| ba)?\b", r"\bpwede (?:ko )?(?:bang |ba )?(?:bilhin|bumili)\b", r"\bbumili\b",
-           r"\bbilhin\b", r"\bbibili\b", r"\bokay (?:lang )?ba (?:na )?bumili\b")
+           r"\bbilhin\b", r"\bbibili\b", r"\bokay (?:lang )?ba (?:na )?bumili\b",
+           # 2026-10-03, user: "If I paid a 7000 bill for papa bern, will my budget be sufficient for the
+           # month?" was drafted as an entry. A payment asked about IF it happens is an affordability question.
+           r"\bif i (?:pay|paid|buy|bought|spend|spent|get|got|purchase|send|sent)\b",
+           r"\b(?:will|would) (?:my )?(?:budget|money|cash)(?: still)? (?:be )?(?:enough|sufficient|last)\b",
+           r"\b(?:is|be) my budget (?:still )?(?:enough|sufficient)\b",
+           r"\bkung (?:magbabayad|magbayad|bumili|gumastos|gagastos) ako\b", r"\bsapat ba\b")
+# Said as a possibility, not as something that happened - never a draft
+_HYPOTHETICAL = (r"\bif i\b", r"\bwhat if\b", r"\bsuppose\b", r"\bkung\b", r"\bwill (?:my|i|it)\b",
+                 r"\bwould (?:my|i|it)\b", r"\b(?:enough|sufficient|sapat)\b")
 _EMERGENCY = (r"\bemergency\b", r"\bsafety net\b", r"\bpang-?emergency\b")
 # A4. "I just spent 250 on lunch" - something that happened, to be recorded (AI-42)
 _DRAFT = (r"\bi (?:just |also )?(?:spent|paid|bought|got paid|received|earned)\b", r"\b(?:log|record) (?:an? |my )?\S",
@@ -364,7 +373,7 @@ def _skill_by_rules(text: str, scores: Dict[str, int], category_id, goal_id, nam
         return "how_to"
     if _any(text, _DRAFT_GOAL):
         return "draft_goal"
-    if _any(text, _DRAFT) and not (amount is None and _any(text, _ASKING)):
+    if _any(text, _DRAFT) and not (amount is None and _any(text, _ASKING)) and not _any(text, _HYPOTHETICAL):
         return "draft"
     if _any(text, _AFFORD):
         return "afford"
@@ -487,6 +496,11 @@ _FOLLOW_MARKER = (r"^\s*(?:and|also|then|so|plus|what about|how about|how bout|w
 _ELABORATE = (r"^\s*(?:but )?(?:why|bakit|how come|explain|can you explain|could you explain|tell me more|"
               r"more (?:detail|details|info)|what does (?:that|this|it) mean|ibig sabihin|"
               r"is (?:that|this|it) (?:good|bad|ok|okay|normal|enough|a lot|too much|high|low))\b")
+# "it is for the motorcycle installment plan", "that's for Food", "para sa kuryente" - more about the
+# last message (2026-10-03: this got "I'm not sure what you're asking").
+_CLARIFY = (r"^\s*(?:it'?s|it is|its|it was|that'?s|that is|that was|this is|this was|they'?re|para sa|para yan|"
+            r"para ito|yung|for (?:the|my|a|an)\b)")
+_CLARIFIED = re.compile(r"\b(?:for|para sa)\s+(?:the |my |a |an |ang |sa )?(.{2,60}?)\s*[.?!]*$", re.IGNORECASE)
 # What a follow-up can never continue: each of these answers one message on its own
 NOT_CARRIED = ("draft", "draft_goal", "how_to", "off_topic", "clarify", "chat", None)
 
@@ -519,11 +533,22 @@ def follow_up(question: str, rules: Intent, previous: Optional[Intent]) -> Optio
     not fill is the previous one's, so "what if it's only 8,000?" keeps the
     item and "and on Food?" keeps last month.
     """
-    if previous is None or previous.skill in NOT_CARRIED:
+    if previous is None:
         return None
     text = _lower(question)
+    clarifies = re.search(_CLARIFY, text) is not None
+    said = _CLARIFIED.search(question)
+    named = said.group(1).strip() if said else None
+    if previous.skill == "draft" and clarifies and rules.skill in (None, "draft"):
+        # "It is for the motorcycle plan" after "I paid 7,000": the same entry, now with what it was for
+        return Intent(skill="draft", amount=previous.amount, on=previous.on, merchant=previous.merchant,
+                      income=previous.income, account_id=rules.account_id or previous.account_id,
+                      category_id=rules.category_id if rules.category_id is not None else previous.category_id,
+                      item=named or previous.item, carried=True)
+    if previous.skill in NOT_CARRIED:
+        return None
     elaborate = _any(text, (_ELABORATE,))
-    marker = re.search(_FOLLOW_MARKER, text) is not None
+    marker = re.search(_FOLLOW_MARKER, text) is not None or clarifies
     if rules.skill in ("draft", "draft_goal", "find") or (rules.skill == "how_to" and not (marker or elaborate)):
         return None  # a new kind of message, said in full
     names_something = any(v is not None for v in (rules.period, rules.window, rules.category_id, rules.account_id,
@@ -536,7 +561,13 @@ def follow_up(question: str, rules: Intent, previous: Optional[Intent]) -> Optio
         else previous.skill
 
     def pick(name):
+        if clarifies and name in ("method", "months", "period", "window"):
+            # A clarification says what it was FOR: "the motorcycle installment plan" is not a request to
+            # pay in installments, and it does not move the question to another month.
+            return getattr(previous, name)
         mine = getattr(rules, name)
+        if name == "item" and clarifies and named:
+            return named
         return mine if mine is not None else getattr(previous, name)
 
     return Intent(

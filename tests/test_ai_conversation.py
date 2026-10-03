@@ -122,3 +122,64 @@ def test_a_new_conversation_carries_nothing(api):
     ask(api, "How much did I spend this month?")
     fresh = ask(api, "What about last month?").json()  # no conversation id: nothing to continue
     assert fresh["skill"] == "clarify"  # the fake model routes nothing, and there is no earlier turn to lean on
+
+
+# ------------------------------------------------- the screenshot, 2026-10-03 (misc/AI-Test)
+
+
+def test_if_i_paid_is_a_question_not_an_entry_to_record():
+    asked = router.by_rules("If I paid a 7000 bill for papa bern, Will my budget be sufficient for the month?", D, {}, {})
+    assert (asked.skill, asked.amount) == ("afford", Decimal("7000.00"))
+    for message in ("Will my budget be enough if I spend 3,000?", "Sapat ba ang budget ko kung bumili ako ng 2,000?"):
+        assert router.by_rules(message, D, {}, {}).skill == "afford", message
+    assert router.by_rules("I paid 1,500 for groceries yesterday", D, {}, {}).skill == "draft"  # it happened
+
+
+def test_it_is_for_says_what_the_last_question_was_about():
+    plans = {9: "Motorcycle"}
+    asked = router.by_rules("If I paid a 7000 bill for papa bern, Will my budget be sufficient?", D, {}, {},
+                            plans=plans)
+    message = "It is for the motorcycle installment plan"
+    more = router.follow_up(message, router.by_rules(message, D, {}, {}, plans=plans), asked)
+    # the same 7,000 - now known to be the plan's payment - and NOT turned into a new installment purchase
+    assert (more.skill, more.amount, more.rule_id, more.method) == ("afford", Decimal("7000.00"), 9, None)
+
+
+def test_it_is_for_fills_in_a_draft():
+    drafted = router.by_rules("I paid 7000 for the bill today", D, {}, {})
+    message = "It is for the motorcycle installment plan"
+    more = router.follow_up(message, router.by_rules(message, D, {}, {}), drafted)
+    assert (more.skill, more.amount, more.item) == ("draft", Decimal("7000.00"), "motorcycle installment plan")
+
+
+def _motorcycle(api):
+    papa = api.post("/accounts", {"name": "Papa Bern", "type": "borrowed"}).json()["id"]
+    vehicle = api.post("/categories", {"name": "Vehicle"}).json()["id"]
+    made = api.post("/recurring?today=2026-10-10", {
+        "kind": "installment", "type": "expense", "name": "Motorcycle", "account_id": papa,
+        "category_id": vehicle, "frequency": "monthly", "start": "2026-10-25", "price": "84000.00", "payments": 12})
+    assert made.status_code == 201, made.text
+
+
+def test_a_payment_the_plans_already_hold_is_counted_once(api):
+    signed_up(api)
+    money_world(api)
+    _motorcycle(api)
+    install(first_fact)
+    first = ask(api, "If I paid a 7000 bill for papa bern, Will my budget be sufficient for the month?").json()
+    assert first["skill"] == "afford"
+    more = ask(api, "It is for the motorcycle installment plan", first["conversation_id"]).json()
+    assert more["skill"] == "afford" and more["title"].startswith("Paying the Motorcycle payment")
+    line = next(f for f in more["facts"] if "already scheduled" in f)
+    assert "₱7,000.00 on 25 Oct" in line
+
+
+def test_a_draft_takes_what_it_was_for_from_the_next_message(api):
+    signed_up(api)
+    money_world(api)
+    install(first_fact)
+    drafted = ask(api, "I paid 7000 for the bill today").json()
+    more = ask(api, "It is for the motorcycle installment plan", drafted["conversation_id"]).json()
+    assert more["skill"] == "draft"
+    payload = more["actions"][0]["payload"]
+    assert (payload["amount"], payload["notes"]) == ("7000.00", "motorcycle installment plan")

@@ -30,7 +30,7 @@ from typing import List, Optional, Tuple
 from app.core.utils import affordability as rules
 from app.core.utils.date_utils import due_date
 from app.core.utils.money import ZERO, total
-from app.services import projection_service, safety_service
+from app.services import projection_service, recurring_service, safety_service
 from app.services.assistant_service.facts import Action, Facts, Source, day, days, php
 from app.services.budget_service import budget_service
 
@@ -49,12 +49,16 @@ LABELS = {
 }
 
 
-def timeline(projection) -> Tuple[List[Tuple], List]:
-    """(points, wait_dates) from Months ahead: its running cash line, and the days worth waiting for."""
+def timeline(projection, skip=None) -> Tuple[List[Tuple], List]:
+    """
+    (points, wait_dates) from Months ahead: its running cash line, and the days worth waiting for.
+    `skip` is one scheduled item left out - the plan payment being asked about, which the price
+    then stands for, so it is not taken off the cash line twice.
+    """
     points: List[Tuple] = []
     waits = []
     for month in projection.months:
-        live = [i for i in month.items if not i.paused]
+        live = [i for i in month.items if not i.paused and i is not skip]
         running = month.opening - (month.spending - month.committed)
         points.append((projection.today if month.current else month.start, running))
         # Same day: the money going out first - the cautious reading Months ahead uses too.
@@ -66,6 +70,22 @@ def timeline(projection) -> Tuple[List[Tuple], List]:
         if not month.current:
             waits.append(month.start)
     return points, sorted(set(waits))
+
+
+def _scheduled(ctx, projection):
+    """
+    The next payment of the plan the question names (`intent.rule_id`), as Months ahead holds it:
+    the plan's own item, or - for a plan on a loan or a card with bills - the next bill on its account.
+    """
+    plan = next((r for r in recurring_service.list_rules(ctx.db, ctx.cipher, today=ctx.today)
+                 if r.id == ctx.intent.rule_id), None)
+    if plan is None:
+        return None, None
+    items = [i for m in projection.months for i in m.items if not i.paused and i.type == "expense"]
+    own = [i for i in items if i.rule_id == plan.id]
+    billed = [i for i in items if i.rule_id == 0 and i.account_id == plan.account_id and i.kind == "bill"]
+    found = min(own or billed, key=lambda i: i.on, default=None)
+    return plan, found
 
 
 def _card(ctx) -> Optional[rules.Card]:
@@ -113,7 +133,10 @@ def run(ctx) -> Facts:
         a = status.allowance
         budget = rules.Budget(left=a.remaining, days_left=a.days_left, period_end=status.period.end)
     projection = projection_service.project(ctx.db, ctx.cipher, today=today, months=3)
-    points, waits = timeline(projection)
+    plan, planned = _scheduled(ctx, projection) if intent.rule_id else (None, None)
+    if plan is not None:
+        item = f"the {plan.name} payment"
+    points, waits = timeline(projection, skip=planned)
     set_aside = total(v.set_aside for v in ctx.visible_accounts)
     essentials = safety_service.essentials(ctx.db, ctx.cipher, today=today)
     week = (essentials.monthly / _WEEKS_PER_MONTH).quantize(Decimal("0.01")) if essentials.monthly > ZERO else None
@@ -128,7 +151,13 @@ def run(ctx) -> Facts:
     label, tone = LABELS[result.verdict]
     how = _method_text(method, months, card)
     subject = f"{item} for {php(price)}, {how}"
-    lines = [f"Asked: buying {subject}."]
+    lines = [f"Asked: {'paying' if plan is not None else 'buying'} {subject}."]
+    if plan is not None and planned is not None:
+        # 2026-10-03: "it is for the motorcycle installment plan" - a payment the plans already hold
+        lines.append(f"{plan.name} is already scheduled: {php(planned.amount)} on {day(planned.on, today)}. "
+                     f"This answer counts the {php(price)} once, in its place.")
+    elif plan is not None:
+        lines.append(f"{plan.name} has no payment scheduled in the next 3 months.")
 
     already_short = "cash_already_short" in result.reasons
     if already_short:
@@ -242,7 +271,7 @@ def run(ctx) -> Facts:
             "payments": months if method == "installment" else INSTALLMENT_OPTIONS[0],
         }))
     return Facts(
-        skill="afford", title=f"Buying {item} for {php(price)}", lines=lines, template=template,
+        skill="afford", title=f"{'Paying' if plan is not None else 'Buying'} {item} for {php(price)}", lines=lines, template=template,
         sources=[Source("Budget", "/budget"), Source("Months ahead", "/projection")], actions=actions,
         tone=tone, label=label, verdict=result.verdict, verdict_text=verdict_text,
         follow_ups=["What bills are due before payday?", "How much is left in my budget?"],
