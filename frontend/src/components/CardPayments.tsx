@@ -1,6 +1,6 @@
 /**
- * A credit card's bills, plans and monthly payment, on the card's own page
- * (ACC-34/35, 2026-09-15):
+ * A credit card's bills and plans, on the card's own page (ACC-34/35,
+ * 2026-09-15):
  *
  *  - BILLS - typed from the card's own app (CardBills, ACC-35).
  *
@@ -8,9 +8,10 @@
  *    and the other charges that repeat here (AccountPlans, shared with every
  *    account that carries a plan).
  *
- *  - YOU PAY IT EACH MONTH - the recurring transfer into the card and when it
- *    reaches zero at that pace (AccountPayments, shared with loans and
- *    borrowed accounts).
+ * "You pay it each month" (AccountPayments) was removed on 2026-10-06 at the
+ * user's request: payments are typed by hand, a plan is paid with its own Pay
+ * button (REC-32), and a repeating transfer can still be set up on the
+ * Recurring screen.
  *
  * "Does it balance?" was removed on 2026-09-16 at the user's request: checking
  * the app against the bank is Check statement's job (ACC-24), correcting what
@@ -19,26 +20,16 @@
  * bills it could only ever agree with itself.
  */
 import { useQuery } from '@tanstack/react-query';
-import { type Account, type Credit } from '../lib/accounts';
+import { type Account } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
-import { getProjection, listRules } from '../lib/recurring';
-import { AccountPayments } from './AccountPayments';
+import { listRules } from '../lib/recurring';
 import { AccountPlans } from './AccountPlans';
 import { CardBills } from './CardBills';
 
 export function CardPayments({ account }: { account: Account }) {
-  const credit = account.credit as Credit;
-
-  // Fetched once here and handed down, so the two cards below do not each ask;
-  // they read the same keys anyway, which is what makes that safe.
   const { data: rules = null, error } = useQuery({
     queryKey: keys.rules(),
     queryFn: ({ signal }) => listRules(undefined, signal),
-    staleTime: STALE.derived,
-  });
-  const { data: projection = null } = useQuery({
-    queryKey: keys.projection(12),
-    queryFn: ({ signal }) => getProjection(12, signal),
     staleTime: STALE.derived,
   });
 
@@ -51,8 +42,6 @@ export function CardPayments({ account }: { account: Account }) {
       <CardBills account={account} />
 
       <AccountPlans account={account} rules={rules} alwaysShow />
-
-      <AccountPayments account={account} rules={rules} projection={projection} startOn={credit.payment_due} />
     </div>
   );
 }

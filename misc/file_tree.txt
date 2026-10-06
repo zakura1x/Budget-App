@@ -274,7 +274,7 @@ Budget App/
 │       │   ├── CreditDetails.tsx        # a card's bill line, own limit, statement check
 │       │   ├── CardBills.tsx            # ACC-35 bills typed from the card's app (+ plans)
 │       │   ├── GoalSheets.tsx           # GOA goal card, edit and add-money sheets (Goals, Accounts, account page)
-│       │   ├── CardPayments.tsx         # ACC-34 bills, plans, monthly payment
+│       │   ├── CardPayments.tsx         # ACC-34 bills, plans
 │       │   ├── RuleSheetHost.tsx        # REC-31 the one rule sheet for + and card pages
 │       │   ├── BudgetAppImportSheet.tsx # DAT-21 preview, typed balances, import
 │       │   ├── ReorderList.tsx          # drag to reorder; captures the pointer only once lifted

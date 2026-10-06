@@ -5,8 +5,8 @@
  *
  * A plan is money you owe from the day you take it out, so the account it sits
  * on has to say so, whether it is a credit card, a loan or a store card. The
- * card's page shows this list inside CardPayments, beside its bills and the
- * monthly payment; every other account shows it on its own.
+ * card's page shows this list inside CardPayments, beside its bills; every
+ * other account shows it on its own.
  *
  * Every figure comes from the server's one engine (`installment` on the rule):
  * what each payment is, how many are left and what the plan still owes are

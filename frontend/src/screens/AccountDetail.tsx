@@ -19,7 +19,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
 import { BalanceCheck } from '../components/BalanceCheck';
 import { AccountDues } from '../components/AccountDues';
-import { AccountPayments } from '../components/AccountPayments';
 import { AccountPlans } from '../components/AccountPlans';
 import { ExplainLink } from '../components/ExplainLink';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
@@ -434,11 +433,6 @@ export function AccountDetail() {
               answer to the next one. */}
           <AccountDues account={account} />
           <AccountPlans account={account} onPay={setPaying} onPlans={setOpenPlans} />
-          {/* REC-14. A loan or a borrowed account gets the same monthly payment
-              as a card: without it, a plan on one could not be paid at all. */}
-          {(account.type === 'borrowed' || account.type === 'lent' || account.plans_unbilled !== '0.00') && (
-            <AccountPayments account={account} />
-          )}
         </div>
       )}
 
