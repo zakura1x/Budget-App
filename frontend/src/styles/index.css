@@ -53,12 +53,20 @@
   /* iOS gives a date field a fixed intrinsic width it will not shrink below,
      so in a narrow row it pushes past the edge and the form drags sideways.
      Form fields also stay at 16px or more: smaller text makes iOS zoom in on
-     focus and leave the page zoomed. */
+     focus and leave the page zoomed. min-width alone is ignored while the
+     field keeps its native look, so the look goes too - tapping it still
+     opens the native picker. Without the native look iOS also stops centring
+     the date, so padding does it: (44px tap height - 4px border - 22px line) / 2. */
   input[type='date'] {
+    -webkit-appearance: none;
+    appearance: none;
     min-width: 0;
+    max-width: 100%;
+    padding-block: 9px;
   }
   input[type='date']::-webkit-date-and-time-value {
     text-align: left;
+    margin: 0;
   }
 }
 
