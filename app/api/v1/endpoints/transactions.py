@@ -22,7 +22,6 @@ from app.api.v1.schemas.transactions import (
     MerchantOut,
     OutcomeOut,
     PageOut,
-    RepeatIn,
     TransactionIn,
     TransactionOut,
 )
@@ -123,17 +122,6 @@ def create_transaction(
         db, ctx.cipher, _body(body), today=today
     )
     return OutcomeOut.model_validate(result)
-
-
-@router.post("/repeat-last", response_model=OutcomeOut, status_code=status.HTTP_201_CREATED)
-def repeat_last(
-    body: RepeatIn,
-    today: Optional[date] = TODAY,
-    ctx: UnlockedContext = Depends(get_unlocked_context),
-    db: Session = Depends(get_db),
-) -> OutcomeOut:
-    """TXN-17 - one tap clones the most recently entered transaction onto today."""
-    return OutcomeOut.model_validate(transaction_service.repeat_last(db, ctx.cipher, on=body.on, today=today))
 
 
 @router.patch("/{transaction_id}", response_model=OutcomeOut)

@@ -7,8 +7,6 @@
  *
  *  - Category chips scroll sideways, most-used first (TXN-05). MAIN categories
  *    only: choose one and its sub-categories appear under it, to take or leave.
- *  - Repeat last entry (TXN-17) sits where a fresh sheet has nothing typed yet
- *    - the second-most-used action, right under the thumb that opened this.
  *  - SPLIT (TXN-16) is hidden until asked for. Splits are the exception, and a
  *    simple entry must not get slower because they exist. Opened, it shows a
  *    live "left to allocate" in exact centavos; the server refuses anything
@@ -53,7 +51,6 @@ import {
   createTransaction,
   deleteTransaction,
   localToday,
-  repeatLast,
   updateTransaction,
   type EntryType,
   type Merchant,
@@ -97,7 +94,7 @@ function typedFrom(amount: string): string {
 
 /**
  * One of the sheet's optional extras - Add note, Tags, Split, Installments,
- * Cashback, Repeat last entry.
+ * Cashback.
  *
  * They used to be coloured TEXT, and read as labels rather than as things you
  * could tap (user, 2026-09-20: "the add note, split, cashback does not feel
@@ -689,19 +686,6 @@ export function TransactionSheet() {
     }
   };
 
-  const repeat = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      ledger.applyOutcome(await repeatLast(localToday()));
-      buzz('success');
-      close();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Nothing to repeat yet.');
-      setBusy(false);
-    }
-  };
-
   // ACC-23. What is left of your own limit on the chosen card after this
   // purchase - only for a new expense, or money sent FROM the card (a transfer
   // uses up the limit too, 2026-10-01), dated inside the card's open cycle.
@@ -721,7 +705,6 @@ export function TransactionSheet() {
     return { text, tone };
   })();
 
-  const canRepeat = !editing && typed === '0' && ledger.items.some((row) => row.id > 0);
 
   if (editing?.type === 'adjustment') {
     const loss = editing.direction === 'out';
@@ -827,18 +810,6 @@ export function TransactionSheet() {
         >
           {formatPHP(amount)}
         </output>
-
-        {canRepeat && (
-          <div className="flex justify-center">
-            <SheetAction
-              label="Repeat last entry"
-              icon={<span aria-hidden="true" className="text-body leading-none">↻</span>}
-              onClick={() => void repeat()}
-            >
-              Repeat last entry
-            </SheetAction>
-          </div>
-        )}
 
         {kind === 'transfer' ? (
           <div className="space-y-2">

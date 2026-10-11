@@ -68,10 +68,6 @@ class TransactionIn(BaseModel):
     cashback: Optional[CashbackIn] = None
 
 
-class RepeatIn(BaseModel):
-    on: Optional[date] = None
-
-
 class SplitOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -707,37 +707,6 @@ def _parse_stamp(value: Any) -> Optional[datetime]:
         return None
 
 
-def repeat_last(
-    db: Session, cipher: UserCipher, *, on: Optional[date] = None, today: Optional[date] = None
-) -> Outcome:
-    """
-    TXN-17. Clone the most recently ENTERED transaction - by when it was
-    written, not its date - onto `on` (today by default). It goes back through
-    the same validation as a new entry, so an account archived since cannot
-    quietly receive a copy.
-    """
-    # A balance adjustment is never something you meant to buy twice (ACC-29).
-    records = [r for r in TransactionRepository(db, cipher).cached() if r.data.get("type") != "adjustment"]
-    if not records:
-        raise NotFoundException("There is nothing to repeat yet")
-    latest = max(records, key=lambda r: (r.row_created, r.id))
-    if latest.data.get("type") == "transfer" and latest.data.get("direction") == "in":
-        latest = _legs(db, cipher, latest)[0]
-
-    data = latest.data
-    when = (on or date.today()).isoformat()
-    if data.get("type") == "transfer":
-        payload = {"type": "transfer", "txn_date": when, "amount": data["amount"],
-                   "account_id": data["account_id"], "counter_account_id": data["counter_account_id"],
-                   "notes": data.get("notes")}
-    else:
-        payload = {"type": data["type"], "txn_date": when, "amount": data["amount"],
-                   "account_id": data["account_id"], "merchant": data.get("merchant"),
-                   "notes": data.get("notes"), "splits": data["splits"],
-                   "tag_ids": list(data.get("tag_ids") or [])}
-    return create_transaction(db, cipher, payload, today=today)
-
-
 def record_adjustment(
     db: Session,
     cipher: UserCipher,

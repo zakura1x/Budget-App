@@ -189,14 +189,10 @@ def test_an_adjustment_cannot_be_edited(session, owner, setup):
             "category_id": setup.food, "txn_date": "2026-09-14"})
 
 
-def test_an_adjustment_cannot_be_entered_or_repeated(session, owner, setup):
+def test_an_adjustment_cannot_be_entered(session, owner, setup):
     with pytest.raises(ValidationException):
         transaction_service.create_transaction(session, owner, {
             "type": "adjustment", "amount": "1.00", "account_id": setup.wallet, "txn_date": "2026-09-14"})
-
-    set_balance(session, owner, setup.wallet, "1600.00", action="adjust")
-    repeated = transaction_service.repeat_last(session, owner, on=TODAY).transactions[0]
-    assert (repeated.type, repeated.amount) == ("expense", D("50.00"))
 
 
 # ---------------------------------------------------------------- the API

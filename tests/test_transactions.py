@@ -20,7 +20,6 @@ from sqlalchemy import func, select
 from app.core.crypto.working_set import get_working_set
 from app.core.exceptions import (
     BusinessRuleException,
-    NotFoundException,
     ValidationException,
 )
 from app.db.models import Transaction
@@ -292,19 +291,6 @@ def test_date_range_and_type_filters(session, owner, ledger):
     assert [v.txn_date for v in page.items] == [date(2026, 9, 1)]
 
 
-def test_repeat_last_clones_the_most_recently_entered_onto_today(session, owner, ledger):
-    spend(session, owner, ledger, amount="99.00", on="2026-09-01", merchant="Coffee")
-    spend(session, owner, ledger, amount="150.00", on="2026-08-01", merchant="Bakery")  # entered last
-    result = transaction_service.repeat_last(session, owner, on=date(2026, 9, 13))
-    copy = result.transactions[0]
-    assert (copy.merchant, copy.amount, copy.txn_date) == ("Bakery", Decimal("150.00"), date(2026, 9, 13))
-
-
-def test_repeat_last_with_nothing_to_repeat(session, owner, ledger):
-    with pytest.raises(NotFoundException):
-        transaction_service.repeat_last(session, owner)
-
-
 # ---------------------------------------------------- the cache stays honest
 
 
@@ -388,7 +374,7 @@ def test_the_api_refuses_a_float_amount(api):
     assert response.status_code == 422
 
 
-def test_list_edit_delete_and_repeat_through_the_api(api):
+def test_list_edit_and_delete_through_the_api(api):
     wallet, groceries = setup_api(api)
     created = api.post("/transactions", {"type": "expense", "amount": "10.00", "account_id": wallet,
                                          "category_id": groceries, "txn_date": "2026-09-12"}).json()
@@ -398,14 +384,11 @@ def test_list_edit_delete_and_repeat_through_the_api(api):
                                                    "category_id": groceries, "txn_date": "2026-09-12"})
     assert edited.status_code == 200 and edited.json()["accounts"][0]["balance"] == "987.50"
 
-    repeated = api.post("/transactions/repeat-last", {"on": "2026-09-13"})
-    assert repeated.status_code == 201 and repeated.json()["transactions"][0]["amount"] == "12.50"
-
     page = api.get("/transactions?limit=10").json()
-    assert [t["txn_date"] for t in page["items"]] == ["2026-09-13", "2026-09-12"]
+    assert [t["txn_date"] for t in page["items"]] == ["2026-09-12"]
 
     assert api.delete(f"/transactions/{txn_id}").status_code == 200
-    assert api.get("/transactions").json()["total_count"] == 1
+    assert api.get("/transactions").json()["total_count"] == 0
 
 
 @pytest.mark.security

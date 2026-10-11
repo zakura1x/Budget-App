@@ -103,12 +103,6 @@ def test_an_empty_list_clears_them(session, owner, setup):
     assert edited.tag_ids == ()
 
 
-def test_repeat_last_copies_the_tags(session, owner, setup):
-    spend(session, owner, setup, tag_ids=[setup.trip])
-    copy = transaction_service.repeat_last(session, owner).transactions[0]
-    assert copy.tag_ids == (setup.trip,)
-
-
 def test_a_transfer_carries_no_tags(session, owner, setup):
     legs = transaction_service.create_transaction(session, owner, {
         "type": "transfer", "amount": "50.00", "account_id": setup.wallet,

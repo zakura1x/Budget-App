@@ -197,7 +197,7 @@ The core of the app. TXN-01 is the feature everything else exists to support.
 | TXN-14 | Edit and soft-delete | ✅ v1 | 4 | Soft only, so the audit trail stays honest |
 | TXN-15 | Receipt photo attachment | ✅ v1 | 8a | File itself AES-GCM encrypted on disk |
 | TXN-16 | **Split across categories** | ✅ v1 | 4 | **DECIDED.** One ₱3,500 supermarket run → ₱2,800 groceries + ₱700 household. **Every** transaction carries a `splits` array; a simple one is a single-element split, so stats has exactly one code path. See ARCHITECTURE.md §4.2 |
-| TXN-17 | **Repeat last entry** | ✅ v1 | 4 | **Pulled into v1.** One tap duplicates your most recent transaction, date defaulted to today. Cheap, and it is the second-most-used action after TXN-01 |
+| TXN-17 | **Repeat last entry** | ✅ v1 | 4 | **Removed 2026-10-11 (user) - button, endpoint and service.** **Pulled into v1.** One tap duplicates your most recent transaction, date defaulted to today. Cheap, and it is the second-most-used action after TXN-01 |
 | TXN-18 | **Receipt scanning / OCR** | ❌ Out | — | The iOS app does this with on-device AI. Server-side OCR means an image leaving the encryption boundary. See §13 |
 | TXN-19 | Voice entry | ❌ Out | — | Same objection as TXN-18, plus a speech service dependency |
 | TXN-20 | Split validation — total must equal the sum of parts | ✅ v1 | 4 | Decimal-exact, enforced in the service. A ₱0.01 drift here silently corrupts every report |

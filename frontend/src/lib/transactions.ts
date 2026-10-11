@@ -152,9 +152,6 @@ export const updateTransaction = (id: number, body: TransactionDraft) =>
 export const deleteTransaction = (id: number) =>
   api<Outcome>(`/transactions/${id}?today=${localToday()}`, { method: 'DELETE' });
 
-export const repeatLast = (on: string) =>
-  api<Outcome>(`/transactions/repeat-last?today=${localToday()}`, { method: 'POST', body: { on } });
-
 /**
  * TXN-24 - a merchant typed before, and the category its LATEST entry was
  * filed under (null when that entry was split, or its category is archived).
