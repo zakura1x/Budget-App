@@ -33,7 +33,7 @@
  * An edit sends the merchant back as shown, so an imported or recurring
  * entry's merchant is no longer wiped by saving it.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { ApiError } from '../lib/api';
 import { isLoan, isOwed, untracked, visible, UNTRACKED_ID, type Account } from '../lib/accounts';
 import { flatten, type Category } from '../lib/categories';
@@ -60,6 +60,7 @@ import { buzz } from '../lib/haptics';
 import { afterWrite, MONEY } from '../lib/invalidate';
 import { convertPurchase, createPurchaseWithPlan } from '../lib/recurring';
 import { type Tag } from '../lib/tags';
+import { cashbackPart, cents, startDraft, typedFrom, type Draft } from '../lib/transactionDraft';
 import { useLedgerStore } from '../stores/ledgerStore';
 import { useUiStore, type RuleSheetRequest } from '../stores/uiStore';
 import { EMPTY_CHOICE, InstallmentFields, termsOf, type InstallmentChoice } from './InstallmentFields';
@@ -72,25 +73,6 @@ import { NumPad, type NumPadKey } from './ui/NumPad';
 import { Segmented } from './ui/Segmented';
 import { Sheet } from './ui/Sheet';
 
-interface SplitLine {
-  key: number;
-  category_id: number | null;
-  amount: string;
-}
-
-/** Centavos in a typed amount, or 0 while it is still half-typed. */
-function cents(typed: string): number {
-  try {
-    return centavos(toDecimalString(typed || '0'));
-  } catch {
-    return 0;
-  }
-}
-
-/** The typed form of a stored amount: "150.00" -> "150", "12.50" -> "12.50". */
-function typedFrom(amount: string): string {
-  return amount.endsWith('.00') ? amount.slice(0, -3) : amount;
-}
 
 /**
  * One of the sheet's optional extras - Add note, Tags, Split, Installments,
@@ -233,39 +215,47 @@ export function TransactionSheet() {
   const addPreset = useUiStore((s) => s.addPreset);
   const ledger = useLedgerStore();
 
-  const [kind, setKind] = useState<EntryType>('expense');
-  /** REC-31: "Recurring" chosen - the sheet shows what can repeat instead of the numpad. */
-  const [repeating, setRepeating] = useState(false);
   const openRuleSheet = useUiStore((s) => s.openRuleSheet);
-  const [typed, setTyped] = useState('0');
-  const [categoryId, setCategoryId] = useState<number | null>(null);
-  const [accountId, setAccountId] = useState<number | null>(null);
-  const [counterId, setCounterId] = useState<number | null>(null);
-  const [txnDate, setTxnDate] = useState(localToday());
-  const [note, setNote] = useState('');
-  const [showNote, setShowNote] = useState(false);
-  /** TXN-24. The merchant, and the ones typed before that it can be picked from. */
-  const [merchant, setMerchant] = useState('');
-  const [showMerchant, setShowMerchant] = useState(false);
+  /** The form itself - every field, set whole each time the sheet opens (lib/transactionDraft). */
+  const [d, setD] = useState<Draft>(() => startDraft(null, null, null, localToday()));
+  const {
+    kind, repeating, typed, categoryId, accountId, counterId, txnDate, note, showNote, merchant, showMerchant,
+    tagIds, showTags, splitting, lines, cashback, cashbackOn, cashbackCategory, showCashback,
+  } = d;
+  const field = <K extends keyof Draft>(key: K) => (value: SetStateAction<Draft[K]>) =>
+    setD((prev) => ({
+      ...prev,
+      [key]: typeof value === 'function' ? (value as (old: Draft[K]) => Draft[K])(prev[key]) : value,
+    }));
+  const setKind = field('kind');
+  const setRepeating = field('repeating');
+  const setTyped = field('typed');
+  const setCategoryId = field('categoryId');
+  const setAccountId = field('accountId');
+  const setCounterId = field('counterId');
+  const setTxnDate = field('txnDate');
+  const setNote = field('note');
+  const setShowNote = field('showNote');
+  const setMerchant = field('merchant');
+  const setShowMerchant = field('showMerchant');
+  const setTagIds = field('tagIds');
+  const setShowTags = field('showTags');
+  const setSplitting = field('splitting');
+  const setLines = field('lines');
+  const setCashback = field('cashback');
+  const setCashbackOn = field('cashbackOn');
+  const setCashbackCategory = field('cashbackCategory');
+  const setCashbackRate = field('cashbackRate');
+  const setShowCashback = field('showCashback');
+  /** TXN-24. The merchants typed before, to pick from. */
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   /** Focused when the tile is TAPPED - not when an edit opens with a merchant, or the keyboard would cover the numpad. */
   const merchantInput = useRef<HTMLInputElement>(null);
-  const [splitting, setSplitting] = useState(false);
-  const [lines, setLines] = useState<SplitLine[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   /** ACC-39. The wallet, if it has been made; null until the first loan is saved from it. */
   const [wallet, setWallet] = useState<Account | null>(null);
   const [tree, setTree] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [tagIds, setTagIds] = useState<number[]>([]);
-  const [showTags, setShowTags] = useState(false);
-  /** TXN-22. What this purchase pays back, typed or suggested by the card's own rate. */
-  const [cashback, setCashback] = useState('');
-  const [cashbackOn, setCashbackOn] = useState<string | null>(null);
-  const [cashbackTo, setCashbackTo] = useState<number | null>(null);
-  const [cashbackCategory, setCashbackCategory] = useState<number | null>(null);
-  const [cashbackRate, setCashbackRate] = useState<string | null>(null);
-  const [showCashback, setShowCashback] = useState(false);
   /** REC-34. This purchase paid in installments instead: the plan replaces it. */
   const [showPlan, setShowPlan] = useState(false);
   const [plan, setPlan] = useState<InstallmentChoice>(EMPTY_CHOICE);
@@ -281,6 +271,8 @@ export function TransactionSheet() {
     setShowPlan(false);
     setPlan(EMPTY_CHOICE);
     setPlanReady(false);
+    // Every field at once, before the lists arrive: nothing is left from the last time it was open.
+    setD(startDraft(editing, addPreset, addOn, localToday()));
     let cancelled = false;
     // From the cache when it is warm, which after an unlock it always is: the
     // [+] button used to cost three requests every time it was tapped.
@@ -327,58 +319,6 @@ export function TransactionSheet() {
       })
       .catch((e: Error) => !cancelled && setError(e.message));
 
-    if (editing) {
-      setKind(editing.type === 'adjustment' ? 'expense' : editing.type);
-      setTyped(typedFrom(editing.amount));
-      setTxnDate(editing.txn_date);
-      setNote(editing.notes ?? '');
-      setShowNote(Boolean(editing.notes));
-      setMerchant(editing.merchant ?? '');
-      setShowMerchant(Boolean(editing.merchant));
-      setTagIds(editing.tag_ids ?? []);
-      setShowTags((editing.tag_ids ?? []).length > 0);
-      setCashback(editing.cashback ? typedFrom(editing.cashback.amount) : '');
-      setCashbackOn(editing.cashback?.on ?? null);
-      setCashbackTo(editing.cashback?.account_id ?? null);
-      setCashbackCategory(editing.cashback?.category_id ?? null);
-      setCashbackRate(editing.cashback?.rate ?? null);
-      setShowCashback(Boolean(editing.cashback));
-      if (editing.type === 'transfer') {
-        const out = editing.direction !== 'in';
-        setAccountId(out ? editing.account_id : editing.counter_account_id);
-        setCounterId(out ? editing.counter_account_id : editing.account_id);
-      } else {
-        setAccountId(editing.account_id);
-      }
-      const multi = editing.splits.length > 1;
-      setSplitting(multi);
-      setCategoryId(editing.splits[0]?.category_id ?? null);
-      setLines(
-        multi
-          ? editing.splits.map((s, i) => ({ key: i, category_id: s.category_id, amount: typedFrom(s.amount) }))
-          : [],
-      );
-    } else {
-      setKind(addPreset?.type ?? 'expense');
-      setRepeating(false);
-      setTyped(addPreset?.amount ? typedFrom(addPreset.amount) : '0');
-      setCategoryId(addPreset?.categoryId ?? null);
-      setTxnDate(addOn ?? localToday());
-      setNote(addPreset?.note ?? '');
-      setShowNote(Boolean(addPreset?.note));
-      setMerchant(addPreset?.merchant ?? '');
-      setShowMerchant(Boolean(addPreset?.merchant));
-      setTagIds([]);
-      setShowTags(false);
-      setSplitting(false);
-      setLines([]);
-      setCashback('');
-      setCashbackOn(null);
-      setCashbackTo(null);
-      setCashbackCategory(null);
-      setCashbackRate(null);
-      setShowCashback(false);
-    }
     return () => {
       cancelled = true;
     };
@@ -545,24 +485,7 @@ export function TransactionSheet() {
       merchant: merchant.trim() || null,
       tag_ids: tagIds.filter((id) => tags.some((t) => t.id === id)),
     };
-    const withCashback = {
-      ...tagged,
-      // Sent as null only when this entry HAD cashback and no longer does -
-      // that is what takes the credit row away (TXN-22).
-      ...(kind === 'expense' && showCashback && cents(cashback) > 0
-        ? {
-            cashback: {
-              amount: toDecimalString(cashback),
-              category_id: cashbackCategory as number,
-              ...(cashbackTo !== null ? { account_id: cashbackTo } : {}),
-              ...(cashbackOn ? { on: cashbackOn } : {}),
-              ...(cashbackRate ? { rate: cashbackRate } : {}),
-            },
-          }
-        : editing?.cashback
-          ? { cashback: null }
-          : {}),
-    };
+    const withCashback = { ...tagged, ...cashbackPart(d, Boolean(editing?.cashback)) };
     if (splitting) {
       return {
         ...withCashback,
