@@ -48,9 +48,8 @@ from app.db.repositories.account_repository import AccountRepository
 from app.db.repositories.category_repository import CategoryRepository
 from app.db.repositories.recurring_repository import RecurringRuleRepository
 from app.db.repositories.transaction_repository import TransactionRepository
-from app.services import audit_service, recurring_service, transaction_service
+from app.services import account_service, audit_service, recurring_service, transaction_service
 
-SPREADS_ON: Tuple[str, ...] = ("credit", "borrowed")
 ONE_DAY = timedelta(days=1)
 
 
@@ -243,7 +242,7 @@ def _account(db: Session, cipher: UserCipher, account_id: int) -> Mapping[str, A
     record = AccountRepository(db, cipher).get(account_id)
     if record is None:
         raise NotFoundException("Account not found")
-    if record.data.get("type") not in SPREADS_ON:
+    if record.data.get("type") not in account_service.OWES:
         raise BusinessRuleException("Only a purchase on a credit card or a loan can be paid in installments")
     return record.data
 

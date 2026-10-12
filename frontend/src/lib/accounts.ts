@@ -375,11 +375,29 @@ export const TYPE_ICON: Record<AccountType, string> = {
   member: 'badge',
 };
 
-/**
- * Accounts whose balance is money you OWE, shown as a positive "owed" figure:
- * a card, and a loan or money borrowed (ACC-31). Stored balances stay signed.
- */
-export const isOwed = (type: AccountType) => type === 'credit' || type === 'borrowed';
+// ------------------------------------------------------------------
+// The account-type rules, in ONE place on the client. Each mirrors a constant
+// in app/services/account_service.py by the same name, and
+// tests/test_account_kinds_parity.py fails when the two disagree - change both.
+
+/** OWES. Money you owe, shown as a positive "owed" figure: a card, and a loan (ACC-31). Balances stay signed. */
+export const OWES: readonly AccountType[] = ['credit', 'borrowed'];
+export const isOwed = (type: AccountType) => OWES.includes(type);
+
+/** LOANS. Lent or borrowed - the transfers that may come from, or go to, untracked cash (ACC-39). */
+export const LOANS: readonly AccountType[] = ['lent', 'borrowed'];
+export const isLoan = (type: AccountType | undefined) => type !== undefined && LOANS.includes(type);
+
+/** EARNS_INTEREST (ACC-37) - where a bank actually pays. */
+export const EARNS_INTEREST: readonly AccountType[] = ['cash', 'debit', 'savings', 'member'];
+
+/** GIVES_CASHBACK (ACC-38) - the accounts you spend FROM. */
+export const GIVES_CASHBACK: readonly AccountType[] = ['cash', 'debit', 'credit', 'savings', 'member'];
+
+/** COUNTS_IN_CASH_ON_HAND_DEFAULT (ACC-18/31/32). */
+export const COUNTS_IN_CASH_ON_HAND_DEFAULT: Readonly<Record<AccountType, boolean>> = {
+  cash: true, debit: true, savings: true, credit: true, investment: false, lent: false, borrowed: false, member: true,
+};
 
 export interface AccountKind {
   subtype: string;

@@ -25,7 +25,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { isOwed, listAccounts, visible, type Account, type AccountType } from '../lib/accounts';
+import { COUNTS_IN_CASH_ON_HAND_DEFAULT, isOwed, listAccounts, visible, type Account, type AccountType } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
 import { getEmergency, listGoals, type Goal } from '../lib/security';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
@@ -79,7 +79,7 @@ function AccountTile({ account, onOpen }: { account: Account; onOpen: (a: Accoun
     ? isZero(billed.due_now as string) ? 'Bills paid' : `Due ${format(parseISO(billed.payment_due), 'd MMM')}`
     : FIGURE_LABEL[account.type];
   // "Not counted" is news only where counting is the default.
-  const notCountedIsNews = account.type !== 'lent' && account.type !== 'borrowed' && account.type !== 'investment';
+  const notCountedIsNews = COUNTS_IN_CASH_ON_HAND_DEFAULT[account.type];
   return (
     <button
       type="button"

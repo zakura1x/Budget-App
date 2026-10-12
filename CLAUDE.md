@@ -294,8 +294,14 @@ out, read from `GET /transactions?account=` and signed per account by
 `TransactionRow.moneyIn`. Account types are cash, debit, credit, savings,
 investment, lent, borrowed and member (ACC-31/32); `subtype` (ACC-33) is a
 label from the Add Account list (`ACCOUNT_KINDS` in `lib/accounts.ts`) and
-must never drive a rule. `isOwed()` - credit and borrowed - is the one
-frontend test for "show this balance as owed". A loan's transfer may come from
+must never drive a rule. The account-TYPE rules (`OWES`, `LOANS`,
+`EARNS_INTEREST`, `GIVES_CASHBACK`, `CHECKABLE`, `COUNTS_IN_CASH_ON_HAND_DEFAULT`)
+live once per side - `account_service` and the top of `lib/accounts.ts`, same
+names - and `tests/test_account_kinds_parity.py` fails when they disagree;
+never spell a type tuple out anywhere else. `isOwed()` is the frontend test for
+"show this balance as owed", and what is owed is `AccountView.owed_with_plans`
+(REC-14, every OWES account, never below its plans) - read it, never rebuild it
+from the balance. A loan's transfer may come from
 CASH THE USER DOES NOT TRACK (ACC-39, 2026-09-20): one `hidden` account,
 get-or-created by `account_service.untracked_cash()` and by nothing else, kept
 out of every list by `visible()` in `lib/accounts.ts` (filtered once, in

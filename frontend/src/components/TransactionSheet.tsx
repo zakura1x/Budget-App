@@ -35,7 +35,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
-import { untracked, untrackedCash, visible, UNTRACKED_ID, type Account } from '../lib/accounts';
+import { isLoan, isOwed, untracked, untrackedCash, visible, UNTRACKED_ID, type Account } from '../lib/accounts';
 import { flatten, type Category } from '../lib/categories';
 import { ensureAccounts, ensureCategories, ensureMerchants, ensureTags } from '../lib/prefetch';
 import {
@@ -316,10 +316,7 @@ export function TransactionSheet() {
           // 2026-09-20 - "much better to be default than picking the last-used").
           // A guessed account here is a withdrawal from an account you never
           // chose, and the money for a loan often comes from cash instead.
-          const lending = [preset, into].some((id) => {
-            const type = active.find((a) => a.id === id)?.type;
-            return type === 'lent' || type === 'borrowed';
-          });
+          const lending = [preset, into].some((id) => isLoan(active.find((a) => a.id === id)?.type));
           const recent = ledger.items.find((row) => row.id > 0)?.account_id;
           const chosen = [preset, recent].find((id) => id !== undefined && id !== into && active.some((a) => a.id === id));
           const known = active.some((a) => a.id === preset) ? preset ?? null : null;
@@ -484,10 +481,7 @@ export function TransactionSheet() {
   };
 
   /** ACC-31. A lent or borrowed account - the two transfers that may come from, or go to, untracked cash. */
-  const isLoan = (id: number | null) => {
-    const type = accounts.find((a) => a.id === id)?.type;
-    return type === 'lent' || type === 'borrowed';
-  };
+  const onLoan = (id: number | null) => isLoan(accounts.find((a) => a.id === id)?.type);
 
   const startSplit = () => {
     setSplitting(true);
@@ -508,8 +502,8 @@ export function TransactionSheet() {
    * else the money really did leave, or land in, an account you track, and a
    * forgotten chip would be a real mistake rather than an answer.
    */
-  const fromIsWallet = kind === 'transfer' && accountId === null && isLoan(counterId);
-  const toIsWallet = kind === 'transfer' && counterId === null && isLoan(accountId);
+  const fromIsWallet = kind === 'transfer' && accountId === null && onLoan(counterId);
+  const toIsWallet = kind === 'transfer' && counterId === null && onLoan(accountId);
 
   const problem = (() => {
     if (amountCents <= 0) return 'Type an amount';
@@ -531,7 +525,7 @@ export function TransactionSheet() {
   })();
   // REC-34. Only a purchase on a card or a loan can be spread - and not one that is already a plan's payment.
   const spreadable = kind === 'expense'
-    && ['credit', 'borrowed'].includes(accounts.find((a) => a.id === accountId)?.type ?? '')
+    && isOwed(accounts.find((a) => a.id === accountId)?.type ?? 'cash')
     && (!editing || (editing.id > 0 && editing.recurring_id == null));
   const spreading = showPlan && spreadable;
   const canSave = !busy && problem === null && (!splitting || kind === 'transfer' || remaining === 0)
@@ -822,7 +816,7 @@ export function TransactionSheet() {
                       back to blank, which is the wallet. */}
                   {accountChips(
                     accountId,
-                    (id) => setAccountId(accountId === id && isLoan(counterId) ? null : id),
+                    (id) => setAccountId(accountId === id && onLoan(counterId) ? null : id),
                     counterId,
                   )}
                 </div>
@@ -842,7 +836,7 @@ export function TransactionSheet() {
                 <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 py-1">
                   {accountChips(
                     counterId,
-                    (id) => setCounterId(counterId === id && isLoan(accountId) ? null : id),
+                    (id) => setCounterId(counterId === id && onLoan(accountId) ? null : id),
                     accountId,
                   )}
                 </div>

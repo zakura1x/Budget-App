@@ -71,7 +71,6 @@ REFUNDS = "Refunds"
 FEES = "Fees"
 DEFAULT_ACCOUNT_COLOUR = "#5AB8FF"  # from the picker set (2026-09-18)
 LOAN_COLOUR = "#FF8AD8"
-OWED_TYPES = ("credit", "borrowed")
 
 _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -480,7 +479,7 @@ def preview(db: Session, cipher: UserCipher, content: bytes) -> BudgetAppPreview
         last_date=max(dates) if dates else None,
         accounts=[
             PreviewAccount(a.key, a.name, a.type, a.subtype, account_ids[a.key] is not None, change[a.key].quantize(CENT),
-                           a.suggested, a.type in OWED_TYPES, a.archive_after, count[a.key])
+                           a.suggested, a.type in account_service.OWES, a.archive_after, count[a.key])
             for a in plan.accounts
         ],
         categories_new=sum(1 for v in category_ids.values() if v is None),
@@ -588,7 +587,7 @@ def run_import(db: Session, cipher: UserCipher, content: bytes, balances: Mappin
         view = views.get(account_id)
         if record is None or view is None:
             continue
-        target = -typed[account.key] if view.type in OWED_TYPES else typed[account.key]
+        target = -typed[account.key] if view.type in account_service.OWES else typed[account.key]
         data = dict(record.data)
         if view.type != "investment":
             data["opening_balance"] = str((Decimal(str(data.get("opening_balance", "0"))) + target - view.balance).quantize(CENT))

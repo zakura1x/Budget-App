@@ -26,6 +26,9 @@ import {
   TYPE_ICON,
   isOwed,
   kindLabelOf,
+  COUNTS_IN_CASH_ON_HAND_DEFAULT,
+  EARNS_INTEREST,
+  GIVES_CASHBACK,
   type AccountKind,
   balanceQuestion,
   createAccount,
@@ -51,17 +54,6 @@ import { Segmented } from './ui/Segmented';
 import { Sheet } from './ui/Sheet';
 import { TextField } from './ui/TextField';
 import { Toggle } from './ui/Toggle';
-
-/** ACC-37. Mirrors account_service.EARNS_INTEREST - where a bank actually pays. */
-const EARNS_INTEREST: AccountType[] = ['cash', 'debit', 'savings', 'member'];
-
-/** ACC-38. Mirrors account_service.GIVES_CASHBACK - the accounts you spend FROM. */
-const GIVES_CASHBACK: AccountType[] = ['cash', 'debit', 'credit', 'savings', 'member'];
-
-/** Mirrors account_service.COUNTS_IN_CASH_ON_HAND_DEFAULT (ACC-18/31/32). */
-const COUNTS_BY_DEFAULT: Record<AccountType, boolean> = {
-  cash: true, debit: true, savings: true, credit: true, investment: false, lent: false, borrowed: false, member: true,
-};
 
 /**
  * ACC-37. The typed rates as the server wants them: amounts as decimal
@@ -251,7 +243,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
     setType(kind.type);
     setSubtype(kind.subtype);
     setIcon(kind.icon ?? TYPE_ICON[kind.type]);
-    setCounts(COUNTS_BY_DEFAULT[kind.type]);
+    setCounts(COUNTS_IN_CASH_ON_HAND_DEFAULT[kind.type]);
     setExample(kind.example);
     setKindLabel({ label: kind.label, hint: kind.hint });
     setPicked(true);

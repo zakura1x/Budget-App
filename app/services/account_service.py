@@ -136,6 +136,15 @@ GIVES_CASHBACK: Tuple[str, ...] = ("cash", "debit", "credit", "savings", "member
 # answers on the client.
 OWES: Tuple[str, ...] = ("credit", "borrowed")
 
+# ACC-31/39. Money lent or borrowed - the only transfers whose other side may be
+# cash the user does not track (the wallet, untracked_cash()).
+LOANS: Tuple[str, ...] = ("lent", "borrowed")
+
+# The type rules above (OWES, LOANS, EARNS_INTEREST, GIVES_CASHBACK, CHECKABLE,
+# COUNTS_IN_CASH_ON_HAND_DEFAULT) are mirrored by name in frontend/src/lib/accounts.ts;
+# tests/test_account_kinds_parity.py fails when the two disagree. Every other
+# server module imports them from here rather than spelling a tuple out.
+
 # ACC-41. Accounts whose balance can be checked against the bank's (or the
 # wallet's) for a day - ACC-24 is the card's own check, by statement. A loan
 # or money lent has no bank balance to read, and an investment's value is
@@ -1162,9 +1171,7 @@ def _view(
         colour=str(data.get("colour") or "#8E8E93"),
         icon=str(data.get("icon") or DEFAULT_ICON.get(kind, "wallet")),
         archived=bool(data.get("archived", False)),
-        counts_in_cash_on_hand=bool(
-            data.get("counts_in_cash_on_hand", COUNTS_IN_CASH_ON_HAND_DEFAULT.get(kind, True))
-        ),
+        counts_in_cash_on_hand=_counts_in_cash(data),
         sort_order=int(data.get("sort_order") or 0),
         note=data.get("note"),
         counts_in_net_worth=bool(data.get("counts_in_net_worth", True)),
