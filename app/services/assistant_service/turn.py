@@ -153,45 +153,19 @@ def _turn(db: Session, cipher: UserCipher, text: str, today: date, conversation_
     model_name = settings.WATSONX_CHAT_MODEL
 
     ctx = skills.Context(db=db, cipher=cipher, today=today, intent=router.Intent(skill=None), question=text)
-    previous = next((t for t in reversed(conversation.turns[-3:])
-                     if t.intent is not None and t.intent.skill not in router.NOT_CARRIED), None)
-    last = conversation.turns[-1] if conversation.turns else None
-    if last is not None and last.intent is not None and last.intent.skill == "draft":
-        previous = last  # "it is for the motorcycle plan" right after a draft fills in that draft (router.follow_up)
     if conversation.turns:
         ctx.follow_ups = list(conversation.turns[-1].reply.get("follow_ups") or [])
-    chatter = router.small_talk(text)
-    if chatter is not None:
-        intent = router.Intent(skill="chat", item=chatter)  # hello / thanks / ok: no figures, no model
-    else:
-        intent = router.by_rules(text, today, ctx.category_names, ctx.account_names, ctx.goal_names,
-                                 ctx.merchant_names, ctx.plan_names)
-    placed = context_intent(context, ctx)
-    if placed is not None:
-        # AI-40: an Explain link names where it was tapped; that decides the skill, and the server
-        # reads the object itself - the browser names it and never supplies a figure.
-        intent.skill, intent.account_id = placed.skill, placed.account_id or intent.account_id
-    elif chatter is None:
-        carried = router.follow_up(text, intent, previous.intent if previous else None)
-        if carried is not None:
-            intent = carried  # "and last month?", "why?" - the previous question, continued
-    if intent.skill is None and service is not None:
+
+    ask_json = None
+    if service is not None:
         def ask_json(prompt: str) -> Tuple[Mapping, Dict[str, int]]:
             reply, used = service.invoke_with_recovery(model_name, ROUTE_PARAMS, prompt)
             meter.add(used)
             return _parse_json(reply), used
 
-        recent = [(t.question, t.intent.skill) for t in conversation.turns[-4:] if t.intent is not None]
-        intent = router.merge(intent, router.by_model(text, today, ctx.category_names, ctx.account_names, ask_json,
-                                                      ctx.goal_names,
-                                                      (previous.question, previous.intent.skill) if previous else None,
-                                                      recent))
-    if intent.skill is None and chatter is None and placed is None and previous is not None:
-        # Nothing could place it - no rule, and no model (down, failed, or unsure). Inside a conversation it
-        # continues the last question rather than starting over with "I'm not sure what you mean".
-        loose = router.follow_up(text, intent, previous.intent, loose=True)
-        if loose is not None:
-            intent = loose
+    intent = router.route(text, today, ctx.category_names, ctx.account_names, ctx.goal_names, ctx.merchant_names,
+                          ctx.plan_names, earlier=conversation.turns, placed=context_intent(context, ctx),
+                          ask_json=ask_json)
     ctx.intent = intent
 
     facts = skills.run(ctx)

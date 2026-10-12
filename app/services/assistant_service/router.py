@@ -31,7 +31,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.core.utils.date_utils import add_months, clamp_day
 from app.core.utils.money import CENTS
@@ -689,6 +689,71 @@ def merge(rules: Intent, model: Optional[Intent]) -> Intent:
         by_model=True,
         usage=model.usage,
     )
+
+
+def carried_from(earlier: Sequence[Any]) -> Optional[Any]:
+    """
+    The earlier turn a follow-up may continue (`earlier` holds memory.Turn -
+    anything with .question and .intent): the latest of the last three whose
+    skill can be carried - or, straight after a draft, that draft, so "it is
+    for the motorcycle plan" fills it in (follow_up's own draft case).
+    """
+    last = earlier[-1] if earlier else None
+    if last is not None and last.intent is not None and last.intent.skill == "draft":
+        return last
+    return next((t for t in reversed(earlier[-3:]) if t.intent is not None and t.intent.skill not in NOT_CARRIED),
+                None)
+
+
+def route(
+    question: str,
+    today: date,
+    categories: Mapping[int, str],
+    accounts: Mapping[int, str],
+    goals: Optional[Mapping[int, str]] = None,
+    merchants: Optional[Mapping[int, str]] = None,
+    plans: Optional[Mapping[int, str]] = None,
+    *,
+    earlier: Sequence[Any] = (),
+    placed: Optional[Intent] = None,
+    ask_json: Optional[Callable[[str], Tuple[Mapping, Dict[str, int]]]] = None,
+) -> Intent:
+    """
+    What a message means, in the one order that decides it (architecture
+    review 2026-10-12, pass 2 A - it used to live inside turn._turn):
+
+      1. small talk - hello / thanks / ok, no figures and no model;
+      2. the rules - keywords and the user's own names;
+      3. `placed` - where an Explain link was tapped (turn.context_intent) decides the skill;
+      4. a follow-up of the turn carried_from(earlier) picks;
+      5. the model, only when nothing above found a skill and `ask_json` is given;
+      6. a loose follow-up - inside a conversation, a message nothing could
+         place continues the last question rather than "I'm not sure".
+
+    Pure apart from `ask_json`, so a conversation is tested with a fake model.
+    """
+    previous = carried_from(earlier)
+    chatter = small_talk(question)
+    if chatter is not None:
+        intent = Intent(skill="chat", item=chatter)
+    else:
+        intent = by_rules(question, today, categories, accounts, goals, merchants, plans)
+    if placed is not None:
+        # AI-40: the server reads the object itself - the browser names it and never supplies a figure.
+        intent.skill, intent.account_id = placed.skill, placed.account_id or intent.account_id
+    elif chatter is None:
+        carried = follow_up(question, intent, previous.intent if previous else None)
+        if carried is not None:
+            intent = carried
+    if intent.skill is None and ask_json is not None:
+        recent = [(t.question, t.intent.skill) for t in earlier[-4:] if t.intent is not None]
+        intent = merge(intent, by_model(question, today, categories, accounts, ask_json, goals,
+                                        (previous.question, previous.intent.skill) if previous else None, recent))
+    if intent.skill is None and chatter is None and placed is None and previous is not None:
+        loose = follow_up(question, intent, previous.intent, loose=True)
+        if loose is not None:
+            intent = loose
+    return intent
 
 
 def suggestions() -> List[str]:

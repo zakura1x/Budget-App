@@ -252,3 +252,71 @@ def test_a_no_says_when_cash_was_short_without_it():
         timeline=[(today, Decimal("1000.00")), (date(2026, 10, 30), Decimal("-30000.00"))],
         wait_dates=[], set_aside=Decimal("0"), essentials_week=None))
     assert result.verdict == "no" and result.lowest_without == Decimal("-30000.00")
+
+
+# ------------------------------------------------------- router.route: the whole order, without a turn
+# (architecture review 2026-10-12, pass 2 A - each of these used to need a session, memory and a meter)
+
+
+class _Turn:
+    def __init__(self, question, intent):
+        self.question, self.intent = question, intent
+
+
+def _earlier(*questions):
+    return [_Turn(q, router.by_rules(q, D, CATS, {})) for q in questions]
+
+
+class _Model:
+    """A fake model that answers one skill and remembers whether it was asked."""
+
+    def __init__(self, skill=None):
+        self.skill, self.asked = skill, 0
+
+    def __call__(self, prompt):
+        self.asked += 1
+        return ({"skill": self.skill} if self.skill else {}), {}
+
+
+def test_route_small_talk_never_asks_the_model():
+    model = _Model("spending")
+    assert router.route("thanks!", D, CATS, {}, earlier=_earlier("How much is left?"), ask_json=model).skill == "chat"
+    assert model.asked == 0
+
+
+def test_route_continues_the_last_question_without_the_model():
+    model = _Model("cash")
+    intent = router.route("and on Food?", D, CATS, {}, earlier=_earlier("How much did I spend last month?"),
+                          ask_json=model)
+    assert (intent.skill, intent.category_id, intent.period, intent.carried) == ("spending", 1, "last_month", True)
+    assert model.asked == 0
+
+
+def test_route_asks_the_model_only_when_nothing_else_places_it():
+    model = _Model("cash")
+    assert router.route("hmm what about the thing", D, CATS, {}, ask_json=model).skill == "cash"
+    assert model.asked == 1
+
+
+def test_route_with_no_model_continues_the_conversation_loosely():
+    intent = router.route("hmm what about the thing", D, CATS, {}, earlier=_earlier("How much is left?"))
+    assert intent.skill == "budget_status" and intent.carried
+
+
+def test_route_never_continues_a_skill_that_is_not_carried():
+    """A how-to answers one message on its own: what follows it is not its follow-up."""
+    assert router.carried_from(_earlier("How do I add a goal?")) is None
+    assert router.route("and last month?", D, CATS, {}, earlier=_earlier("How do I add a goal?")).skill != "how_to"
+
+
+def test_route_right_after_a_draft_fills_that_draft_in():
+    earlier = _earlier("I paid 7,000 today")
+    assert earlier[-1].intent.skill == "draft"
+    intent = router.route("it is for the motorcycle plan", D, CATS, {}, earlier=earlier)
+    assert (intent.skill, intent.amount) == ("draft", Decimal("7000"))
+
+
+def test_route_an_explain_link_decides_the_skill():
+    placed = router.Intent(skill="card", account_id=4)
+    intent = router.route("why?", D, CATS, {4: "BPI"}, earlier=_earlier("How much is left?"), placed=placed)
+    assert (intent.skill, intent.account_id) == ("card", 4)
