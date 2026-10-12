@@ -362,8 +362,8 @@ charges on the card are added to a bill. WHICH bill depends on what the charge
 is: an installment payment's date is the day the bank bills it, so it joins the
 first bill due on or after that day; anything else is a purchase and takes the
 statement route, falling due the month after (fixed 2026-09-16).
-`projection_service._lands_on_bill` asks the question exactly the same way, or
-a payment would be counted both inside a bill and on its own day.
+Both `_bills` and the projection ask `app/core/utils/billing.py` (2026-10-12),
+or a payment would be counted both inside a bill and on its own day.
 
 **Cash the user does not track has one hidden account** (ACC-39, added
 2026-09-20). Money lent out of a wallet that was never an account still needs

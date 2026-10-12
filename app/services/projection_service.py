@@ -69,6 +69,7 @@ from sqlalchemy.orm import Session
 
 from app.core.crypto.user_cipher import UserCipher
 from app.core.exceptions import ValidationException
+from app.core.utils import billing
 from app.core.utils.date_utils import add_months, days_in_month, statement_period
 from app.core.utils.interest import Band, daily_net
 from app.core.utils.money import ZERO, money, total
@@ -193,10 +194,10 @@ def project(
                        key=lambda u: (u.on, u.rule_id))
     # ACC-35. Typed card bills enter on their own days; the charges folded into them are not counted twice.
     bill_items, billed, chains = _bill_items(views, counted, today)
-    ahead = [u for u in ahead if not _lands_on_bill(u, billed)]
+    ahead = [u for u in ahead if not _on_typed_bills(u, billed)]
     # ACC-40. A counted loan's dues are its bills, and _bill_items has just put
     # each one on its own day. Its plan's CHARGES would be the same money a
-    # second time - on a card that is what _lands_on_bill prevents.
+    # second time - on a card that is what _on_typed_bills prevents.
     dued = {v.id for v in views if v.dues is not None and v.id in counted and not v.archived}
     ahead = [u for u in ahead
              if not (u.kind == "installment" and u.type == "expense" and u.account_id in dued)]
@@ -316,20 +317,19 @@ def _bill_items(
             continue
         billed[view.id] = (max(b.due for b in credit.bills), credit.statement_closing_day, credit.payment_due_day)
         unpaid = [b for b in credit.bills if b.left > ZERO]
-        now = next((b for b in unpaid if not b.overdue), None)
+        # The same reading as the card's own due_now, so what is shown as held here IS what cash on hand holds.
+        held = billing.due_now([billing.Owing(b.due, b.left, b.overdue) for b in credit.bills]).dues
         for bill in unpaid:
-            if bill.overdue or (now is not None and bill.due == now.due):
+            if bill.due in held:
                 items.append(ProjectedItem(
                     on=max(bill.due, today), rule_id=0,
                     name=f"{view.name} bill due {bill.due.day} {bill.due:%b}", kind="bill_now", type="expense",
                     account_id=view.id, counter_account_id=None, amount=bill.left, effect=ZERO,
                     paused=False, final=False,
                 ))
-        chains.append([(b.due, b.left, b.overdue or (now is not None and b.due <= now.due)) for b in unpaid])
-        if now is None:
-            continue
+        chains.append([(b.due, b.left, b.due in held) for b in unpaid])
         for bill in unpaid:
-            if bill.overdue or bill.due <= now.due:
+            if bill.due in held:
                 continue  # in cash on hand already
             typed = min(bill.typed_left + bill.purchases_left, bill.left)  # money already spent
             planned = bill.left - typed
@@ -351,8 +351,9 @@ def _bill_items(
         if dues is None or view.archived or view.id not in counted:
             continue
         chain: List[Tuple[date, Decimal, bool]] = []
+        held = billing.due_now([billing.Owing(d.on, d.amount, d.overdue) for d in dues.dues]).dues
         for due in dues.dues:
-            now = due.overdue or due.on == dues.next_on
+            now = due.on in held
             chain.append((due.on, due.amount, now))
             items.append(ProjectedItem(
                 on=max(due.on, today), rule_id=0,
@@ -413,22 +414,13 @@ def _interest_items(views, counted: Set[int], start: date, end: date, today: dat
     return items
 
 
-def _lands_on_bill(upcoming: Upcoming, billed: Dict[int, Tuple[date, int, int]]) -> bool:
-    """
-    An expense on a billed card that is already inside one of those bills, so
-    the projection does not take it twice.
-
-    It has to ask the question exactly the way account_service._bills answers
-    it (fixed 2026-09-16): an INSTALLMENT payment joins the bill falling due on
-    or after its own day - its date is the day it is billed - while any other
-    charge is a purchase, billed with the statement it falls in.
-    """
+def _on_typed_bills(upcoming: Upcoming, billed: Dict[int, Tuple[date, int, int]]) -> bool:
+    """An expense on a billed card that is already inside one of its bills, so it is not taken twice."""
     if upcoming.type != "expense" or upcoming.account_id not in billed:
         return False
     last_due, closing_day, due_day = billed[upcoming.account_id]
-    if upcoming.kind == "installment":
-        return upcoming.on <= last_due
-    return statement_period(upcoming.on, closing_day, due_day).due <= last_due
+    return billing.on_a_bill(upcoming.on, installment=upcoming.kind == "installment", closing_day=closing_day,
+                             due_day=due_day, last_due=last_due)
 
 
 def _item(upcoming: Upcoming, counted: Set[int]) -> ProjectedItem:

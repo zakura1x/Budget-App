@@ -46,9 +46,9 @@ from app.core.exceptions import (
     NotFoundException,
     ValidationException,
 )
+from app.core.utils import billing
 from app.core.utils.date_utils import (
     StatementPeriod,
-    clamp_day,
     previous_statement_period,
     statement_period,
 )
@@ -1224,14 +1224,13 @@ def _dues_view(dues: Sequence[Any], when: date) -> Optional[DuesView]:
     if not dues:
         return None
     rows = tuple(DueView(d.on, d.amount, d.on <= when, d.rule_id, d.name) for d in dues)
-    overdue = total(r.amount for r in rows if r.overdue)
-    upcoming = next((r for r in rows if not r.overdue), None)
+    now = billing.due_now([billing.Owing(r.on, r.amount, r.overdue) for r in rows])
     return DuesView(
         dues=rows,
-        due_now=(overdue + (upcoming.amount if upcoming else ZERO)).quantize(ZERO),
-        overdue=overdue.quantize(ZERO),
-        next_on=upcoming.on if upcoming else None,
-        next_amount=(upcoming.amount if upcoming else ZERO).quantize(ZERO),
+        due_now=now.amount,
+        overdue=total(r.amount for r in rows if r.overdue).quantize(ZERO),
+        next_on=now.next_on,
+        next_amount=now.next_amount,
         left_to_pay=total(r.amount for r in rows).quantize(ZERO),
     )
 
@@ -1283,22 +1282,21 @@ def _credit_view(
     spent = max(purchases - refunds, ZERO).quantize(ZERO)
 
     # ACC-35. Typed bills, when the card has them, say what is due and when - the reminder follows them.
-    bills = _bills(data, postings, when, charges)
+    card_bills = _bills(data, postings, when, charges)
     due_now: Optional[Decimal] = None
-    if bills:
-        unpaid_bills = [b for b in bills if b.left > ZERO]
-        upcoming = next((b for b in unpaid_bills if not b.overdue), None)
-        due_now = total([b.left for b in unpaid_bills if b.overdue] + ([upcoming.left] if upcoming else [])).quantize(ZERO)
-        nearest = next(iter(unpaid_bills), None)
-        if nearest is not None:
-            payment_due = nearest.due if nearest.overdue else (upcoming.due if upcoming else nearest.due)
+    if card_bills:
+        now = billing.due_now([billing.Owing(b.due, b.left, b.overdue) for b in card_bills])
+        due_now = now.amount
+        if now.dues:
+            # The oldest overdue bill when there is one, else the next.
+            payment_due = now.dues[0]
         amount_due = due_now
-    bills_left = total(b.left for b in bills).quantize(ZERO)
-    not_charged = total(b.not_charged for b in bills).quantize(ZERO)
+    bills_left = total(b.left for b in card_bills).quantize(ZERO)
+    not_charged = total(b.not_charged for b in card_bills).quantize(ZERO)
     # What the card owes that no bill lists (2026-09-19, user: Bills did not add
     # up to the tile). The repeating charges on the bills are not owed yet, so
     # they are taken off the bills before comparing.
-    not_on_bill = (owed + unpaid - (bills_left - not_charged)).quantize(ZERO) if bills else None
+    not_on_bill = (owed + unpaid - (bills_left - not_charged)).quantize(ZERO) if card_bills else None
 
     due_in_days = (payment_due - when).days
     return CreditView(
@@ -1324,7 +1322,7 @@ def _credit_view(
         period_days=(period.closes - period.start).days + 1,
         period_days_elapsed=(when - period.start).days + 1,
         posting_lag_days=_posting_lag(data),
-        bills=bills,
+        bills=card_bills,
         bills_left=bills_left,
         due_now=due_now,
         not_on_bill=not_on_bill,
@@ -1395,15 +1393,10 @@ def _bills(data: Mapping[str, Any], postings: Sequence[Posting], today: date, ch
     added: Dict[date, List[BillLine]] = {}
     inside: Dict[date, List[BillLine]] = {}
     for charge in sorted(charges, key=lambda c: c.on):
-        # An installment payment is already a bill line, dated the day it is
-        # billed, so it joins the first bill falling due on or after that day
-        # (fixed 2026-09-16, user: a payment dated 15 Oct was showing on the
-        # 15 Nov bill). Beyond the last typed bill it keeps that bill's day of
-        # the month, so the list stays on one rhythm. A purchase takes the
-        # statement route instead: it is billed with the cycle it falls in,
-        # which falls due the month after.
-        due = (_bill_on_or_after(charge.on, typed, last_typed) if charge.installment
-               else statement_period(charge.on, closing_day, due_day).due)
+        # An installment joins the first typed bill due on or after its day; a
+        # purchase, its statement's due date - the one rule, in core/utils/bills.
+        due = billing.bill_due(charge.on, installment=charge.installment, closing_day=closing_day,
+                             due_day=due_day, bill_dues=typed)
         if listed_already(charge) or (charge.purchase and since is not None and charge.on < since):
             # The card's app had it when the list was typed: a purchase already
             # made, or every payment of a plan that already existed - its bills
@@ -1470,25 +1463,6 @@ def _bill_line(kind: str, charge: Charge) -> BillLine:
     return BillLine(kind, charge.amount.quantize(ZERO), charge.on, charge.name,
                     charge.source if charge.purchase else None,
                     None if charge.purchase else charge.source, charge.category_id)
-
-
-def _bill_on_or_after(day: date, typed: Mapping[date, Decimal], last_typed: date) -> date:
-    """
-    The bill an installment payment dated `day` belongs to: the first bill the
-    user typed that falls due on or after it, or - past the last of them - the
-    same day of the month, so the bills carry on at one rhythm.
-    """
-    nearest = min((due for due in typed if due >= day), default=None)
-    return nearest if nearest is not None else _due_on_or_after(day, last_typed.day)
-
-
-def _due_on_or_after(day: date, due_day: int) -> date:
-    """The payment-due date on or after `day`."""
-    this_month = clamp_day(day.year, day.month, due_day)
-    if this_month >= day:
-        return this_month
-    year, month = (day.year + 1, 1) if day.month == 12 else (day.year, day.month + 1)
-    return clamp_day(year, month, due_day)
 
 
 def _plan_charges(db: Session, cipher: UserCipher, today: Optional[date]) -> Dict[int, List[Charge]]:

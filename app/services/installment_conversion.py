@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session
 
 from app.core.crypto.user_cipher import UserCipher
 from app.core.exceptions import BusinessRuleException, NotFoundException, ValidationException
+from app.core.utils import billing
 from app.core.utils.date_utils import add_months, statement_period
 from app.core.utils.money import ZERO, money
 from app.db.repositories.account_repository import AccountRepository
@@ -101,9 +102,9 @@ def default_start(account: Mapping[str, Any], on: date) -> date:
     on - its statement's due date; on a loan, a month after the purchase.
     """
     if account.get("type") == "credit":
-        closing = int(account.get("statement_closing_day") or 1)
-        due = int(account.get("payment_due_day") or 1)
-        return statement_period(on, closing, due).due
+        # The purchase's own bill - billing's purchase rule, never a copy of it.
+        return billing.bill_due(on, installment=False, closing_day=int(account.get("statement_closing_day") or 1),
+                                due_day=int(account.get("payment_due_day") or 1))
     return add_months(on, 1)
 
 

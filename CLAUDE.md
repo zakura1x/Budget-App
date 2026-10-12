@@ -411,8 +411,10 @@ placed on a bill), and Months ahead takes each later bill ON ITS DUE DATE, with
 A plan charge joins a card's bills by WHAT IT IS: an installment payment's date
 is the day it is billed, so it lands on the first bill due on or after it; any
 other recurring charge is a purchase and takes the statement cycle, due the
-month after. `account_service._bills` and `projection_service._lands_on_bill`
-must keep answering that the same way.
+month after. That rule, and "due now = everything overdue + the next due date"
+(cards and loans alike), live ONLY in `app/core/utils/billing.py` (2026-10-12):
+`account_service`, `projection_service` and `installment_conversion` all ask
+it - never place a charge or sum what is due anywhere else.
 
 A plan can be PAID on the plan (REC-32, `recurring_service.pay_plan`): a
 transfer into the plan's account carrying the plan's id and NO `recurring_on`.
