@@ -218,6 +218,29 @@ flowchart LR
   </ul>
 </section>
 
+<section class="card p-5 space-y-3" style="background:#dcfce7">
+  <h3 class="text-xl">What was built (2026-10-12)</h3>
+  <p class="text-sm">All six were accepted and built. The full backend suite and the frontend tests pass. One test, <span class="mono">test_phase14::test_passkeys_are_off_unless_the_server_turns_them_on</span>, was already failing before this work.</p>
+  <ul class="list-disc pl-5 space-y-2 text-sm">
+    <li><b>A · Routing a message:</b> <span class="mono">router.route()</span> holds the whole order, and <span class="mono">router.carried_from()</span> picks the turn a follow-up continues (the <span class="mono">NOT_CARRIED</span> filter plus the draft case). <span class="mono">turn._turn</span> only feeds them. Seven direct tests in <span class="mono">test_ai_conversation.py</span> use a fake model.</li>
+    <li><b>B · Money strings:</b> <span class="mono">isZero</span> and <span class="mono">negate</span> are exported from <span class="mono">lib/money.ts</span>, and the 5 copies are deleted.<br>
+      <i>Root fix:</i> the server's <span class="mono">Money</span> type now sends any zero as <span class="mono">"0.00"</span>, never <span class="mono">"-0.00"</span>. That makes the roughly 60 bare <span class="mono">=== '0.00'</span> checks across the screens correct without editing them. Tested in <span class="mono">money.test.ts</span> and <span class="mono">test_money_schema.py</span>.</li>
+    <li><b>C · Plan creation:</b> recurring_service gained three public functions:
+      <ul class="list-disc pl-5 mt-1 space-y-1">
+        <li><span class="mono">installment_schedule</span>: checks a plan's terms, used by the preview.</li>
+        <li><span class="mono">add_plan</span>: writes the plan with recurring's own bookkeeping fields and checks the rule limit. It does not commit, so a conversion stays a single commit.</li>
+        <li><span class="mono">post_due</span>: posts the payments already due.</li>
+      </ul>
+      The three <span class="mono">noqa: SLF001</span> reach-ins are gone.<br>
+      <i>Not done:</i> moving the installment arithmetic. It was already pure behind <span class="mono">installment_plan</span>, so moving it would only have relocated code. It now has direct tests for "shorten" and "lower" instead.</li>
+    <li><b>D · Linked rows:</b> two functions define which rows travel together: <span class="mono">_goes_with</span> (a transfer's legs, a purchase's cashback) and <span class="mono">_listed_under</span>. Delete, Recently deleted and Restore all read them. One helper, <span class="mono">_write_pair</span>, now writes a new transfer's two legs; the code that did this was repeated 3 times before.</li>
+    <li><b>E · Transaction draft:</b> one <span class="mono">Draft</span> in <span class="mono">lib/transactionDraft.ts</span>, set whole by <span class="mono">startDraft</span> every time the sheet opens. <span class="mono">cashbackPart</span> builds what is sent.<br>
+      <i>Bug fixed:</i> choosing "Recurring" while adding left the next Edit open on the repeat choices.<br>
+      <i>Not done:</i> the full reducer rewrite. The form's fields are now one value, with one setter per field built from it; rewriting every interaction in an untested UI was the risky part.</li>
+    <li><b>F · Alerts:</b> <span class="mono">card_due</span> and the two subscription alerts carry <span class="mono">when</span> ("today", "in 3 days"), and Home reads it instead of cutting up <span class="mono">message</span>. The two kind→place tables (<span class="mono">turn._ALERTS</span>, <span class="mono">AskTile</span>) were left as they are.</li>
+  </ul>
+</section>
+
 <section class="card p-5 space-y-3" style="background:#fef9c3">
   <h3 class="text-xl">Top recommendation: A, routing a message</h3>
   <p class="text-sm">It's the hottest area left: four of the last nine commits tuned it, and every one of them had to be tested through a whole turn. Pulling the order and the carry rule into one pure module turns each future "the assistant misread my follow-up" report into a one-line test case. The model is already passed in as a function (<span class="mono">ask_json</span>), so a fake model makes it testable without the SDK.</p>

@@ -25,7 +25,7 @@ conventions this project deliberately mirrors.
 | `misc/ROADMAP.md` | Everything not built yet — deferred rows plus new ideas, with reserved IDs, as Phases 11–15. Tick it when one ships. |
 | `misc/how-to-run.txt` | Setup, recovery, and backup runbook. |
 | `misc/DEPLOY.md` | Deploying to IIS: the release zip, first deploy, every update, rollback, troubleshooting. |
-| `misc/ARCHITECTURE_REVIEW.html` | The 2026-10-12 architecture review: six deepening candidates, before/after, and what was built. |
+| `misc/ARCHITECTURE_REVIEW.html`, `_2.html` | The 2026-10-12 architecture reviews (two passes): deepening candidates, before/after, and what was built. |
 
 ## Commands
 
@@ -444,6 +444,9 @@ recorded. The purchase is hidden (soft-deleted; `converted_to` on it,
 purchase keeps its proportions (`category_shares`, applied in
 `recurring_service._price_splits`); a bill list that covered the purchase
 covers the plan (`Charge.origin`). All of it is references in backup_service.
+Conversion reaches recurring_service only through its public
+`installment_schedule` (preview), `add_plan` (writes, does not commit) and
+`post_due` - never its private helpers.
 
 A LOAN BILLS LIKE A CARD (ACC-40, 2026-09-21): `recurring_service.plans_owed`
 walks the rules ONCE and returns both what is still to bill (REC-14) and the
@@ -510,11 +513,18 @@ the contributions.
   REFUSE more; rates carry four ("3.2500"). Use `toRateString` to send one,
   `percentOf` to apply one, and the interest helper on the server - never
   `toDecimalString`, `formatPHP` or `splitDecimal` on a rate.
+- **Zero is "0.00", never "-0.00", on the wire.** The `Money` serializer
+  (`schemas/common.py`) drops the sign of a zero, and the client asks
+  `isZero` / `negate` from `lib/money.ts` - never a local copy (2026-10-12).
 
 Tapping a transaction opens `TransactionPreview` (TXN-23, `uiStore.preview`),
 read-only, and its Edit button opens `TransactionSheet` - the account page, Home
 and the calendar day list all do this, and the Ledger keeps swipe-to-edit. Only
 the preview and the sheet ever open an entry; a pending row opens neither.
+The sheet's form is one `Draft` (`lib/transactionDraft.ts`), set whole by
+`startDraft` every time it opens - a new field goes in `Draft`, never in its own
+`useState`, or it survives from the last time the sheet was open. Alerts about a
+date carry `when`; a screen words them from fields, never from `message`.
 
 **Calendar, stats and tags** (Phase 6): `stats_service.overview` and
 `calendar_service.month` read `transaction_service.views()` - both legs of
@@ -583,7 +593,10 @@ auto-lock); they are never persisted in the browser.
   delete - an installment conversion (REC-34), a revert's charges, a credit an
   edit took away - is NOT something the user deleted; never stamp one.
   `restore_transaction` brings back the group (`_restore_group`) and refuses
-  through `_restore_problem`; a new kind of link between rows must join both.
+  through `_restore_problem`. Which rows travel together is `_goes_with` /
+  `_listed_under` and nothing else (a transfer's legs, a purchase's cashback);
+  a new kind of link joins there and in `_restore_problem`. A new transfer's
+  legs are written only by `_write_pair`.
 - **Merchants (TXN-24)** are read from the working set
   (`transaction_service.merchants`); the add sheet only pre-selects a category
   when none is chosen yet.
@@ -694,6 +707,10 @@ auto-lock); they are never persisted in the browser.
   request, on expiry, and when keeping or the assistant is turned off. A saved
   reply keeps no draft button - their ids would not survive a restore, and
   `references.py` lists none for this table.
+- **One order places a message (2026-10-12): `router.route`** - small talk,
+  rules, the Explain-link place, follow-up (`carried_from`), the model, a loose
+  follow-up. `turn._turn` only feeds it (names, earlier turns, the metered
+  `ask_json`) and acts on the answer; test a routing change through `route`.
 - **A conversation, not separate questions (2026-10-01).** `router.small_talk`
   answers hello / thanks / ok as skill `chat` with no model call;
   `router.follow_up` continues the previous turn's intent (`Turn.intent`,

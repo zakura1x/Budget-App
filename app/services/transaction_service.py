@@ -414,11 +414,7 @@ def create_transaction(
     repo = TransactionRepository(db, cipher)
 
     if kind == "transfer":
-        out_data, in_data = _clean_transfer(db, cipher, payload, existing=None)
-        out_leg = repo.create(out_data)
-        in_leg = repo.create({**in_data, "pair_id": out_leg.id})
-        out_leg = repo.update(out_leg.id, {**out_data, "pair_id": in_leg.id})
-        records = [out_leg, in_leg]
+        records = list(_write_pair(repo, *_clean_transfer(db, cipher, payload, existing=None)))
     else:
         data = _clean(db, cipher, payload, kind, existing=None)
         record = repo.create(data)
@@ -496,12 +492,16 @@ def delete_transaction(db: Session, cipher: UserCipher, transaction_id: int, *, 
     """TXN-14. Soft, so the audit trail and any earlier backup stay honest. A transfer takes both legs."""
     repo = TransactionRepository(db, cipher)
     record = _record(db, cipher, transaction_id)
-    doomed = list(_legs(db, cipher, record)) if record.data.get("type") == "transfer" else [record]
-    # TXN-22. A purchase takes its cashback with it; deleting the credit on its
-    # own leaves the purchase, with nothing left claiming money that is gone.
-    credit_id = record.data.get("cashback_id")
-    if credit_id:
-        doomed.append(_record(db, cipher, credit_id))
+    # A transfer takes its other leg, a purchase its cashback (_goes_with).
+    live = {r.id: r for r in repo.cached()}
+    doomed = [record]
+    for row_id in _goes_with(record.data):
+        if row_id not in live:
+            # Integrity drift - no FK could have caught it (verify_integrity.py).
+            raise BusinessRuleException("Part of this entry is missing")
+        doomed.append(live[row_id])
+    # TXN-22. Deleting a credit on its own leaves the purchase, with nothing
+    # left claiming money that is gone.
     if record.data.get("cashback_of"):
         purchase = _record(db, cipher, record.data["cashback_of"])
         repo.update(purchase.id, {**purchase.data, "cashback": None, "cashback_id": None})
@@ -543,10 +543,8 @@ def deleted(db: Session, cipher: UserCipher, *, now: Optional[datetime] = None) 
     context = _RestoreContext.load(db, cipher)
     for record in rows.values():
         data = record.data
-        if data.get("type") == "transfer" and data.get("direction") == "in" and data.get("pair_id") in rows:
-            continue  # shown as its out leg
-        if data.get("cashback_of") in rows:
-            continue  # went with its purchase, and comes back with it
+        if _listed_under(data) in rows:
+            continue  # went with the row it is listed under, and comes back with it
         when = _parse_stamp(data["deleted_at"])
         if when is None or when < cutoff:
             continue
@@ -603,18 +601,42 @@ def restore_transaction(
     return outcome(db, cipher, [_view(r) for r in restored], today=today)
 
 
+# ------------------------------------------------------------------ rows that are one thing
+# TXN-14/22/25. Some entries are two rows to the database and ONE thing to the
+# user: a transfer's legs (pair_id, each naming the other), and a purchase with
+# its cashback credit (cashback_id on the purchase, cashback_of on the credit).
+# Delete, Recently deleted and Restore read these two functions and nothing
+# else, so a new kind of linked row joins HERE - and _restore_problem says what
+# may stop it coming back (architecture review 2026-10-12, pass 2 D).
+
+
+def _goes_with(data: Mapping[str, Any]) -> List[int]:
+    """The rows deleted, and restored, together with this one."""
+    linked = [data.get("pair_id")] if data.get("type") == "transfer" else []
+    linked.append(data.get("cashback_id"))
+    return [int(row_id) for row_id in linked if row_id]
+
+
+def _listed_under(data: Mapping[str, Any]) -> Optional[int]:
+    """The row Recently deleted shows in this one's place when both went: an in leg's out leg, a credit's purchase."""
+    if data.get("type") == "transfer" and data.get("direction") == "in":
+        return data.get("pair_id")
+    return data.get("cashback_of")
+
+
+def _write_pair(repo: TransactionRepository, out_data: Mapping[str, Any], in_data: Mapping[str, Any]) -> Tuple[Record, Record]:
+    """A new transfer's two legs, each holding the other's id - the one way a pair is written."""
+    out_leg = repo.create(dict(out_data))
+    in_leg = repo.create({**in_data, "pair_id": out_leg.id})
+    return repo.update(out_leg.id, {**out_data, "pair_id": in_leg.id}), in_leg
+
+
 def _restore_group(db: Session, cipher: UserCipher, record: Record) -> List[Record]:
     """The rows one Restore brings back: this one, a transfer's other leg, a purchase's credit."""
     repo = TransactionRepository(db, cipher)
     group = [record]
-    linked = []
-    if record.data.get("type") == "transfer":
-        linked.append(record.data.get("pair_id"))
-    linked.append(record.data.get("cashback_id"))
-    for row_id in linked:
-        if not row_id:
-            continue
-        other = repo.get(int(row_id), include_deleted=True)
+    for row_id in _goes_with(record.data):
+        other = repo.get(row_id, include_deleted=True)
         # Only a row that went in the SAME delete - a credit taken away earlier by an edit stays gone.
         if other is not None and other.is_deleted and other.data.get("deleted_at") == record.data.get("deleted_at"):
             group.append(other)
@@ -767,10 +789,7 @@ def post_recurring(
     repo = TransactionRepository(db, cipher)
     if kind == "transfer":
         out_data, in_data = _clean_transfer(db, cipher, payload, existing=None)
-        out_leg = repo.create({**out_data, **marks})
-        in_leg = repo.create({**in_data, **marks, "pair_id": out_leg.id})
-        out_leg = repo.update(out_leg.id, {**out_data, **marks, "pair_id": in_leg.id})
-        return [out_leg, in_leg]
+        return list(_write_pair(repo, {**out_data, **marks}, {**in_data, **marks}))
     return [repo.create({**_clean(db, cipher, payload, kind, existing=None), **marks})]
 
 
@@ -836,10 +855,7 @@ def import_entries(db: Session, cipher: UserCipher, payloads: Sequence[Mapping[s
     for payload in payloads:
         kind = _type(payload.get("type"))
         if kind == "transfer":
-            out_data, in_data = _clean_transfer(db, cipher, payload, existing=None)
-            out_leg = repo.create(out_data)
-            in_leg = repo.create({**in_data, "pair_id": out_leg.id})
-            repo.update(out_leg.id, {**out_data, "pair_id": in_leg.id})
+            _write_pair(repo, *_clean_transfer(db, cipher, payload, existing=None))
         else:
             repo.create(_clean(db, cipher, payload, kind, existing=None))
     audit_service.record(
