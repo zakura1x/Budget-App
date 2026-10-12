@@ -34,7 +34,7 @@ import { Segmented } from '../components/ui/Segmented';
 import { useLookups } from '../hooks/useLookups';
 import { CHECKABLE, isOwed, kindLabelOf, listAccounts } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
-import { centavos, formatPHP, fromCentavos } from '../lib/money';
+import { centavos, formatPHP, fromCentavos, negate } from '../lib/money';
 import { type Rule } from '../lib/recurring';
 import { listGoals, type Goal } from '../lib/security';
 import { listTransactions, localToday, type Transaction } from '../lib/transactions';
@@ -45,8 +45,6 @@ type View = 'day' | 'month';
 
 const PAGE = 200;
 
-const negateAmount = (value: string) =>
-  value.startsWith('-') ? value.slice(1) : /^0+(\.0+)?$/.test(value) ? value : `-${value}`;
 /** Month view reads the whole trail; this caps it at 8,000 rows. */
 const MAX_PAGES = 40;
 
@@ -514,7 +512,7 @@ export function AccountDetail() {
       {rows && !cursor && account && account.type !== 'investment' && (
         <p className="py-3 text-center text-footnote text-ink-3">
           {owed ? 'Opened owing ' : 'Opened with '}
-          <span className="num">{formatPHP(owed ? negateAmount(account.opening_balance) : account.opening_balance)}</span>
+          <span className="num">{formatPHP(owed ? negate(account.opening_balance) : account.opening_balance)}</span>
         </p>
       )}
 

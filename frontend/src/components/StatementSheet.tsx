@@ -28,7 +28,7 @@ import { ApiError } from '../lib/api';
 import { flatten, type Category } from '../lib/categories';
 import { ensureCategories, ensureStatement } from '../lib/prefetch';
 import { afterWrite, MONEY } from '../lib/invalidate';
-import { centavos, formatPHP, fromCentavos, sanitizeAmount, toDecimalString } from '../lib/money';
+import { centavos, formatPHP, fromCentavos, isZero, sanitizeAmount, toDecimalString } from '../lib/money';
 import {
   changeInstallmentPayment,
   checkStatement,
@@ -43,7 +43,6 @@ import { Button } from './ui/Button';
 import { Sheet } from './ui/Sheet';
 import { TextField } from './ui/TextField';
 
-const isZero = (value: string) => /^-?0+(\.0+)?$/.test(value);
 const day = (iso: string) => format(parseISO(iso), 'd MMM');
 /** Interest and bank fees first - the categories a statement charge usually belongs in. */
 const LIKELY = /interest|fee|charge/i;

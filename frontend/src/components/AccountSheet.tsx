@@ -46,7 +46,7 @@ import { afterWrite, MONEY } from '../lib/invalidate';
 import { ensureCategories } from '../lib/prefetch';
 import { InterestFields } from './InterestFields';
 import { MoneyField } from './ui/MoneyField';
-import { centavos, formatPHP, fromCentavos, toDecimalString, toRateString } from '../lib/money';
+import { centavos, formatPHP, fromCentavos, negate, toDecimalString, toRateString } from '../lib/money';
 import { ColourPicker, GlyphTile, IconPicker } from './StylePicker';
 import { ACCOUNT_GLYPHS } from './Glyph';
 import { Button } from './ui/Button';
@@ -102,8 +102,6 @@ function clean(input: string): string {
   return negative ? `-${body}` : body;
 }
 
-/** Flip the sign of a decimal string: a card's balance is minus what it owes. */
-const negate = (value: string) => toDecimalString(value.startsWith('-') ? value.slice(1) : `-${value}`);
 
 export interface AccountSheetProps {
   open: boolean;
@@ -292,7 +290,7 @@ export function AccountSheet({ open, account, onClose, onSaved }: AccountSheetPr
       if (!account) {
         const typed = toDecimalString(opening.trim() || '0');
         // A loan's opening is typed as what you owe, and stored as the minus it is (ACC-31).
-        draft.opening_balance = type === 'borrowed' && !/^-?0+(\.0+)?$/.test(typed) ? negate(typed) : typed;
+        draft.opening_balance = type === 'borrowed' ? negate(typed) : typed;
       } else if (current.trim()) {
         const typed = toDecimalString(current.trim());
         const balance = isOwed(type) ? negate(typed) : typed;

@@ -19,7 +19,7 @@ import { format, parseISO } from 'date-fns';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AccountSheet } from '../components/AccountSheet';
-import { cardStatus, isZero } from '../components/CreditDetails';
+import { cardStatus } from '../components/CreditDetails';
 import { ChevronRightIcon, PlusIcon, TransferIcon } from '../components/Icons';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
@@ -29,7 +29,7 @@ import { COUNTS_IN_CASH_ON_HAND_DEFAULT, isOwed, listAccounts, visible, type Acc
 import { keys, STALE } from '../lib/queryKeys';
 import { getEmergency, listGoals, type Goal } from '../lib/security';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
-import { centavos, formatPHP, fromCentavos } from '../lib/money';
+import { centavos, formatPHP, fromCentavos, isZero, negate } from '../lib/money';
 import { useUiStore } from '../stores/uiStore';
 
 /** The order the groups appear in; cards last, as they are money you owe. */
@@ -52,7 +52,6 @@ const sum = (accounts: Account[]) => fromCentavos(accounts.reduce((total, a) => 
 /** Exact centavo sum of what each adds to cash on hand (ACC-35). */
 const cashSum = (accounts: Account[]) =>
   fromCentavos(accounts.reduce((total, a) => total + centavos(a.cash_amount ?? a.balance), 0));
-const negate = (value: string) => (value.startsWith('-') ? value.slice(1) : isZero(value) ? value : `-${value}`);
 
 /** One account as a tile: icon, name, balance - or, for a card, what is owed. */
 function AccountTile({ account, onOpen }: { account: Account; onOpen: (a: Account) => void }) {

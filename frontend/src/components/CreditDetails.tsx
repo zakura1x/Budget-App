@@ -12,11 +12,10 @@
  */
 import { format, parseISO } from 'date-fns';
 import type { Account, Credit } from '../lib/accounts';
-import { centavos, formatPHP } from '../lib/money';
+import { centavos, formatPHP, isZero } from '../lib/money';
 import { Card } from './ui/Card';
 import { toneFor, type Tone } from './ui/Ring';
 
-export const isZero = (value: string) => /^-?0+(\.0+)?$/.test(value);
 const day = (iso: string) => format(parseISO(iso), 'd MMM');
 
 const BAR: Record<Tone, string> = { ok: 'bg-ok', warn: 'bg-warn', danger: 'bg-danger' };

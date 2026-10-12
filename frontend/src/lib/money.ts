@@ -22,6 +22,16 @@ export function splitDecimal(value: string, places = 2) {
   return { negative: Boolean(sign) && !isZero, int, frac };
 }
 
+/** Zero however it is written: "0", "0.00", "-0.00". Never compare with '0.00' by hand. */
+export const isZero = (value: string) => /^-?0+(\.0+)?$/.test(value);
+
+/**
+ * Flip the sign of a decimal string - a card's or a loan's balance is minus
+ * what it owes. Zero stays unsigned, so "-0.00" is never made here.
+ */
+export const negate = (value: string) =>
+  isZero(value) ? value.replace(/^-/, '') : value.startsWith('-') ? value.slice(1) : `-${value}`;
+
 export function groupThousands(int: string): string {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }

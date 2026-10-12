@@ -32,7 +32,7 @@ import { Ring, toneFor, type Tone } from '../components/ui/Ring';
 import { useLookups, type Lookups } from '../hooks/useLookups';
 import { dismissReminder, ratio, type Alert, type BudgetStatus } from '../lib/budgets';
 import { afterWrite } from '../lib/invalidate';
-import { formatPHP } from '../lib/money';
+import { formatPHP, isZero, negate } from '../lib/money';
 import { localToday } from '../lib/transactions';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
@@ -42,8 +42,6 @@ import { useUiStore } from '../stores/uiStore';
 const RECENT = 5;
 const SWIPE_PX = 60;
 
-const isZero = (value: string) => /^-?0+(\.0+)?$/.test(value);
-const negate = (value: string) => (value.startsWith('-') ? value.slice(1) : `-${value}`);
 
 function periodLabel(start: string, end: string): string {
   const from = parseISO(start);

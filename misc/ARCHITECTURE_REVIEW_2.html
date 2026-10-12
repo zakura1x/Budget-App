@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZBDGT Review, Pass 2</title>
+<script src="https://cdn.tailwindcss.com/3.4.1"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'strict' });
+</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .card { border: 2px solid #111; box-shadow: 5px 5px 0 #111; border-radius: 8px; background: #fff; }
+  .box  { border: 2px solid #111; border-radius: 6px; padding: 6px 8px; font-size: 12px; background: #fff; }
+  .shallow { background: repeating-linear-gradient(45deg,#fee2e2,#fee2e2 6px,#fff 6px,#fff 12px); }
+  .deep { background: #dcfce7; }
+  .iface { background: #111; color: #fff; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border: 2px solid #111; border-radius: 999px; }
+  .strong { background: #86efac; } .explore { background: #fde68a; } .spec { background: #e5e7eb; }
+  .mermaid { background: #fafafa; border-radius: 6px; padding: 8px; }
+  h3 { font-weight: 800; }
+  .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: #555; }
+  .warn { background: #fef3c7; border-left: 4px solid #d97706; padding: 6px 10px; font-size: 13px; }
+</style>
+</head>
+<body class="bg-stone-100 text-stone-900">
+<main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+
+<header class="space-y-2">
+  <p class="lbl">Architecture review · pass 2 · 2026-10-12</p>
+  <h1 class="text-3xl font-black">Deepening opportunities, second pass</h1>
+  <p class="text-sm max-w-3xl">Pass 1's six candidates are built (commits <span class="mono">36cc8f9</span>…<span class="mono">82c6b26</span>, recorded in <span class="mono">misc/ARCHITECTURE_REVIEW.html</span>) and are not repeated here. Still no <span class="mono">GLOSSARY.md</span> or ADRs, so domain terms are CLAUDE.md's and the FEATURES.md IDs.</p>
+  <p class="text-sm max-w-3xl">Hot spots this time:</p>
+  <ul class="list-disc pl-5 text-sm max-w-3xl">
+    <li>the assistant's <span class="mono">router.py</span> and <span class="mono">turn.py</span>, touched in 9 and 8 of the last 40 commits</li>
+    <li><span class="mono">recurring_service.py</span> (1,841 lines)</li>
+    <li><span class="mono">transaction_service.py</span> (1,356 lines)</li>
+    <li><span class="mono">TransactionSheet.tsx</span> (1,162 lines, 32 <span class="mono">useState</span>)</li>
+  </ul>
+  <div class="flex flex-wrap gap-2 text-xs pt-1">
+    <span class="badge strong">Strong</span><span class="badge explore">Worth exploring</span><span class="badge spec">Speculative</span>
+    <span class="box shallow">shallow / scattered</span><span class="box deep">deep module</span><span class="box iface">interface</span>
+  </div>
+</header>
+
+<!-- A -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">A · Placing a message: one routing module the conversation can be tested through</h3>
+    <span class="badge strong">Strong</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">assistant_service/turn.py</span> <span class="mono">_turn</span> 155–195 · <span class="mono">router.py</span> <span class="mono">small_talk</span>, <span class="mono">by_rules</span>, <span class="mono">follow_up</span> (568, 574), <span class="mono">by_model</span>, <span class="mono">merge</span>, <span class="mono">NOT_CARRIED</span> · <span class="mono">turn.context_intent</span></p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>The order a message is placed in lives inside <span class="mono">_turn</span>, mixed in with memory, model metering and the facts call:</p>
+      <ol class="list-decimal pl-5 mt-1 space-y-1">
+        <li>small talk</li>
+        <li>rules</li>
+        <li>the Explain-link context</li>
+        <li>follow-up</li>
+        <li>the model</li>
+        <li>loose follow-up</li>
+      </ol>
+      <p class="mt-2">"Can the previous turn be carried?" is decided in four places: the <span class="mono">NOT_CARRIED</span> filter, the draft override in <span class="mono">turn.py</span>, and two special cases in <span class="mono">follow_up</span>. Every recent assistant commit (<span class="mono">a73849c</span>, <span class="mono">932e860</span>, <span class="mono">bd19830</span>, <span class="mono">9228c66</span>) tweaked this order. Each fix had to be tested through a whole turn.</p></div>
+    <div><p class="lbl">Solution</p><p>One pure routing module: given the message, the earlier turns, the screen it came from, and a model-asking function, it returns the intent. <span class="mono">_turn</span> keeps memory, metering, facts and the reply. The carry rule moves into that module once, beside <span class="mono">NOT_CARRIED</span>.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> the next "follow-ups should…" fix is one file. <b>Leverage:</b> both the turn and <span class="mono">scripts/ai_eval.py</span> place questions the same way. <b>Tests:</b> conversation cases become plain calls with a fake model function, with no session, memory or meter. The 21 tests in <span class="mono">test_ai_conversation</span> get cheaper and sharper.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div><p class="lbl mb-1">Before</p>
+<pre class="mermaid">
+flowchart TB
+  T["turn._turn (memory + meter + routing + facts)"]:::bad
+  T --> st[small_talk] & br[by_rules] & ci[context_intent] & fu[follow_up] & bm[by_model] & lf["follow_up loose"]
+  T -. "carry rule #1, #2" .- T
+  fu -. "carry rule #3, #4" .- fu
+  classDef bad fill:#fee2e2,stroke:#111
+</pre></div>
+    <div><p class="lbl mb-1">After</p>
+<pre class="mermaid">
+flowchart TB
+  T["turn._turn (memory + meter + facts)"]
+  R["routing module: message, earlier turns, screen, ask-model -> intent\n(order + carry rule, once)"]:::deep
+  T --> R
+  E["ai_eval / tests"] --> R
+  classDef deep fill:#dcfce7,stroke:#111,stroke-width:2px
+</pre></div>
+  </div>
+</section>
+
+<!-- B -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">B · Money strings: <span class="mono">isZero</span> / <span class="mono">negate</span> belong in <span class="mono">lib/money.ts</span></h3>
+    <span class="badge strong">Strong</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">isZero</span> in <span class="mono">CreditDetails.tsx:19</span> (re-exported to <span class="mono">Accounts.tsx</span>), <span class="mono">StatementSheet.tsx:46</span>, <span class="mono">Home.tsx:45</span>, inline in <span class="mono">AccountSheet.tsx:295</span> · <span class="mono">negate</span> in <span class="mono">Home.tsx:46</span>, <span class="mono">Accounts.tsx:55</span>, <span class="mono">AccountDetail.tsx:48</span> (<span class="mono">negateAmount</span>), <span class="mono">AccountSheet.tsx:106</span> · bare <span class="mono">=== '0.00'</span> in <span class="mono">CardBills</span>, <span class="mono">Calendar</span>, <span class="mono">AccountDetail</span>, <span class="mono">InstallmentFields</span>, <span class="mono">Emergency</span></p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>Money is a string everywhere, on purpose (no floats). But the two most common questions about a money string are answered in nine places, and the four <span class="mono">negate</span> copies differ:</p>
+      <ul class="list-disc pl-5 mt-1 space-y-1">
+        <li>Home's has no zero guard, so <span class="mono">"0.00"</span> becomes <span class="mono">"-0.00"</span>. Today's callers only pass negatives, so it doesn't show yet.</li>
+        <li><span class="mono">negateAmount</span>'s regex misses <span class="mono">"-0.00"</span>.</li>
+      </ul>
+      <p class="mt-2">A bare <span class="mono">=== '0.00'</span> also misses <span class="mono">"0"</span> and <span class="mono">"-0.00"</span>.</p></div>
+    <div><p class="lbl">Solution</p><p>Export <span class="mono">isZero</span> and <span class="mono">negate</span> from <span class="mono">lib/money.ts</span>, which already has a private <span class="mono">isZero</span> inside <span class="mono">splitDecimal</span>. Use the guarded, normalising <span class="mono">negate</span>, then delete the copies and replace the bare comparisons.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>The deletion test passes outright:</b> nine copies collapse into two exported helpers. <b>Locality:</b> the money-string rules sit with <span class="mono">toDecimalString</span> and <span class="mono">centavos</span>. <b>Tests:</b> one vitest file pins <span class="mono">"0"</span>, <span class="mono">"-0.00"</span> and <span class="mono">"0.00"</span>; nothing tests these today. Small and mechanical.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div><p class="lbl mb-1">Before — 4 negates, 3 different</p>
+      <div class="flex flex-wrap gap-1"><span class="box shallow">Home: no guard</span><span class="box shallow">Accounts: guarded</span><span class="box shallow">AccountDetail: regex w/o “-”</span><span class="box shallow">AccountSheet: normalises, no guard</span></div></div>
+    <div><p class="lbl mb-1">After</p><div class="box iface">lib/money.ts: isZero · negate</div><div class="box deep" style="border-top:0">guarded, normalised, tested</div></div>
+  </div>
+</section>
+
+<!-- C -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">C · Plan creation as recurring_service's own interface</h3>
+    <span class="badge explore">Worth exploring</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">installment_conversion.py</span> 84, 90, 131, 152–172 · <span class="mono">recurring_service.py</span> <span class="mono">_pure</span> 1640, <span class="mono">_clean</span> 1560, <span class="mono">_expand</span> 1356, <span class="mono">create_rule</span> 623, <span class="mono">installment_plan</span> 327, <span class="mono">_apply_prepayment</span>, <span class="mono">_due_part</span>, <span class="mono">_installment_status</span>, <span class="mono">_reprice</span></p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>REC-34 conversion reaches into three private functions under <span class="mono">noqa: SLF001</span>. After <span class="mono">_clean</span>, it patches the rule dict by hand: <span class="mono">posted_through</span>, <span class="mono">pauses</span>, <span class="mono">skips</span>, <span class="mono">closed_on</span>, <span class="mono">from_transaction</span>. So it knows recurring's internal layout. A field added to a rule must be remembered there too.</p>
+      <p class="mt-2">Separately, about ten concepts share one 1,841-line module. The installment arithmetic (<span class="mono">_apply_prepayment</span>, <span class="mono">_due_part</span>, <span class="mono">_installment_status</span>, <span class="mono">_reprice</span>) has no tests of its own; it is reached only through a database session.</p></div>
+    <div><p class="lbl">Solution</p><p>Two steps, smallest first:</p>
+      <ol class="list-decimal pl-5 mt-1 space-y-1">
+        <li>Give recurring_service a public way to check a schedule without the database, and to create a plan from a payload plus what it was made from. Conversion uses only those, and the three <span class="mono">noqa</span>s go.</li>
+        <li>Optionally, move the pure installment arithmetic into <span class="mono">core/utils</span>, the way <span class="mono">billing.py</span> went, so prepayment and repricing can be tested directly.</li>
+      </ol></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> the rule's layout is known in one module. <b>Leverage:</b> the next feature that creates a plan (an assistant draft that sets up an installment, say) gets the same entry point. <b>Tests:</b> REC-32 prepayment ("lower" or "shorten") becomes a table of plain cases. That is the money path with the most special cases.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div><p class="lbl mb-1">Before</p>
+<pre class="mermaid">
+flowchart LR
+  IC[installment_conversion]:::bad -->|noqa| p[_pure] & c[_clean] & e[_expand]
+  IC -->|"patches rule dict"| d[(rule layout)]
+  classDef bad fill:#fee2e2,stroke:#111
+</pre></div>
+    <div><p class="lbl mb-1">After</p>
+<pre class="mermaid">
+flowchart LR
+  IC[installment_conversion] --> R["recurring_service: check schedule · create plan from"]:::deep
+  RS[recurring_service] --> M["installment maths (pure, tested)"]:::deep
+  classDef deep fill:#dcfce7,stroke:#111,stroke-width:2px
+</pre></div>
+  </div>
+</section>
+
+<!-- D -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">D · Links between transactions as one table: cashback, transfer legs, plan rows</h3>
+    <span class="badge explore">Worth exploring</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">transaction_service.py</span>:</p>
+  <ul class="list-disc pl-5 text-sm">
+    <li>cashback: delete 502–507, deleted list 548, restore 589–595, <span class="mono">_restore_group</span> 613, <span class="mono">_restore_problem</span> 680–699, save 951–956, upsert 1107–1156, <span class="mono">_view</span> 1191</li>
+    <li>pair back-patch: 419, 471, 771, 841</li>
+  </ul>
+  <p class="text-sm">Also <span class="mono">backup_service/references.py</span>.</p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>The cashback link alone is handled in 9 places. Transfer legs use "create both, then back-patch <span class="mono">pair_id</span>", written out 4 times. Plan rows (<span class="mono">recurring_on</span>) and interest rows (<span class="mono">interest_on</span>) get their own branches in <span class="mono">_restore_problem</span>.</p>
+      <p class="mt-2">CLAUDE.md already warns that a new kind of link "must join both <span class="mono">_restore_group</span> and <span class="mono">_restore_problem</span>". That is locality held together by a note, as <span class="mono">_lands_on_bill</span>'s docstring was.</p></div>
+    <div><p class="lbl">Solution</p><p>Describe each kind of link once: which field joins the rows, whether they delete and restore together, and what blocks a restore. Delete, restore, the restore check and the Recently-deleted list then read that description. Writing a linked pair (the pair back-patch) becomes one helper.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> a new link is one entry. <b>Tests:</b> TXN-25's restore rules can be checked per link kind. Today they are covered only through <span class="mono">test_cashback</span> and the phase-11 tests.</p>
+      <p class="mt-2"><b>Risk:</b> this is the delete/restore path for real money rows. Worth a careful look; it is not a quick refactor.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div><p class="lbl mb-1">Before</p>
+      <div class="grid grid-cols-4 gap-1"><div class="box shallow">delete</div><div class="box shallow">restore</div><div class="box shallow">restore check</div><div class="box shallow">deleted list</div></div>
+      <p class="text-center">each knows cashback · pair · plan · interest</p></div>
+    <div><p class="lbl mb-1">After</p>
+      <div class="box iface">link kinds</div><div class="box deep" style="border-top:0">cashback · pair · plan · interest — field, moves together, blocks restore</div>
+      <div class="grid grid-cols-4 gap-1 mt-1"><div class="box">delete</div><div class="box">restore</div><div class="box">check</div><div class="box">list</div></div></div>
+  </div>
+</section>
+
+<!-- E -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">E · The transaction draft: one reducer, cashback as its own sub-form</h3>
+    <span class="badge explore">Worth exploring</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">TransactionSheet.tsx</span>: open effect 277–386 (eslint <span class="mono">exhaustive-deps</span> off at 385), cashback state 263–268, defaults 450–479, serialising 550–563, UI 961–1009, split lines 442/517</p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>Opening the sheet resets about 30 setters by hand in two branches. The edit branch does not reset <span class="mono">repeating</span>.</p>
+      <div class="warn mt-2"><b>Likely bug, not yet reproduced:</b> open Add, tap Recurring, close without saving, then Edit an entry. The sheet would show the repeat choices instead of the entry.</div>
+      <p class="mt-2">Cashback alone is six states plus defaults, checks, serialising and UI spread through the file. Nothing tests the sheet.</p></div>
+    <div><p class="lbl">Solution</p><p>Move the draft's state behind one reducer whose start state is built from the entry being edited or the add preset, so every open starts complete. Cashback becomes a sub-form with a small interface: it hands back the cashback block, or null, or "leave it", plus its error.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> "what a fresh sheet looks like" is one function. A missed reset can't happen, and this one gets fixed. <b>Tests:</b> the start function and the cashback serialiser are plain functions that vitest can pin with no DOM, matching how <span class="mono">src/tests/</span> works today.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div><p class="lbl mb-1">Before</p><div class="box shallow">open effect: ~30 setters × 2 branches</div><div class="box shallow mt-1">cashback: 6 states, 4 places</div></div>
+    <div><p class="lbl mb-1">After</p><div class="box iface">startDraft(editing, preset)</div><div class="box deep" style="border-top:0">reducer: kind · amount · accounts · splits</div><div class="box deep mt-1">CashbackForm → block | null | keep</div></div>
+  </div>
+</section>
+
+<!-- F -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">F · Alerts carry their facts, not just English</h3>
+    <span class="badge spec">Speculative</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">budget_service/alerts.py</span> 51, 177 · <span class="mono">screens/Home.tsx</span> <span class="mono">alertText</span> 62–83 · <span class="mono">turn.py</span> <span class="mono">_ALERTS</span> 82 · <span class="mono">AskTile.tsx</span> 20</p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>Home strips <span class="mono">/^A card payment is due /</span> off the server's sentence, because the alert carries no due date. That ties the screen to the wording in <span class="mono">alerts.py:177</span>. Home rewrites 8 of the 10 alert kinds by hand, and two kind→place tables (<span class="mono">turn._ALERTS</span>, <span class="mono">AskTile.CARD_ALERTS</span>) have to agree.</p></div>
+    <div><p class="lbl">Solution</p><p>Add the missing facts to the alert (<span class="mono">due_in_days</span>, the amount). Home formats from fields, never from English. Optionally, one shared list of alert kinds.</p></div>
+    <div><p class="lbl">Benefits</p><p>Removes a brittle coupling for a few lines. Speculative only because there's one known breakage point and it works today. A server wording change would silently garble Home.</p></div>
+  </div>
+</section>
+
+<section class="card p-5 space-y-2 text-sm">
+  <h3 class="text-lg">Checked and not proposed</h3>
+  <ul class="list-disc pl-5 space-y-1">
+    <li><b>Generating the frontend's types from the API schema.</b> There are 75 hand-written TS interfaces against about 88 schema classes. A field-by-field comparison of 7 pairs found <b>no drift</b>, only some optional (<span class="mono">?</span>) fields the server always sends. Adding a codegen step to a repo whose server has no Node would cost more than it saves. Not now.</li>
+    <li><b><span class="mono">account_service.py</span></b> is still 2,051 lines. Pass 1 took out bill placement, postings wiring and the owed figure. The rest (valuations, interest settings, balance checks) is cohesive by account, and nothing failed the deletion test.</li>
+  </ul>
+</section>
+
+<section class="card p-5 space-y-3" style="background:#fef9c3">
+  <h3 class="text-xl">Top recommendation: A, routing a message</h3>
+  <p class="text-sm">It's the hottest area left: four of the last nine commits tuned it, and every one of them had to be tested through a whole turn. Pulling the order and the carry rule into one pure module turns each future "the assistant misread my follow-up" report into a one-line test case. The model is already passed in as a function (<span class="mono">ask_json</span>), so a fake model makes it testable without the SDK.</p>
+  <p class="text-sm"><b>B</b> is the cheap, certain one: half an hour, and it removes a latent <span class="mono">-0.00</span>. <b>E</b> probably hides the <span class="mono">repeating</span> bug, so it's worth reproducing that first; if it's real, fix it now on its own, whatever happens to E.</p>
+</section>
+
+</main>
+</body>
+</html>

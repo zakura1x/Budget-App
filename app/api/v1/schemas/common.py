@@ -23,10 +23,19 @@ def _as_money(value: Any) -> Decimal:
     return _money(value)
 
 
+def _money_out(value: Decimal) -> str:
+    """
+    As a string, and zero always as "0.00": negating a Decimal zero gives
+    -0.00, and every screen that asks "is this zero?" should not have to know
+    (architecture review 2026-10-12, pass 2 B). Adding 0 drops the sign.
+    """
+    return str(value + 0)
+
+
 Money = Annotated[
     Decimal,
     BeforeValidator(_as_money),
-    PlainSerializer(lambda value: str(value), return_type=str, when_used="json"),
+    PlainSerializer(_money_out, return_type=str, when_used="json"),
 ]
 
 def _as_exact(value: Any) -> Decimal:
