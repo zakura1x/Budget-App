@@ -403,7 +403,7 @@ The Accounts tab flips between the two.
 **Credit-card installments** post the monthly amount to the card each month.
 `available credit` still subtracts the whole unpaid remainder, because the bank
 blocks it from your limit on day one. That remainder is derived per card from
-the open plans (`recurring_service.unpaid_by_account`), never stored on the
+the open plans (`recurring_service.plans_owed`), never stored on the
 account.
 
 **Posted occurrences carry `recurring_id` and `recurring_on`** (the occurrence

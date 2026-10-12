@@ -319,7 +319,7 @@ you could pay: when each is cleared and the order to pay them in.
 - Installment plans keep their fixed schedule; extra money on a plan means REC-32
   (lower or shorten), and the planner says which it assumed.
 - Pure function (`app/core/utils/payoff.py`, like `interest.py`), writes
-  nothing, starts from `owedWithPlans` — the same figure ACC-34 fixed on 2026-09-21.
+  nothing, starts from `owed_with_plans` — the same figure ACC-34 fixed on 2026-09-21.
 - The app still never calculates a card's real interest (ACC-19): the planner's
   interest is an estimate from the rate you typed, and says so.
 

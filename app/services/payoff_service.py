@@ -5,7 +5,7 @@ arithmetic in app/core/utils/payoff.py. Imported by nothing but its endpoint.
 
 A DEBT is every card and borrowed account (OWES) that is not archived or
 hidden and owes something: a card's owed with its plans still to bill
-(`owed_with_plans`), a loan's balance with its unbilled plans - what each one's
+(`AccountView.owed_with_plans`, the same for a card and a loan) - what each one's
 page says you owe, the figure ACC-34 fixed on 2026-09-21.
 
 ITS MONTHLY PAYMENT, in this order - the first that gives an amount:
@@ -87,7 +87,7 @@ def plan(
     for view in views:
         if view.type not in account_service.OWES or view.hidden:
             continue
-        owed = _owed(view)
+        owed = view.owed_with_plans or ZERO
         if owed <= ZERO:
             continue
         payment, source = _payment(view.id, rules)
@@ -105,13 +105,6 @@ def plan(
     plans = compare(debts, extra=extra, start=start)
     return Payoff(start=start, debts=lines, as_is=plans["as_is"], snowball=plans["snowball"],
                   avalanche=plans["avalanche"])
-
-
-def _owed(view: account_service.AccountView) -> Decimal:
-    """What its page says you owe (REC-14): plans still to bill included."""
-    if view.credit is not None:
-        return view.credit.owed_with_plans
-    return max(-view.balance, ZERO) + view.plans_unbilled
 
 
 def _payment(account_id: int, rules: List[recurring_service.RuleView]) -> Tuple[Decimal, str]:

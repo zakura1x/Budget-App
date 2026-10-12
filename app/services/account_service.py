@@ -493,6 +493,11 @@ class AccountView:
     # the ledger's own sum. Cash on hand leaves it out by design (ACC-17); what
     # you OWE and net worth (ACC-36) count it.
     plans_unbilled: Decimal = ZERO
+    # REC-14. What you OWE on an account in OWES - its debt plus plans_unbilled,
+    # never below the plans (an overpaid balance owes nothing). None on every
+    # other type. The ONE place this figure is worked out: the page, the tile,
+    # the payoff planner and the assistant all read it.
+    owed_with_plans: Optional[Decimal] = None
     # GOA-08. Earmarked for savings goals inside this account. The balance never
     # changes for it; `available` and cash on hand (through cash_amount) do.
     set_aside: Decimal = ZERO
@@ -1110,18 +1115,6 @@ def _plans_owed(db: Session, cipher: UserCipher) -> Tuple[Mapping[int, Decimal],
     return owed.unpaid, owed.dues
 
 
-def _unpaid_installments(db: Session, cipher: UserCipher) -> Mapping[int, Decimal]:
-    """
-    REC-14. The unpaid remainder of every open installment, per account -
-    derived from the plans and the payments posted against them, never stored.
-    Imported here, not at the top: recurring_service imports transaction_service,
-    which imports this module.
-    """
-    from app.services import recurring_service
-
-    return recurring_service.unpaid_by_account(db, cipher)
-
-
 def _group_postings(postings: Sequence[Posting]) -> Dict[int, List[Posting]]:
     grouped: Dict[int, List[Posting]] = {}
     for posting in postings:
@@ -1185,6 +1178,8 @@ def _view(
                                                  (unpaid or {}).get(account_id, ZERO),
                                                  (charges or {}).get(account_id, ())))
     view = replace(view, plans_unbilled=(unpaid or {}).get(account_id, ZERO))
+    if kind in OWES:
+        view = replace(view, owed_with_plans=(max(-view.balance, ZERO) + view.plans_unbilled).quantize(ZERO))
     # ACC-40. Only where a schedule is the whole debt: a card has its own bills
     # (ACC-35) and its own cycle, and money LENT is not something you pay.
     if kind == "borrowed":

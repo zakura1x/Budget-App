@@ -16,9 +16,8 @@ LISTED = 8
 
 
 def _money_in(view) -> str:
-    if view.type in ("credit", "borrowed"):
-        owed = view.credit.owed_with_plans if view.credit else -view.balance + view.plans_unbilled
-        return f"{view.name}: you owe {php(owed)}"
+    if view.owed_with_plans is not None:
+        return f"{view.name}: you owe {php(view.owed_with_plans)}"
     text = f"{view.name}: {php(view.balance)}"
     if view.set_aside > ZERO and view.available is not None:
         text += f" ({php(view.set_aside)} set aside for goals, {php(view.available)} free)"

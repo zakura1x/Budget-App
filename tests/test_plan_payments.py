@@ -54,7 +54,7 @@ def pay(session, owner, loan, amount, mode=None, on=TODAY):
 def owed(session, owner, account_id, today=TODAY):
     view = account_service.get_account(session, owner, account_id,
                                        postings=transaction_service.postings(session, owner), today=today)
-    return -view.balance + view.plans_unbilled
+    return view.owed_with_plans
 
 
 def charges(session, owner, rule_id):

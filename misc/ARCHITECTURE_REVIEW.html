@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZBDGT Architecture Review</title>
+<script src="https://cdn.tailwindcss.com/3.4.1"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'strict' });
+</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .card { border: 2px solid #111; box-shadow: 5px 5px 0 #111; border-radius: 8px; background: #fff; }
+  .box  { border: 2px solid #111; border-radius: 6px; padding: 6px 8px; font-size: 12px; background: #fff; }
+  .shallow { background: repeating-linear-gradient(45deg,#fee2e2,#fee2e2 6px,#fff 6px,#fff 12px); }
+  .deep { background: #dcfce7; }
+  .iface { background: #111; color: #fff; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border: 2px solid #111; border-radius: 999px; }
+  .strong { background: #86efac; } .explore { background: #fde68a; } .spec { background: #e5e7eb; }
+  .mermaid { background: #fafafa; border-radius: 6px; padding: 8px; }
+  h3 { font-weight: 800; }
+  .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: #555; }
+</style>
+</head>
+<body class="bg-stone-100 text-stone-900">
+<main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+
+<header class="space-y-2">
+  <p class="lbl">Architecture review · 2026-10-12 · scope: last ~60 commits</p>
+  <h1 class="text-3xl font-black">Deepening opportunities in ZBDGT</h1>
+  <p class="text-sm max-w-3xl">Hot spots by commit count: <span class="mono">account_service.py</span> (17), <span class="mono">TransactionSheet.tsx</span> (21), <span class="mono">Home.tsx</span>, <span class="mono">lib/accounts.ts</span>, <span class="mono">transaction_service.py</span>, <span class="mono">recurring_service.py</span>, <span class="mono">projection_service.py</span>, <span class="mono">assistant_service/</span>. No <span class="mono">GLOSSARY.md</span> or ADRs exist, so domain terms below are taken from CLAUDE.md and FEATURES.md IDs. Crypto invariants (§5) are out of scope: nothing here touches the encryption layer.</p>
+  <div class="flex flex-wrap gap-2 text-xs pt-1">
+    <span class="badge strong">Strong</span><span class="badge explore">Worth exploring</span><span class="badge spec">Speculative</span>
+    <span class="box shallow">shallow / duplicated</span><span class="box deep">deep module</span><span class="box iface">interface</span>
+  </div>
+</header>
+
+<!-- 1 -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">1 · Bill placement: one module answers "which bill does this charge land on?"</h3>
+    <span class="badge strong">Strong</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">account_service.py</span> <span class="mono">_bills</span> 1333–1463, <span class="mono">_bill_on_or_after</span> 1473, <span class="mono">_dues_view</span> 1225, 1287–1289, 1432/1571 · <span class="mono">projection_service.py</span> <span class="mono">_lands_on_bill</span> 416–431, <span class="mono">_bill_items</span> 317–367 · <span class="mono">installment_conversion.py</span> <span class="mono">default_start</span> 99–108, 254–256 · <span class="mono">recurring_service._loan_payments</span> 1302+, <span class="mono">plans_owed</span> 589–597</p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>The ACC-35 / REC-14 rule "an installment joins the first bill due on or after its date; any other charge takes its statement's due date" is written three times with no shared code. <span class="mono">_lands_on_bill</span>'s own docstring says it "has to ask the question exactly the way <span class="mono">_bills</span> answers it (fixed 2026-09-16)" — it drifted once already. "Due now = overdue + next" is written 4×, the "payment into a card" predicate 2×, and there are two separate FIFO payment allocators (card bills, loan plans). The last two feature commits (<i>money sent from a card joins its bill</i>, <i>…uses up its spending limit</i>) both had to touch this.</p></div>
+    <div><p class="lbl">Solution</p><p>Pull the placement rule, the due-now rule and FIFO allocation into one pure module next to <span class="mono">date_utils.statement_period</span> (the way <span class="mono">interest.py</span> / <span class="mono">payoff.py</span> already live in <span class="mono">core/utils</span>). It takes a card's days plus charges and payments and returns bills. <span class="mono">_bills</span>, the projection and installment conversion all ask it; <span class="mono">_lands_on_bill</span> and <span class="mono">default_start</span>'s card branch are deleted.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> the next "X joins its bill" rule changes one file, and projection can't disagree with the card page by construction. <b>Leverage:</b> three callers, one answer. <b>Tests:</b> today agreement is only checked end-to-end through <span class="mono">projection_service.project</span>; the module's interface becomes the test surface — plain dates and Decimals, no DB, no cipher.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div><p class="lbl mb-1">Before</p>
+<pre class="mermaid">
+flowchart TB
+  AS["account_service._bills\n131 lines: placement + FIFO + due now"]:::bad
+  PS["projection._lands_on_bill\nre-asks placement (tuple in)"]:::bad
+  IC["installment_conversion.default_start\nre-reads card days"]:::bad
+  RS["recurring._loan_payments\nsecond FIFO allocator"]:::bad
+  SP["date_utils.statement_period"]
+  AS --> SP
+  PS --> SP
+  IC --> SP
+  PS -. "docstring: must match" .- AS
+  classDef bad fill:#fee2e2,stroke:#111
+</pre></div>
+    <div><p class="lbl mb-1">After</p>
+<pre class="mermaid">
+flowchart TB
+  AS["account_service\n(card page, loan dues)"]
+  PS["projection_service"]
+  IC["installment_conversion"]
+  RS["recurring_service.plans_owed"]
+  B["billing module (pure)\nplace charge · due now · allocate payments"]:::deep
+  AS --> B
+  PS --> B
+  IC --> B
+  RS --> B
+  B --> SP["statement_period"]
+  classDef deep fill:#dcfce7,stroke:#111,stroke-width:2px
+</pre></div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">2 · "What you owe" is one field on every account view</h3>
+    <span class="badge strong">Strong</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">account_service.AccountView</span> / <span class="mono">CreditView.owed_with_plans</span> · <span class="mono">payoff_service._owed</span> 110–114 · <span class="mono">skills/cash.py</span> 19–20 · <span class="mono">frontend/src/lib/accounts.ts</span> <span class="mono">owedWithPlans</span> 384–389, <span class="mono">isOwed</span> 377</p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>The server only sends <span class="mono">owed_with_plans</span> for cards. For a loan, three callers rebuild it from <span class="mono">balance</span> + <span class="mono">plans_unbilled</span> — and they <b>already disagree</b>: payoff clamps with <span class="mono">max(-balance, 0)</span>, the AI skill and the frontend don't. A borrowed account overpaid by ₱100 with a ₱5,000 plan shows ₱4,900 on its page and in the assistant, ₱5,000 in the payoff planner. The assistant's rule "a skill must report the figure its screen shows" is only true by coincidence here.</p></div>
+    <div><p class="lbl">Solution</p><p>Put <span class="mono">owed</span> (incl. plans) on <span class="mono">AccountView</span> for every owing account, computed once in <span class="mono">_view</span>. Delete <span class="mono">payoff._owed</span>, the fallback branch in <span class="mono">cash._money_in</span>, and the arithmetic in <span class="mono">owedWithPlans</span> (it becomes a field read). Decide once whether it clamps.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Deletion test passes:</b> removing the three copies concentrates the rule rather than moving it. <b>Locality:</b> REC-14 changes in one place. <b>Tests:</b> one assertion in <span class="mono">test_accounts.py</span> pins it; the frontend loses untested money arithmetic.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div><p class="lbl mb-1">Before — four formulas</p>
+      <div class="space-y-1">
+        <div class="box deep">CreditView.owed_with_plans <span class="mono">(cards only)</span></div>
+        <div class="box shallow">payoff._owed <span class="mono">max(-bal,0)+plans</span></div>
+        <div class="box shallow">skills/cash <span class="mono">-bal+plans</span></div>
+        <div class="box shallow">accounts.ts owedWithPlans <span class="mono">-bal+plans</span></div>
+      </div></div>
+    <div><p class="lbl mb-1">After — one field</p>
+      <div class="box iface">AccountView.owed</div>
+      <div class="box deep" style="border-top:0">computed in _view, every owing type</div>
+      <div class="flex gap-1 mt-2"><div class="box flex-1">payoff</div><div class="box flex-1">AI skill</div><div class="box flex-1">frontend</div></div>
+      <p class="mt-1 text-stone-500">all read, none compute</p></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">3 · Account views that fetch their own postings</h3>
+    <span class="badge explore">Worth exploring</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">account_service.list_accounts</span> / <span class="mono">get_account</span> 548–573, <span class="mono">_view</span> 1132–1213, 5 lazy imports (808, 1100, 1107, 1120, 1502) · callers <span class="mono">projection_service</span> 186/248, <span class="mono">skills Context.accounts</span> 72, <span class="mono">payoff_service</span> 83, <span class="mono">skills/afford</span></p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>The interface to get an account's balance includes "pass <span class="mono">postings=transaction_service.postings(...)</span> yourself". Forget it and every balance is silently zero. <span class="mono">afford</span> builds the list twice. <span class="mono">_view</span> is a long chain of <span class="mono">replace(view, …)</span> encoding the cash_amount priority (dues/bills → set-aside → balance), and <span class="mono">_plan_charges</span> (58 lines, 3 lazy imports) re-classifies transaction kinds inside account_service.</p></div>
+    <div><p class="lbl">Solution</p><p>Make "the user's accounts as of today" a module that takes <span class="mono">(db, cipher, today)</span> and reads postings, plans, goals and bills itself from the working set. Callers stop wiring. The <span class="mono">replace</span> chain becomes one place that decides <span class="mono">cash_amount</span>. Also delete the dead <span class="mono">_unpaid_installments</span> / <span class="mono">recurring_service.unpaid_by_account</span> (no callers).</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Leverage:</b> 4+ callers lose a parameter they can get wrong. <b>Locality:</b> the lazy-import web shrinks to one place. <b>Tests:</b> the "forgot postings" failure mode disappears instead of needing a test. Trade-off: ties the view to the working set — fine, it's the only source of postings anyway.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div><p class="lbl mb-1">Before</p>
+      <div class="grid grid-cols-4 gap-1">
+        <div class="box">projection</div><div class="box">payoff</div><div class="box">AI ctx</div><div class="box">afford ×2</div>
+      </div>
+      <div class="text-center">↓ each fetches postings, then ↓</div>
+      <div class="box shallow">list_accounts(db, cipher, today, <b>postings=…</b>)</div>
+    </div>
+    <div><p class="lbl mb-1">After</p>
+      <div class="grid grid-cols-4 gap-1">
+        <div class="box">projection</div><div class="box">payoff</div><div class="box">AI ctx</div><div class="box">afford</div>
+      </div>
+      <div class="text-center">↓</div>
+      <div class="box iface">accounts(db, cipher, today)</div>
+      <div class="box deep" style="border-top:0">postings · plans · goals · bills · cash_amount priority</div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">4 · Account type rules in one place (server) and sent to the client</h3>
+    <span class="badge explore">Worth exploring</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">account_service.OWES</span> 137, <span class="mono">COUNTS_IN_CASH_ON_HAND_DEFAULT</span> 84–93 (resolved at 642, 1172, 1731) · <span class="mono">budget_app_import_service.OWED_TYPES</span> 74 · <span class="mono">installment_conversion.SPREADS_ON</span> 53 · <span class="mono">skills/cash.py</span> 19 · <span class="mono">cash_on_hand</span> 576 vs <span class="mono">cash_history</span> 632/<span class="mono">_counts_in_cash</span> 640 vs <span class="mono">net_worth</span> 653 · client: <span class="mono">isOwed</span>, inline copies in <span class="mono">TransactionSheet</span> 190/321/489/534, <span class="mono">AccountDetail</span> 242/251, <span class="mono">Accounts.tsx notCountedIsNews</span> 84</p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>"Credit or borrowed" is spelled out 4× on the server and 7× on the client; "counts in cash on hand" is decided 3 ways (live accounts, history over raw dicts, net worth) and its default resolved 3×. Adding account type #9 means a grep, and ACC-39's untracked wallet already had to be threaded through each copy by hand.</p></div>
+    <div><p class="lbl">Solution</p><p>One small server module of account-kind predicates (<i>owes</i>, <i>counts in cash by default</i>, <i>can spread into a plan</i>) used by every service, and per-account booleans on the wire (<span class="mono">owes</span>, <span class="mono">counts_in_cash</span>, <span class="mono">spreadable</span>) so the client reads rather than re-decides. <span class="mono">cash_history</span> calls the same predicate.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> a new type is one edit. <b>Leverage:</b> client logic collapses to field reads. <b>Tests:</b> a table test over the 8 types replaces nothing-at-all today on the client. Lower urgency than #1–2: the copies agree <i>today</i>.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div><p class="lbl mb-1">Before — 11 copies of "owes"</p>
+      <div class="flex flex-wrap gap-1">
+        <span class="box shallow">OWES</span><span class="box shallow">OWED_TYPES</span><span class="box shallow">SPREADS_ON</span><span class="box shallow">cash.py tuple</span>
+        <span class="box shallow">isOwed</span><span class="box shallow">Sheet:190</span><span class="box shallow">Sheet:321</span><span class="box shallow">Sheet:489</span><span class="box shallow">Sheet:534</span><span class="box shallow">Detail:242</span><span class="box shallow">Detail:251</span>
+      </div></div>
+    <div><p class="lbl mb-1">After</p>
+      <div class="box iface">account kind rules</div>
+      <div class="box deep" style="border-top:0">owes · counts_in_cash · spreadable</div>
+      <div class="text-center">↓ serialised per account</div>
+      <div class="box">client reads <span class="mono">account.owes</span></div></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">5 · AI companion skills declared once</h3>
+    <span class="badge explore">Worth exploring</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">assistant_service/router.py</span> <span class="mono">SKILLS</span> 41, <span class="mono">_KEYWORDS</span> 47–83, <span class="mono">_skill_by_rules</span> 371–399, <span class="mono">ROUTE_PROMPT</span> 453–466, <span class="mono">NOT_CARRIED</span> 514, rules-only list 636 · <span class="mono">skills/__init__.py</span> 93–116 · <span class="mono">turn._SCREENS/_ALERTS</span> 77–87</p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>A new skill touches 6–9 parallel lists that nothing keeps in step. They have already drifted: <span class="mono">ROUTE_PROMPT</span> lists 13 skills, <span class="mono">SKILLS</span> has 17. The router is the hottest assistant file (8 commits in two weeks, mostly follow-up/carry rules).</p></div>
+    <div><p class="lbl">Solution</p><p>Each skill module declares itself: name, keywords, one prompt line, <i>model may route here</i>, <i>follow-ups carry it</i>, and its runner. The router and prompt are built from that registry; the dispatch table and lazy imports go away. Precedence rules stay in the router where they are genuinely relational.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> a skill is one file. <b>Tests:</b> one test asserts every registered skill appears in the prompt and is reachable — catching today's 13-vs-17 drift. Safety rules (drafts never model-routed) become a declared flag instead of membership in a list far from the skill.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div><p class="lbl mb-1">Before</p>
+<pre class="mermaid">
+flowchart LR
+  new["new skill"] --> a[SKILLS] & b[_KEYWORDS] & c[ROUTE_PROMPT] & d[rules-only list] & e[NOT_CARRIED] & f[dispatch table] & g[skills/x.py]
+  style c fill:#fee2e2
+</pre></div>
+    <div><p class="lbl mb-1">After</p>
+<pre class="mermaid">
+flowchart LR
+  new["new skill"] --> g["skills/x.py\ndeclares name, keywords,\nprompt line, flags, run"]
+  g --> R["registry"] --> router & prompt & dispatch
+  style g fill:#dcfce7
+</pre></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="card p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <h3 class="text-xl">6 · The transaction draft: wallet resolution and validation move behind the server's interface</h3>
+    <span class="badge spec">Speculative</span>
+  </div>
+  <p class="text-sm"><span class="lbl">Files</span> <span class="mono">frontend/src/components/TransactionSheet.tsx</span> (1190 lines, 32 <span class="mono">useState</span>, open effect 277–389, <span class="mono">problem</span> 514–531, save 591–659) · <span class="mono">transaction_service</span> <span class="mono">_positive</span>, <span class="mono">_clean_transfer</span>, <span class="mono">validate_splits</span> · <span class="mono">account_service.untracked_cash</span></p>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><p class="lbl">Problem</p><p>The most-edited file in the repo holds ten concerns. Saving a lent/borrowed transfer from the wallet is two requests orchestrated by the client (POST <span class="mono">/accounts/untracked</span>, rewrite the body, POST the transaction) for a rule CLAUDE.md says the server owns. <span class="mono">problem()</span> re-implements six server validations. No tests cover any of it.</p></div>
+    <div><p class="lbl">Solution</p><p>Let <span class="mono">POST /transactions</span> accept "the untracked wallet" as a side and resolve it inside <span class="mono">transaction_service</span> in the same commit; let the sheet show the server's problem codes instead of duplicating them (keeping only instant hints like "amount required"). Splitting the sheet's state into a reducer is a separate, purely local tidy-up.</p></div>
+    <div><p class="lbl">Benefits</p><p><b>Locality:</b> ACC-39 lives wholly on the server; one request, one transaction. <b>Tests:</b> wallet resolution becomes testable in pytest. Speculative because the sheet's instant feedback is a UX choice, and server round-trips for validation may feel worse on phone — worth a grilling, not a refactor yet.</p></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div><p class="lbl mb-1">Before</p>
+      <div class="box shallow">TransactionSheet: validate ×6 → resolve wallet → POST untracked → rewrite → POST txn</div>
+      <div class="text-center">↓</div>
+      <div class="box">transaction_service: validate ×6 again</div></div>
+    <div><p class="lbl mb-1">After</p>
+      <div class="box">TransactionSheet: draft → POST txn → show problem code</div>
+      <div class="text-center">↓</div>
+      <div class="box iface">POST /transactions (side may be "wallet")</div>
+      <div class="box deep" style="border-top:0">validate · resolve wallet · write — one commit</div></div>
+  </div>
+</section>
+
+<!-- small -->
+<section class="card p-5 space-y-2 text-sm">
+  <h3 class="text-lg">Smaller things noticed (not candidates)</h3>
+  <ul class="list-disc pl-5 space-y-1">
+    <li>Dead code: <span class="mono">account_service._unpaid_installments</span> (1113) and <span class="mono">recurring_service.unpaid_by_account</span> (558) have no callers.</li>
+    <li><span class="mono">Home.tsx</span> 73 strips server English with <span class="mono">/^A card payment is due /</span> — coupled to the wording in <span class="mono">budget_service/alerts.py</span>. A <span class="mono">due_on</span> field on the alert would remove it.</li>
+    <li><span class="mono">isZero</span>/<span class="mono">negate</span> redeclared in 5 frontend files, the <span class="mono">negate</span> copies differ; belongs in <span class="mono">lib/money.ts</span>.</li>
+    <li><span class="mono">installment_conversion</span> calls <span class="mono">recurring_service._pure/_clean/_expand</span> under <span class="mono">noqa: SLF001</span> — a sign those three are really part of recurring's interface.</li>
+  </ul>
+</section>
+
+<section class="card p-5 space-y-3" style="background:#dcfce7">
+  <h3 class="text-xl">What was built (2026-10-12)</h3>
+  <p class="text-sm">All six candidates were accepted. Full backend suite and frontend tests pass. One test, <span class="mono">test_phase14::test_passkeys_are_off_unless_the_server_turns_them_on</span>, was already failing before this work.</p>
+  <ul class="list-disc pl-5 space-y-2 text-sm">
+    <li><b>#1 Bill placement:</b> new pure module <span class="mono">app/core/utils/billing.py</span> with three functions:
+      <ul class="list-disc pl-5 mt-1 space-y-1">
+        <li><span class="mono">bill_due</span>: which bill a charge lands on.</li>
+        <li><span class="mono">on_a_bill</span>: the projection's form of the same question.</li>
+        <li><span class="mono">due_now</span>: what is due now.</li>
+      </ul>
+      <span class="mono">account_service._bills</span>, the card's and the loan's due-now figure, the projection, and <span class="mono">installment_conversion.default_start</span> all ask it. <span class="mono">_lands_on_bill</span>, <span class="mono">_bill_on_or_after</span> and <span class="mono">_due_on_or_after</span> are gone. Tested directly in <span class="mono">tests/test_billing.py</span>.<br>
+      <i>Bug fixed on the way:</i> two loan plans due the same day are now both held in due-now. Before, only the first one was, while Months ahead treated both as held.<br>
+      <i>Not done:</i> the two FIFO payment loops stay separate. They record different things, and merging them would not pass the deletion test.</li>
+    <li><b>#2 What you owe:</b> <span class="mono">AccountView.owed_with_plans</span> is set on every account in OWES. Overpaying never takes it below the plans still owed, which is the card's existing rule. The payoff planner, the assistant's cash skill, the account page and the tile all read this field. <span class="mono">payoff._owed</span>, the frontend's <span class="mono">owedWithPlans</span> and the unused <span class="mono">shownFigure</span> are deleted.</li>
+    <li><b>#3 Postings:</b> <span class="mono">list_accounts</span>, <span class="mono">get_account</span>, <span class="mono">statement</span> and <span class="mono">update_account</span> now read the ledger's postings themselves. <span class="mono">postings=</span> only overrides them. Ten callers stopped passing them.<br>
+      <i>Dead code removed:</i> <span class="mono">_unpaid_installments</span> and <span class="mono">unpaid_by_account</span>.</li>
+    <li><b>#4 Account kinds:</b> each side has one copy of the type rules, under the same names: <span class="mono">account_service</span> on the server, the top of <span class="mono">lib/accounts.ts</span> on the client.
+      <ul class="list-disc pl-5 mt-1 space-y-1">
+        <li><span class="mono">tests/test_account_kinds_parity.py</span> reads the TypeScript and fails if the two disagree.</li>
+        <li>New <span class="mono">LOANS</span> and <span class="mono">isLoan</span>.</li>
+        <li>The separate <span class="mono">OWED_TYPES</span> and <span class="mono">SPREADS_ON</span> are gone.</li>
+      </ul>
+      <i>Changed from the card:</i> the rules are not sent per account over the API. Keeping one copy per side, with the parity test, gives the same single place to change with less code.</li>
+    <li><b>#5 Assistant skills:</b> <span class="mono">router.SKILL_TABLE</span> lists every skill once, with its prompt line, or None if only the rules can choose it. <span class="mono">SKILLS</span>, <span class="mono">MODEL_SKILLS</span>, the ROUTE prompt (byte-identical to before) and the model check are all built from it. <span class="mono">skills.handlers()</span> must cover every name, and a test holds them together.<br>
+      <i>Correction:</i> the "13 vs 17" drift in the card above was intentional. The four missing skills are the ones the model must never choose.</li>
+    <li><b>#6 Wallet:</b> <span class="mono">POST /transactions</span> now accepts <span class="mono">-1</span> for a blank side. <span class="mono">transaction_service._untracked_side</span> creates the wallet and refuses unless the other side is a loan. Before, only the browser enforced that.
+      <ul class="list-disc pl-5 mt-1 space-y-1">
+        <li>The sheet sends one request.</li>
+        <li><span class="mono">POST /accounts/untracked</span> and <span class="mono">untrackedCash()</span> are deleted.</li>
+        <li>The sheet's instant checks (<span class="mono">problem()</span>) stay as they are. They switch the Save button on and off; the server's checks remain the ones that decide.</li>
+      </ul></li>
+  </ul>
+</section>
+
+<section class="card p-5 space-y-3" style="background:#fef9c3">
+  <h3 class="text-xl">Top recommendation: #1 Bill placement</h3>
+  <p class="text-sm">It's the highest-stakes rule in the hottest file: it decides money shown as due on Home, cash on hand, and Months ahead. It has been reimplemented three times, drifted once already (the 2026-09-16 fix noted in the docstring), and the last two feature commits both extended it. The extraction follows a pattern the repo already trusts — pure helpers in <span class="mono">core/utils</span> fed by a service (<span class="mono">interest.py</span>, <span class="mono">payoff.py</span>, <span class="mono">affordability.py</span>) — and existing tests (<span class="mono">test_card_bills.py</span>, <span class="mono">test_card_app_bills.py</span>, <span class="mono">test_plan_payments.py</span>) already pin the behaviour through public functions, so they survive the move unchanged.</p>
+  <p class="text-sm"><b>#2</b> is the cheapest real win (a live disagreement fixed by deleting code) and could ride along or go first as a warm-up.</p>
+</section>
+
+</main>
+</body>
+</html>

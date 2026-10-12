@@ -555,11 +555,6 @@ def trial(db: Session, cipher: UserCipher, payload: Mapping[str, Any], start: da
     ]
 
 
-def unpaid_by_account(db: Session, cipher: UserCipher) -> Dict[int, Decimal]:
-    """ACC-14 / REC-14. The unpaid remainder of every open installment, per account - what the bank blocks."""
-    return plans_owed(db, cipher).unpaid
-
-
 def plans_owed(db: Session, cipher: UserCipher) -> PlansOwed:
     """
     REC-14 / ACC-40. Both figures an open plan owes, per account, in one pass.

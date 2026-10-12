@@ -324,6 +324,7 @@ class AccountOut(BaseModel):
     interest: Optional[InterestOut] = None  # ACC-37
     cashback: Optional[CashbackRuleOut] = None  # ACC-38
     plans_unbilled: Money = Decimal("0.00")  # REC-14 - installments still to be charged here
+    owed_with_plans: Optional[Money] = None  # REC-14 - what you owe, plans included; credit and borrowed only
     set_aside: Money = Decimal("0.00")  # GOA-08 - earmarked for goals; the balance is unchanged
     available: Optional[Money] = None  # GOA-08 - balance less set_aside, when something is set aside
     dues: Optional[DuesOut] = None  # ACC-40 - a loan's own bills; null on anything with no open plan

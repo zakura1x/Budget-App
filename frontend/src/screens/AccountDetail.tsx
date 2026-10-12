@@ -32,7 +32,7 @@ import { TransactionRow, moneyIn } from '../components/TransactionRow';
 import { Button } from '../components/ui/Button';
 import { Segmented } from '../components/ui/Segmented';
 import { useLookups } from '../hooks/useLookups';
-import { CHECKABLE, isOwed, kindLabelOf, listAccounts, owedWithPlans } from '../lib/accounts';
+import { CHECKABLE, isOwed, kindLabelOf, listAccounts } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
 import { centavos, formatPHP, fromCentavos } from '../lib/money';
 import { type Rule } from '../lib/recurring';
@@ -194,7 +194,8 @@ export function AccountDetail() {
     // is what is LEFT TO PAY on them, and the rest is the loan's own balance.
     // With nothing else borrowed the line says nothing the plan rows below do not.
     const onPlans = openPlans.reduce((sum, rule) => sum + centavos(rule.installment?.left_to_pay ?? '0.00'), 0);
-    const own = centavos(owedWithPlans(account)) - onPlans;
+    if (account.owed_with_plans === null) return null;
+    const own = centavos(account.owed_with_plans) - onPlans;
     if (own === 0 || onPlans === 0) return null;
     return { billed: fromCentavos(own), plans: fromCentavos(onPlans), label: 'borrowed' };
   }, [account, openPlans]);
@@ -232,13 +233,7 @@ export function AccountDetail() {
   const owed = account ? isOwed(account.type) : false;
   // REC-14. What you owe includes the installments not billed yet: a plan is
   // money owed from the day you take it, on a card and on a loan alike.
-  const figure = !account
-    ? '0.00'
-    : account.credit
-      ? account.credit.owed_with_plans
-      : owed
-        ? owedWithPlans(account)
-        : account.balance;
+  const figure = !account ? '0.00' : account.owed_with_plans ?? account.balance;
   const figureLabel = account?.type === 'borrowed' ? 'You owe' : account?.type === 'lent' ? 'Owed to you' : owed ? 'Owed' : 'Balance';
   // ACC-31. Money lent or borrowed moves by transfer, so its page names the two
   // transfers you actually make; every other account keeps + and ⇄.

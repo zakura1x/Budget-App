@@ -25,7 +25,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { GlyphTile } from '../components/StylePicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { isOwed, listAccounts, owedWithPlans, visible, type Account, type AccountType } from '../lib/accounts';
+import { isOwed, listAccounts, visible, type Account, type AccountType } from '../lib/accounts';
 import { keys, STALE } from '../lib/queryKeys';
 import { getEmergency, listGoals, type Goal } from '../lib/security';
 import { GoalCard, GoalMoneySheet, GoalSheet } from '../components/GoalSheets';
@@ -62,9 +62,7 @@ function AccountTile({ account, onOpen }: { account: Account; onOpen: (a: Accoun
   const billed = credit && credit.due_now !== null ? credit : null;
   // REC-14. What you owe counts the installments not billed yet; a card with
   // typed bills still shows what is due NOW, which is what ACC-35 is for.
-  const figure = billed ? (billed.due_now as string)
-    : credit ? credit.owed_with_plans
-      : owed ? owedWithPlans(account) : account.balance;
+  const figure = billed ? (billed.due_now as string) : account.owed_with_plans ?? account.balance;
   const negative = !owed && account.balance.startsWith('-');
   // Whole pesos to fit the tile - cut from the string, never rounded through a float.
   const whole = (amount: string) => formatPHP(amount.split('.')[0] ?? '0', { places: 0 });

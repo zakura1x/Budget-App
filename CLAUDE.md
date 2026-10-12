@@ -25,6 +25,7 @@ conventions this project deliberately mirrors.
 | `misc/ROADMAP.md` | Everything not built yet — deferred rows plus new ideas, with reserved IDs, as Phases 11–15. Tick it when one ships. |
 | `misc/how-to-run.txt` | Setup, recovery, and backup runbook. |
 | `misc/DEPLOY.md` | Deploying to IIS: the release zip, first deploy, every update, rollback, troubleshooting. |
+| `misc/ARCHITECTURE_REVIEW.html` | The 2026-10-12 architecture review: six deepening candidates, before/after, and what was built. |
 
 ## Commands
 

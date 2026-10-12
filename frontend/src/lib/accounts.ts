@@ -9,7 +9,6 @@
  * whether a payment is due soon all turn on the user's day (ACC-19..22).
  */
 import { api, ApiError } from './api';
-import { centavos, fromCentavos } from './money';
 import { localToday } from './transactions';
 
 /** lent / borrowed (ACC-31) and member (ACC-32) since 2026-09-15. */
@@ -195,6 +194,12 @@ export interface Account {
    * The balance never includes it; what you OWE and net worth do.
    */
   plans_unbilled: string;
+  /**
+   * REC-14 - what you OWE on a card or a borrowed account, the plans not billed
+   * yet included; null on every other type. Worked out once, on the server -
+   * read it, never rebuild it from the balance.
+   */
+  owed_with_plans: string | null;
   /** ACC-40 - a loan's bills from the plans on it; null where no plan is running. */
   dues: Dues | null;
   /** GOA-08 - earmarked for savings goals; the balance is unchanged. */
@@ -375,22 +380,6 @@ export const TYPE_ICON: Record<AccountType, string> = {
  * a card, and a loan or money borrowed (ACC-31). Stored balances stay signed.
  */
 export const isOwed = (type: AccountType) => type === 'credit' || type === 'borrowed';
-
-/**
- * REC-14. What an account owes INCLUDING installments not billed yet - the
- * figure a card's own app shows. A plan you take out is money owed from the
- * day you take it, even though the first charge has not posted.
- */
-export function owedWithPlans(account: Account): string {
-  if (account.credit) return account.credit.owed_with_plans;
-  // A debt is stored as a minus, so what you owe is the balance turned round,
-  // and a plan not billed yet is owed on top of it.
-  return fromCentavos(-centavos(account.balance) + centavos(account.plans_unbilled));
-}
-
-/** The same account's own balance, shown the way its type means it. */
-export const shownFigure = (account: Account): string =>
-  isOwed(account.type) ? owedWithPlans(account) : account.balance;
 
 export interface AccountKind {
   subtype: string;

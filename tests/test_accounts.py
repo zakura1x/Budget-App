@@ -256,6 +256,35 @@ def test_available_credit_subtracts_the_installment_remainder(session, owner):
     assert view.credit.available == Decimal("10000.00")  # 50000 - 4000 - 36000
 
 
+def test_what_you_owe_is_one_figure_on_a_card_and_a_loan(session, owner):
+    """
+    REC-14. `owed_with_plans` is worked out once, on the view, for every type in
+    OWES - the page, the payoff planner and the assistant all read it. An
+    overpaid balance owes nothing, so the plans are the floor (2026-10-12: the
+    planner clamped and the page did not).
+    """
+    from app.services import category_service, recurring_service
+
+    card = make(session, owner, **CARD)
+    loan = make(session, owner, name="From Ana", type="borrowed", opening_balance="0")
+    cash = make(session, owner)
+    gadgets = category_service.create_category(session, owner, {"name": "Gadgets"})
+    for account in (card, loan):
+        recurring_service.create_rule(session, owner, {
+            "kind": "installment", "name": f"Phone {account.id}", "account_id": account.id,
+            "category_id": gadgets.id, "frequency": "monthly", "start": "2026-10-01",
+            "price": "12000.00", "payments": 12,
+        }, today=date(2026, 9, 13))
+
+    postings = [Posting(card.id, date(2026, 9, 10), Decimal("-4000.00")),
+                Posting(loan.id, date(2026, 9, 10), Decimal("100.00"))]  # paid ₱100 too much
+    views = {v.id: v for v in account_service.list_accounts(session, owner, postings=postings,
+                                                             today=date(2026, 9, 13))}
+    assert views[card.id].owed_with_plans == views[card.id].credit.owed_with_plans == Decimal("16000.00")
+    assert views[loan.id].owed_with_plans == Decimal("12000.00")
+    assert views[cash.id].owed_with_plans is None
+
+
 def test_due_soon_uses_the_configured_window(session, owner):
     card = make(session, owner, **CARD)
     close = account_service.get_account(session, owner, card.id, today=date(2026, 10, 2))
