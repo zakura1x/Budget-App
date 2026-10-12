@@ -456,3 +456,19 @@ def test_usage_route_is_admin_only_and_calls_nothing(api, monkeypatch):
     api.client.cookies.clear()
     api.register(email="bob@example.com")
     assert api.get("/assistant/usage").status_code == 403
+
+
+def test_every_skill_is_declared_once_and_answered():
+    """
+    router.SKILL_TABLE is the one list of skills: SKILLS, the ROUTE prompt and
+    the model check all read it, and skills.handlers() answers every name.
+    The rules-only skills (drafts, find, chat) are never offered to the model.
+    """
+    from app.services.assistant_service import router
+    from app.services.assistant_service.skills import handlers
+
+    assert set(handlers()) == set(router.SKILLS)
+    for skill in router.SKILLS:
+        offered = f"- {skill}:" in router.ROUTE_PROMPT
+        assert offered == (skill in router.MODEL_SKILLS), skill
+    assert not {"draft", "draft_goal", "find", "chat"} & set(router.MODEL_SKILLS)

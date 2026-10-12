@@ -87,13 +87,14 @@ class Context:
         return "an account"
 
 
-def run(ctx: Context) -> Facts:
+def handlers() -> Dict[str, Callable[[Context], Facts]]:
+    """Each skill in router.SKILL_TABLE, by name, to the function that answers it - one for every name."""
     from app.services.assistant_service.skills import (
         afford, budget_status, card, cash, draft, emergency, find, goals, how_to, other, payoff, review,
         spending, subscriptions, upcoming,
     )
 
-    table: Dict[str, Callable[[Context], Facts]] = {
+    return {
         "budget_status": budget_status.run,
         "spending": spending.run,
         "cash": cash.run,
@@ -112,5 +113,10 @@ def run(ctx: Context) -> Facts:
         "off_topic": other.off_topic,
         "chat": other.chat,
     }
-    skill = table.get(ctx.intent.skill or "")
+
+
+def run(ctx: Context) -> Facts:
+    from app.services.assistant_service.skills import other
+
+    skill = handlers().get(ctx.intent.skill or "")
     return skill(ctx) if skill else other.clarify(ctx)

@@ -38,8 +38,32 @@ from app.core.utils.money import CENTS
 
 logger = logging.getLogger(__name__)
 
-SKILLS = ("budget_status", "spending", "cash", "upcoming", "card", "afford", "review", "goals", "emergency",
-          "subscriptions", "payoff", "how_to", "find", "draft", "draft_goal", "off_topic", "chat")
+# Every skill, ONCE (architecture review 2026-10-12). The text is its line in
+# ROUTE_PROMPT; None means the rules alone reach it and the model never may -
+# find, draft and draft_goal take their slots (a merchant the user has typed,
+# an amount, a date) from the question's own words, and chat is small talk.
+# skills.run dispatches on these names; test_ai_plumbing holds the two together.
+SKILL_TABLE: Dict[str, Optional[str]] = {
+    "budget_status": "how much of the budget is left, daily allowance, on track, a category's budget",
+    "spending": "how much was spent, where the money went, spending by category, compared with before",
+    "cash": "cash on hand, money in accounts, balances, net worth",
+    "upcoming": "bills and charges due soon, what is scheduled before payday or this week",
+    "card": "credit card owed, card bill due, card limit left, statement",
+    "afford": "whether the user can afford to buy something, or spend an amount",
+    "review": "how the last month or budget period went, a summary looking back",
+    "goals": "savings goals, sinking funds, money set aside for something",
+    "emergency": "the emergency fund, how long the money would last",
+    "subscriptions": "subscriptions, what they cost, cancelling them",
+    "payoff": "debts and loans, which to pay off first, when the user is debt-free",
+    "how_to": "how to use the app, or what a word in the app means",
+    "find": None,
+    "draft": None,
+    "draft_goal": None,
+    "off_topic": "anything not about the user's own money in this app",
+    "chat": None,
+}
+SKILLS = tuple(SKILL_TABLE)
+MODEL_SKILLS = tuple(skill for skill, about in SKILL_TABLE.items() if about is not None)
 PERIODS = ("this_month", "last_month", "this_year")
 WINDOWS = ("week", "month", "payday")
 METHODS = ("now", "card", "installment")
@@ -451,19 +475,7 @@ def by_rules(
 ROUTE_PROMPT = """You sort questions for a personal budget app. Reply with ONE JSON object and nothing else.
 
 Skills:
-- budget_status: how much of the budget is left, daily allowance, on track, a category's budget
-- spending: how much was spent, where the money went, spending by category, compared with before
-- cash: cash on hand, money in accounts, balances, net worth
-- upcoming: bills and charges due soon, what is scheduled before payday or this week
-- card: credit card owed, card bill due, card limit left, statement
-- afford: whether the user can afford to buy something, or spend an amount
-- review: how the last month or budget period went, a summary looking back
-- goals: savings goals, sinking funds, money set aside for something
-- emergency: the emergency fund, how long the money would last
-- subscriptions: subscriptions, what they cost, cancelling them
-- payoff: debts and loans, which to pay off first, when the user is debt-free
-- how_to: how to use the app, or what a word in the app means
-- off_topic: anything not about the user's own money in this app
+""" + "\n".join(f"- {skill}: {SKILL_TABLE[skill]}" for skill in MODEL_SKILLS) + """
 
 JSON keys:
 "skill": one of the skills above
@@ -630,10 +642,8 @@ def by_model(
     except Exception as error:
         logger.warning("ROUTE call failed: %s", error.__class__.__name__)
         return None
-    # find, draft and draft_goal are reached by the rules only: their slots (a merchant the user has
-    # typed, an amount, a date) come from the words, and the model is never asked to supply them.
-    if not isinstance(answer, Mapping) or answer.get("skill") not in SKILLS \
-            or answer.get("skill") in ("find", "draft", "draft_goal", "chat"):
+    # Only a skill the prompt offered: the rules-only ones (SKILL_TABLE) take their slots from the words.
+    if not isinstance(answer, Mapping) or answer.get("skill") not in MODEL_SKILLS:
         logger.info("ROUTE answer rejected: no known skill")
         return None
 

@@ -647,7 +647,10 @@ auto-lock); they are never persisted in the browser.
   over finished, formatted facts. `verifier.check` throws away any reply with
   a number that is not in the facts or the question, and the skill's
   template answers instead. A new skill must report the figure its screen
-  shows; `test_ai_assistant.py` holds each one to its endpoint.
+  shows; `test_ai_assistant.py` holds each one to its endpoint. A skill is
+  declared ONCE, in `router.SKILL_TABLE` (its ROUTE-prompt line, or None for
+  rules-only), and answered in `skills.handlers()`; `test_ai_plumbing.py`
+  holds the two together.
 - **It never writes financial data.** No `/assistant` route changes it. The
   writes are the `assistant_usage` count (Shape A, counts only) and, for a
   user who chose to keep conversations, their `assistant_threads` row.
