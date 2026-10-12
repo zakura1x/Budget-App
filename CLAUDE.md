@@ -309,8 +309,8 @@ out of every list by `visible()` in `lib/accounts.ts` (filtered once, in
 cash on hand and net worth whatever its switches say. It is never a chip: on a
 lent/borrowed transfer the side the page does not know starts BLANK instead of
 guessing the last-used account, and BLANK MEANS THE WALLET - the draft carries
-`UNTRACKED_ID` and `save()` resolves it. Only the side opposite a lent or
-borrowed account may be left empty. `highlight` (yellow) marks where you are -
+`UNTRACKED_ID` (-1) and `transaction_service._untracked_side` resolves it in
+the same request (2026-10-12), refusing it unless the other side is in `LOANS`. `highlight` (yellow) marks where you are -
 today, a chosen period - and never an amount, so it cannot read as `warn`.
 Colours also live outside theme.css in three places: the theme-color metas
 (both index.html files - the classic ground), the manifest in

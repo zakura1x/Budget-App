@@ -582,6 +582,40 @@ def test_the_wallet_is_in_no_total(session, owner):
     assert account_service.net_worth(views).total == Decimal("20500.00")
 
 
+def test_a_loan_saved_from_the_wallet_makes_it_in_one_request(session, owner):
+    """
+    ACC-39. The sheet sends a blank side as UNTRACKED_ID and transaction_service
+    resolves it - get-or-create, so a second loan uses the same wallet.
+    """
+    from app.services import transaction_service
+    from app.services.transaction_service import UNTRACKED_ID
+
+    lent = make(session, owner, name="Juan", type="lent", opening_balance="0")
+    for _ in range(2):
+        transaction_service.create_transaction(session, owner, {
+            "type": "transfer", "amount": "500.00", "txn_date": "2026-09-20",
+            "account_id": UNTRACKED_ID, "counter_account_id": lent.id,
+        })
+    wallet = account_service.untracked_cash(session, owner)
+    legs = [v for v in transaction_service.views(session, owner) if v.account_id == wallet.id]
+    assert [(v.direction, v.counter_account_id) for v in legs] == [("out", lent.id)] * 2
+    assert len([r for r in AccountRepository(session, owner).list() if r.data.get("hidden")]) == 1
+
+
+def test_only_a_loan_may_have_a_blank_side(session, owner):
+    """Anywhere else the money left, or landed in, an account you track - a blank there is a mistake."""
+    from app.services import transaction_service
+    from app.services.transaction_service import UNTRACKED_ID
+
+    bank = make(session, owner, name="BDO", type="debit", opening_balance="1000.00")
+    with pytest.raises(BusinessRuleException):
+        transaction_service.create_transaction(session, owner, {
+            "type": "transfer", "amount": "500.00", "txn_date": "2026-09-20",
+            "account_id": UNTRACKED_ID, "counter_account_id": bank.id,
+        })
+    assert not [r for r in AccountRepository(session, owner).list() if r.data.get("hidden")]
+
+
 def test_the_wallet_keeps_its_name_clear_of_yours(session, owner):
     """The user may already have an account called My wallet; the hidden one is still made."""
     make(session, owner, name=account_service.UNTRACKED_NAME)
@@ -611,25 +645,21 @@ def test_lending_from_the_wallet_through_the_api(api):
     api.post("/accounts", {"name": "BDO", "type": "debit", "opening_balance": "20000.00"})
     juan = api.post("/accounts", {"name": "Juan", "type": "lent", "opening_balance": "0"})
 
-    wallet = api.post("/accounts/untracked", {})
-    assert wallet.status_code == 200, wallet.text
-    assert wallet.json()["hidden"] is True
-    # Called again by the next loan: the same account, never a second one.
-    assert api.post("/accounts/untracked", {}).json()["id"] == wallet.json()["id"]
-
+    # The sheet sends the blank side as UNTRACKED_ID (-1); the server makes the wallet.
     lent = api.post("/transactions", {
         "type": "transfer", "amount": "500.00", "txn_date": "2026-09-20",
-        "account_id": wallet.json()["id"], "counter_account_id": juan.json()["id"],
+        "account_id": -1, "counter_account_id": juan.json()["id"],
     })
     assert lent.status_code == 201, lent.text
 
     listed = api.get("/accounts").json()
+    wallet = next(a for a in listed["accounts"] if a["hidden"])
     by_name = {a["name"]: a for a in listed["accounts"]}
     assert by_name["Juan"]["balance"] == "500.00"      # what Juan owes went up
     assert by_name["BDO"]["balance"] == "20000.00"     # and nothing else moved
     assert listed["cash_on_hand"]["total"] == "20000.00"
     assert listed["net_worth"]["total"] == "20500.00"
-    assert wallet.json()["id"] in listed["cash_on_hand"]["excluded_ids"]
+    assert wallet["id"] in listed["cash_on_hand"]["excluded_ids"]
     # It is still RETURNED - the client needs its name for the row and its id
     # for the next loan - but it is the client that never lists it.
-    assert [a["id"] for a in listed["accounts"] if a["hidden"]] == [wallet.json()["id"]]
+    assert [a["id"] for a in listed["accounts"] if a["hidden"]] == [wallet["id"]]

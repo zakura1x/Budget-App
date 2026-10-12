@@ -35,7 +35,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
-import { isLoan, isOwed, untracked, untrackedCash, visible, UNTRACKED_ID, type Account } from '../lib/accounts';
+import { isLoan, isOwed, untracked, visible, UNTRACKED_ID, type Account } from '../lib/accounts';
 import { flatten, type Category } from '../lib/categories';
 import { ensureAccounts, ensureCategories, ensureMerchants, ensureTags } from '../lib/prefetch';
 import {
@@ -532,10 +532,11 @@ export function TransactionSheet() {
     && (!spreading || planReady);
 
   const draft = (): TransactionDraft => {
-    // ACC-39. A blank side leaves as the wallet's sentinel; `save` turns it into
-    // the real hidden account, making it on the server if this is the first one.
-    const from = accountId ?? (fromIsWallet ? UNTRACKED_ID : null);
-    const to = counterId ?? (toIsWallet ? UNTRACKED_ID : null);
+    // ACC-39. A blank side is the wallet: its id once it exists, else the
+    // sentinel, which the server turns into the wallet it makes on this save.
+    const theWallet = wallet?.id ?? UNTRACKED_ID;
+    const from = accountId ?? (fromIsWallet ? theWallet : null);
+    const to = counterId ?? (toIsWallet ? theWallet : null);
     const base = { type: kind, amount, account_id: from as number, txn_date: txnDate, notes: note.trim() || null };
     if (kind === 'transfer') return { ...base, counter_account_id: to as number };
     // Only ids that still exist - a tag deleted while the sheet was open would be refused.
@@ -576,30 +577,7 @@ export function TransactionSheet() {
 
   const save = async () => {
     if (!canSave) return;
-    let body = draft();
-
-    // ACC-39. The wallet is made on the server the FIRST time a loan is saved
-    // from it - never by tapping the chip, so a sheet that is cancelled leaves
-    // no account behind. Before the optimistic row, so the ledger never holds
-    // an id the server does not know.
-    if (body.account_id === UNTRACKED_ID || body.counter_account_id === UNTRACKED_ID) {
-      setBusy(true);
-      setError(null);
-      try {
-        const made = await untrackedCash();
-        setWallet(made);
-        body = {
-          ...body,
-          account_id: body.account_id === UNTRACKED_ID ? made.id : body.account_id,
-          ...(body.counter_account_id === UNTRACKED_ID ? { counter_account_id: made.id } : {}),
-        };
-      } catch (e) {
-        setError(e instanceof ApiError ? e.message : 'That did not save. Try again.');
-        setBusy(false);
-        return;
-      }
-      setBusy(false);
-    }
+    const body = draft();
 
     if (spreading) {
       // REC-34. Not optimistic: the purchase becomes a plan, and the server decides what posts.

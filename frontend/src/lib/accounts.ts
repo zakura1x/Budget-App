@@ -257,10 +257,10 @@ export const visible = (accounts: Account[]) => accounts.filter((a) => !a.hidden
 export const untracked = (accounts: Account[]) => accounts.find((a) => a.hidden) ?? null;
 
 /**
- * ACC-39. What a From or To chip holds until the wallet exists: the sheet
- * resolves it to a real id on save, so nothing creates an account by a tap
- * that is never saved. Negative, like a pending row's id, so it can never
- * collide with an account's.
+ * ACC-39. A blank side of a loan's transfer, as sent: the SERVER turns it into
+ * the wallet, making it the first time (transaction_service.UNTRACKED_ID), so
+ * nothing creates an account by a tap that is never saved. Negative, like a
+ * pending row's id, so it can never collide with an account's.
  */
 export const UNTRACKED_ID = -1;
 
@@ -478,7 +478,6 @@ export const createAccount = (body: AccountDraft) => api<Account>(`/accounts?${t
  * needed and returned every time after that. Called only when a loan is saved
  * "from my wallet", never on a tap.
  */
-export const untrackedCash = () => api<Account>(`/accounts/untracked?${today()}`, { method: 'POST' });
 
 export const updateAccount = (id: number, body: AccountDraft) =>
   api<Account>(`/accounts/${id}?${today()}`, { method: 'PATCH', body });

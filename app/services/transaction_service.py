@@ -975,6 +975,7 @@ def _clean_transfer(
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     amount = _positive(payload.get("amount"), "amount")
     when = _date(payload.get("txn_date"))
+    payload = _untracked_side(db, cipher, payload)
     source = _account(db, cipher, payload.get("account_id"), "account_id",
                       allow_archived_if=(existing or {}).get("account_id"))
     destination = _account(db, cipher, payload.get("counter_account_id"), "counter_account_id",
@@ -1280,6 +1281,30 @@ def _date(value: Any) -> date:
     if not EARLIEST <= value <= latest:
         raise ValidationException("That date is outside what this app records")
     return value
+
+
+# ACC-39. What the client sends for a BLANK side of a loan's transfer: cash the
+# user does not track. Mirrors UNTRACKED_ID in frontend/src/lib/accounts.ts.
+UNTRACKED_ID = -1
+
+
+def _untracked_side(db: Session, cipher: UserCipher, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """
+    ACC-39. A transfer side sent as UNTRACKED_ID becomes the wallet - made here,
+    by account_service.untracked_cash(), the first time one is saved, so the
+    client sends one request and a cancelled sheet leaves no account behind.
+    Only the side OPPOSITE a lent or borrowed account may be blank: anywhere
+    else the money really did leave, or land in, an account you track.
+    """
+    sides = ("account_id", "counter_account_id")
+    blank = [side for side in sides if payload.get(side) == UNTRACKED_ID]
+    if not blank:
+        return payload
+    other = payload.get(sides[1] if blank == ["account_id"] else sides[0]) if len(blank) == 1 else None
+    record = AccountRepository(db, cipher).get(other) if isinstance(other, int) and not isinstance(other, bool) else None
+    if record is None or record.data.get("type") not in account_service.LOANS:
+        raise BusinessRuleException("Only money lent or borrowed can come from, or go to, cash you do not track")
+    return {**payload, blank[0]: account_service.untracked_cash(db, cipher).id}
 
 
 def _account(

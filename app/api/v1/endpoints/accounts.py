@@ -89,24 +89,6 @@ def accrue_interest(
     return InterestAccrualOut.model_validate(interest_service.accrue(db, ctx.cipher, today=today or date.today()))
 
 
-@router.post("/untracked", response_model=AccountOut)
-def untracked_cash(
-    today: Optional[date] = TODAY,
-    ctx: UnlockedContext = Depends(get_unlocked_context),
-    db: Session = Depends(get_db),
-) -> AccountOut:
-    """
-    ACC-39. The hidden wallet account, made on first use and returned every
-    time after that - what "from my wallet" on a loan transfers from.
-
-    Get-or-create, so it is safe to call again; 200, not 201, because it
-    usually creates nothing. Declared before /{account_id} so "untracked" is
-    never read as an account id.
-    """
-    view = account_service.untracked_cash(db, ctx.cipher)
-    return _current(db, ctx, view.id, today)
-
-
 @router.get("/{account_id}", response_model=AccountOut)
 def get_account(
     account_id: int,
