@@ -441,3 +441,36 @@ def test_months_ahead_does_not_take_a_due_twice(session, owner, loan):
     # And the plan's own charges are not a third copy of the same money.
     assert not [i for month in projection.months for i in month.items
                 if i.account_id == loan.person and i.kind == "installment"]
+
+
+# ------------------------------------------------- the arithmetic itself, no database
+# (architecture review 2026-10-12, pass 2 C: before, only reached through pay_plan)
+
+PLAN = {"payments": 6, "price": "6000.00", "interest": "600.00", "start": "2026-01-15",
+        "frequency": "monthly", "interval": 1}
+
+
+def rows_of(**extra):
+    return [(day, price + interest) for day, price, interest in recurring_service.installment_plan({**PLAN, **extra})]
+
+
+def test_a_plan_is_its_terms_split_to_the_centavo():
+    rows = rows_of()
+    assert [day.month for day, _ in rows] == [1, 2, 3, 4, 5, 6]
+    assert {amount for _, amount in rows} == {D("1100.00")}
+
+
+def test_shorten_takes_an_extra_payment_off_the_end():
+    extra = [{"on": "2026-02-15", "after": "2026-02-15", "amount": "1650.00", "mode": "shorten"}]
+    rows = rows_of(prepayments=extra)
+    # 1,650 = the June payment (1,100) and half of May's: the monthly amount stays.
+    assert [amount for _, amount in rows] == [D("1100.00")] * 4 + [D("550.00")]
+    assert sum(amount for _, amount in rows) + D("1650.00") == D("6600.00")
+
+
+def test_lower_spreads_an_extra_payment_over_the_payments_after_it():
+    extra = [{"on": "2026-02-15", "after": "2026-02-15", "amount": "1600.00", "mode": "lower"}]
+    rows = rows_of(prepayments=extra)
+    assert len(rows) == 6
+    assert [amount for _, amount in rows[:2]] == [D("1100.00")] * 2  # the ones before it are untouched
+    assert [amount for _, amount in rows[2:]] == [D("700.00")] * 4  # (4 x 1,100 - 1,600) / 4

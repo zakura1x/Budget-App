@@ -648,6 +648,38 @@ def create_rule(db: Session, cipher: UserCipher, payload: Mapping[str, Any], *, 
     return get_rule(db, cipher, record.id, today=today)
 
 
+def installment_schedule(payload: Mapping[str, Any], today: date) -> List[Tuple[date, Decimal, Decimal]]:
+    """
+    REC-34. A new plan's payments - (day, price part, interest part) - checked
+    the one way every rule is, with no database: what a conversion previews.
+    """
+    return installment_plan(_pure({**payload, "kind": "installment"}, None, today, 0))
+
+
+def add_plan(
+    db: Session, cipher: UserCipher, payload: Mapping[str, Any], *, from_transaction: int, today: date
+) -> Any:
+    """
+    REC-34. An installment plan made from a purchase already recorded: every
+    payment from the first one posts (the purchase they replace was in the
+    ledger), and the plan remembers where it came from. Does NOT commit - the
+    caller hides the purchase in the same commit - and post_due() then posts
+    what is already due. Returns the new rule's record.
+    """
+    repo = RecurringRuleRepository(db, cipher)
+    if repo.count() >= MAX_RULES:
+        raise BusinessRuleException(f"At most {MAX_RULES} recurring rules")
+    data = _clean(db, cipher, {**payload, "kind": "installment"}, None, today, posted_count=0)
+    data.update({"posted_through": (_as_date(data["start"]) - ONE_DAY).isoformat(), "pauses": [], "skips": [],
+                 "closed_on": None, "from_transaction": from_transaction})
+    return repo.create(data)
+
+
+def post_due(db: Session, cipher: UserCipher, rule_id: int, *, today: date) -> Expansion:
+    """The catch-up (expand) for one rule just written and committed."""
+    return _expand(db, cipher, [_record(RecurringRuleRepository(db, cipher), rule_id)], today)
+
+
 def update_rule(
     db: Session, cipher: UserCipher, rule_id: int, payload: Mapping[str, Any], *, today: Optional[date] = None
 ) -> RuleView:

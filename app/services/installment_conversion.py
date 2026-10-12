@@ -34,7 +34,7 @@ only its endpoints import it.
 """
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -51,7 +51,6 @@ from app.db.repositories.recurring_repository import RecurringRuleRepository
 from app.db.repositories.transaction_repository import TransactionRepository
 from app.services import account_service, audit_service, recurring_service, transaction_service
 
-ONE_DAY = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -81,13 +80,12 @@ def preview(
     today = today or date.today()
     account = _account(db, cipher, account_id)
     first = start or default_start(account, on)
-    data = recurring_service._pure(  # noqa: SLF001 - the one schedule, validated the one way
-        {"kind": "installment", "type": "expense", "price": str(_price(amount)), "payments": payments,
+    rows = recurring_service.installment_schedule(
+        {"type": "expense", "price": str(_price(amount)), "payments": payments,
          "interest": None if interest in (None, "") else str(interest), "start": first.isoformat(),
          "frequency": "monthly"},
-        None, today, 0,
+        today,
     )
-    rows = recurring_service.installment_plan(data)
     return Preview(
         start=first,
         payments=[(day, price + extra) for day, price, extra in rows],
@@ -127,10 +125,6 @@ def convert(
         raise BusinessRuleException("This is already a payment of a plan")
     account = _account(db, cipher, int(data["account_id"]))
 
-    rules = RecurringRuleRepository(db, cipher)
-    if rules.count() >= recurring_service.MAX_RULES:
-        raise BusinessRuleException(f"At most {recurring_service.MAX_RULES} recurring rules")
-
     on = date.fromisoformat(str(data.get("card_posted_on") or data["txn_date"]))
     start = _opt_date(terms.get("start")) or default_start(account, on)
     splits = [(int(s["category_id"]), money(s["amount"])) for s in data.get("splits") or [] if s.get("category_id")]
@@ -139,7 +133,7 @@ def convert(
     main = max(splits, key=lambda s: s[1])[0]
     categories = {r.id: r.data for r in CategoryRepository(db, cipher).list()}
     payload: Dict[str, Any] = {
-        "kind": "installment", "type": "expense",
+        "type": "expense",
         "name": data.get("merchant") or (categories.get(main) or {}).get("name") or "Installment",
         "account_id": int(data["account_id"]), "category_id": main,
         "price": str(money(data["amount"])), "payments": terms.get("payments"),
@@ -149,28 +143,25 @@ def convert(
     }
     if len(splits) > 1:
         payload["category_shares"] = [{"category_id": c, "amount": str(a)} for c, a in splits]
-    rule = recurring_service._clean(db, cipher, payload, None, today, posted_count=0)  # noqa: SLF001
-    # Every payment from the first one posts: the purchase they replace was already recorded.
-    rule.update({"posted_through": (start - ONE_DAY).isoformat(), "pauses": [], "skips": [], "closed_on": None,
-                 "from_transaction": record.id})
-    created = rules.create(rule)
+    created = recurring_service.add_plan(db, cipher, payload, from_transaction=record.id, today=today)
+    rule, rule_id = created.data, created.id
 
     # TXN-22. Cashback already received stays as its own income entry.
     if data.get("cashback_id"):
         credit = next((r for r in transactions.cached() if r.id == data["cashback_id"]), None)
         if credit is not None:
             transactions.update(credit.id, {**credit.data, "cashback_of": None})
-    transactions.update(record.id, {**data, "converted_to": created.id})
+    transactions.update(record.id, {**data, "converted_to": rule_id})
     transactions.soft_delete(record.id)
     audit_service.record(
         db, audit_service.INSTALLMENT_CONVERT, user_id=cipher.user_id, entity="recurring_rules",
-        entity_id=created.id, cipher=cipher,
+        entity_id=rule_id, cipher=cipher,
         detail={"transaction_id": record.id, "price": rule["price"], "payments": rule["payments"],
                 "start": rule["start"]},
     )
     db.commit()
-    recurring_service._expand(db, cipher, [created], today)  # noqa: SLF001 - the payments already due
-    return recurring_service.get_rule(db, cipher, created.id, today=today)
+    recurring_service.post_due(db, cipher, rule_id, today=today)  # the payments already due
+    return recurring_service.get_rule(db, cipher, rule_id, today=today)
 
 
 def create_with_plan(
