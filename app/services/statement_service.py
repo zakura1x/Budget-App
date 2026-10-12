@@ -65,9 +65,7 @@ class StatementCheck:
 
 def get(db: Session, cipher: UserCipher, account_id: int, closes: date, *, today: Optional[date] = None) -> StatementCheck:
     today = today or date.today()
-    found = account_service.statement(
-        db, cipher, account_id, closes, postings=transaction_service.postings(db, cipher), today=today
-    )
+    found = account_service.statement(db, cipher, account_id, closes, today=today)
     lag = found.posting_lag_days
     # ACC-26: the last `lag` days of the statement, closing day included -
     # the card's own window, since every bank posts at its own speed.

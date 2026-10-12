@@ -553,12 +553,18 @@ def list_accounts(
     db: Session,
     cipher: UserCipher,
     *,
-    postings: Sequence[Posting] = (),
+    postings: Optional[Sequence[Posting]] = None,
     today: Optional[date] = None,
     include_archived: bool = True,
 ) -> List[AccountView]:
+    """
+    Every account as it stands on `today`: balances from every posting, plans,
+    bills, dues and money set aside - all read here, so a caller cannot forget
+    one and get a balance of zero. `postings` replaces the ledger's own (a test,
+    or `()` for a caller that wants types and switches only).
+    """
     records = AccountRepository(db, cipher).list()
-    by_account = _group_postings(postings)
+    by_account = _group_postings(_postings(db, cipher) if postings is None else postings)
     unpaid, dues = _plans_owed(db, cipher)
     # ACC-35. The recurring charges are read only when some card has bills to add them to.
     charges = _plan_charges(db, cipher, today) if any(r.data.get("bills") for r in records) else {}
@@ -575,14 +581,16 @@ def get_account(
     cipher: UserCipher,
     account_id: int,
     *,
-    postings: Sequence[Posting] = (),
+    postings: Optional[Sequence[Posting]] = None,
     today: Optional[date] = None,
 ) -> AccountView:
+    """One account, read the way list_accounts reads every one."""
     record = AccountRepository(db, cipher).get(account_id)
     if record is None:
         raise NotFoundException("Account not found")
     unpaid, dues = _plans_owed(db, cipher)
-    return _view(record.id, record.data, _group_postings(postings).get(account_id, ()), today,
+    mine = _postings(db, cipher) if postings is None else postings
+    return _view(record.id, record.data, _group_postings(mine).get(account_id, ()), today,
                  unpaid, _plan_charges(db, cipher, today) if record.data.get("bills") else {},
                  _set_aside(db, cipher), dues)
 
@@ -682,7 +690,7 @@ def statement(
     account_id: int,
     closes: date,
     *,
-    postings: Sequence[Posting] = (),
+    postings: Optional[Sequence[Posting]] = None,
     today: Optional[date] = None,
 ) -> Statement:
     """Any closed statement of a card, by its closing date (ACC-19/24)."""
@@ -692,7 +700,8 @@ def statement(
         raise NotFoundException("Account not found")
     period = _closed_period(record.data, closes, when)
     opening = money(record.data.get("opening_balance", ZERO))
-    return _statement(account_id, record.data, opening, _group_postings(postings).get(account_id, ()), period, when)
+    mine = _postings(db, cipher) if postings is None else postings
+    return _statement(account_id, record.data, opening, _group_postings(mine).get(account_id, ()), period, when)
 
 
 # ------------------------------------------------------------------ writing
@@ -771,7 +780,7 @@ def update_account(
     account_id: int,
     payload: Mapping[str, Any],
     *,
-    postings: Sequence[Posting] = (),
+    postings: Optional[Sequence[Posting]] = None,
     today: Optional[date] = None,
 ) -> AccountView:
     """
@@ -795,7 +804,8 @@ def update_account(
     data = _clean(payload, existing=record.data)
     _reject_duplicate_name(repo.list(), data["name"], account_id=account_id)
 
-    change = _balance_change(account_id, record.data, payload, postings, today)
+    change = _balance_change(account_id, record.data, payload,
+                             _postings(db, cipher) if postings is None else postings, today)
     if change is not None:
         before, after, action = change
         opening = money(record.data.get("opening_balance", ZERO))
@@ -1122,6 +1132,13 @@ def _plans_owed(db: Session, cipher: UserCipher) -> Tuple[Mapping[int, Decimal],
 
     owed = recurring_service.plans_owed(db, cipher)
     return owed.unpaid, owed.dues
+
+
+def _postings(db: Session, cipher: UserCipher) -> List[Posting]:
+    """Every posting in the ledger. Imported here: transaction_service imports this module."""
+    from app.services import transaction_service
+
+    return transaction_service.postings(db, cipher)
 
 
 def _group_postings(postings: Sequence[Posting]) -> Dict[int, List[Posting]]:

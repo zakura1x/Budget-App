@@ -405,7 +405,7 @@ def _held_by_account(records) -> Dict[int, Decimal]:
 
 
 def _balances(db: Session, cipher: UserCipher, today: Optional[date]) -> Mapping[int, Decimal]:
-    views = account_service.list_accounts(db, cipher, postings=transaction_service.postings(db, cipher), today=today)
+    views = account_service.list_accounts(db, cipher, today=today)
     return {v.id: v.balance for v in views}
 
 

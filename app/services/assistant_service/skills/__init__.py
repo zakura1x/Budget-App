@@ -69,9 +69,7 @@ class Context:
     @cached_property
     def accounts(self) -> List[account_service.AccountView]:
         """Exactly what GET /accounts builds - the same call, the same figures."""
-        return account_service.list_accounts(
-            self.db, self.cipher, postings=transaction_service.postings(self.db, self.cipher), today=self.today,
-        )
+        return account_service.list_accounts(self.db, self.cipher, today=self.today)
 
     @cached_property
     def visible_accounts(self) -> List[account_service.AccountView]:

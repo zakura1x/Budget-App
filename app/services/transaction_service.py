@@ -884,7 +884,7 @@ def outcome(
         touched.add(view.account_id)
         if view.counter_account_id is not None:
             touched.add(view.counter_account_id)
-    accounts = account_service.list_accounts(db, cipher, postings=postings(db, cipher))
+    accounts = account_service.list_accounts(db, cipher)
     # Imported here, not at the top: budget_service reads postings from this
     # module, so a top-level import would be a cycle.
     from app.services.budget_service import budget_service

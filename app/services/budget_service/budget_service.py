@@ -707,9 +707,7 @@ def _card_alerts(
     A last statement whose bank total was entered and does not match raises
     one too (ACC-24) - until the difference is explained or the total fixed.
     """
-    views = account_service.list_accounts(
-        db, cipher, postings=transaction_service.postings(db, cipher), today=today, include_archived=False
-    )
+    views = account_service.list_accounts(db, cipher, today=today, include_archived=False)
     cards = [v for v in views if v.credit is not None]
     due = [CardDue(v.id, v.credit.due_in_days) for v in cards if v.credit.due_soon and v.credit.amount_due > ZERO]
     limits = [

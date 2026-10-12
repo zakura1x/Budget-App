@@ -121,7 +121,7 @@ def _emergency_money(db: Session, cipher: UserCipher, today: date) -> Tuple[Deci
     goal = next((g for g in goal_service.list_goals(db, cipher, today=today) if g.kind == "emergency"), None)
     if goal is not None:
         return goal.saved, "goal", goal.id
-    views = account_service.list_accounts(db, cipher, postings=transaction_service.postings(db, cipher), today=today)
+    views = account_service.list_accounts(db, cipher, today=today)
     return account_service.cash_on_hand(views).total, "cash", None
 
 

@@ -73,7 +73,7 @@ from app.core.utils import billing
 from app.core.utils.date_utils import add_months, days_in_month, statement_period
 from app.core.utils.interest import Band, daily_net
 from app.core.utils.money import ZERO, money, total
-from app.services import account_service, recurring_service, transaction_service
+from app.services import account_service, recurring_service
 from app.services.budget_service import budget_service
 from app.services.recurring_service import Upcoming
 
@@ -184,7 +184,7 @@ def project(
     monthly = status is not None and status.budget.period == "monthly"
     windows = _windows(db, cipher, today, months, monthly)
 
-    views = account_service.list_accounts(db, cipher, postings=transaction_service.postings(db, cipher), today=today)
+    views = account_service.list_accounts(db, cipher, today=today)
     cash = account_service.cash_on_hand(views)
     counted: Set[int] = set(cash.account_ids)
     ahead = recurring_service.upcoming(db, cipher, today + ONE_DAY, windows[-1][1])
@@ -246,8 +246,7 @@ def cards(db: Session, cipher: UserCipher, *, today: Optional[date] = None, stat
     today = today or date.today()
     if not 1 <= statements <= 12:
         raise ValidationException("statements is 1-12")
-    views = account_service.list_accounts(db, cipher, postings=transaction_service.postings(db, cipher),
-                                          today=today, include_archived=False)
+    views = account_service.list_accounts(db, cipher, today=today, include_archived=False)
     credit = [v for v in views if v.credit is not None]
     if not credit:
         return []

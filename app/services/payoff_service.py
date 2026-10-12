@@ -36,7 +36,7 @@ from app.core.exceptions import ValidationException
 from app.core.utils.date_utils import add_months
 from app.core.utils.money import CENTS, ZERO, money, total
 from app.core.utils.payoff import Debt, Plan, compare
-from app.services import account_service, recurring_service, transaction_service
+from app.services import account_service, recurring_service
 from app.services.subscription_service import PER_MONTH
 
 MAX_EXTRA = Decimal("99999999.99")
@@ -80,8 +80,7 @@ def plan(
     if any(v < ZERO for v in payments.values()):
         raise ValidationException("A payment is zero or more")
 
-    views = account_service.list_accounts(db, cipher, postings=transaction_service.postings(db, cipher),
-                                          today=today, include_archived=False)
+    views = account_service.list_accounts(db, cipher, today=today, include_archived=False)
     rules = recurring_service.list_rules(db, cipher, today=today)
     lines: List[DebtLine] = []
     for view in views:

@@ -35,7 +35,7 @@ from app.api.v1.schemas.accounts import (
 )
 from app.core.deps import UnlockedContext, get_unlocked_context
 from app.db.session import get_db
-from app.services import account_service, interest_service, transaction_service
+from app.services import account_service, interest_service
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -44,9 +44,7 @@ TODAY = Query(default=None, description="the client's date")
 
 def _current(db: Session, ctx: UnlockedContext, account_id: int, today: Optional[date]) -> AccountOut:
     """The account as it stands now, with every transaction posted against it."""
-    view = account_service.get_account(
-        db, ctx.cipher, account_id, postings=transaction_service.postings(db, ctx.cipher), today=today
-    )
+    view = account_service.get_account(db, ctx.cipher, account_id, today=today)
     return AccountOut.model_validate(view)
 
 
@@ -63,8 +61,7 @@ def list_accounts(
     with the cards it is the sum of.
     """
     views = account_service.list_accounts(
-        db, ctx.cipher, include_archived=include_archived,
-        postings=transaction_service.postings(db, ctx.cipher), today=today,
+        db, ctx.cipher, include_archived=include_archived, today=today,
     )
     return AccountListOut(
         accounts=[AccountOut.model_validate(view) for view in views],
@@ -145,8 +142,7 @@ def update_account(
     the user, then sends the same body again with a `balance_action` (ACC-28).
     """
     account_service.update_account(
-        db, ctx.cipher, account_id, body.model_dump(exclude_unset=True),
-        postings=transaction_service.postings(db, ctx.cipher), today=today,
+        db, ctx.cipher, account_id, body.model_dump(exclude_unset=True), today=today,
     )
     return _current(db, ctx, account_id, today)
 

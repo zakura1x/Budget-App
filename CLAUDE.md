@@ -416,6 +416,10 @@ month after. That rule, and "due now = everything overdue + the next due date"
 `account_service`, `projection_service` and `installment_conversion` all ask
 it - never place a charge or sum what is due anywhere else.
 
+`account_service.list_accounts` / `get_account` / `statement` / `update_account`
+read every posting themselves; pass `postings=` only to replace them (a test,
+or `()` for types and switches only).
+
 A plan can be PAID on the plan (REC-32, `recurring_service.pay_plan`): a
 transfer into the plan's account carrying the plan's id and NO `recurring_on`.
 What is due is covered first; an extra part answers 409 PREPAYMENT_CHOICE
