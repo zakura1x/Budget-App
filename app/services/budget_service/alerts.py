@@ -56,6 +56,9 @@ class Alert:
     category_id: Optional[int] = None
     account_id: Optional[int] = None
     rule_id: Optional[int] = None
+    # "today" / "in 3 days" on an alert about a date (card_due, subscription_due),
+    # so a screen words it its own way without taking `message` apart.
+    when: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -175,17 +178,17 @@ def account_alerts(
                                         pace_tolerance_pct=pace_tolerance_pct))
     for card in cards_due:
         alerts.append(Alert("card_due", "warn", f"A card payment is due {_when(card.due_in_days)}",
-                            account_id=card.account_id))
+                            account_id=card.account_id, when=_when(card.due_in_days)))
     for statement in statements_differ:
         alerts.append(Alert("statement_differs", "warn", "A card's statement does not match the bank's total",
                             account_id=statement.account_id))
     for sub in subscriptions_due:
         if sub.cancel_by:
             alerts.append(Alert("subscription_cancel_by", "warn", f"Cancel {sub.name} {_by(sub.due_in_days)}",
-                                account_id=sub.account_id, rule_id=sub.rule_id))
+                                account_id=sub.account_id, rule_id=sub.rule_id, when=_by(sub.due_in_days)))
             continue
         alerts.append(Alert("subscription_due", "warn", f"{sub.name} charges {_when(sub.due_in_days)}",
-                            account_id=sub.account_id, rule_id=sub.rule_id))
+                            account_id=sub.account_id, rule_id=sub.rule_id, when=_when(sub.due_in_days)))
     return alerts
 
 

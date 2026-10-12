@@ -36,6 +36,9 @@ def test_account_alerts_stand_on_their_own():
     alerts = account_alerts(cards_due=[CardDue(account_id=9, due_in_days=0)], statements_differ=[StatementDiffers(9)])
     assert kinds(alerts) == [("card_due", 9), ("statement_differs", 9)]
     assert alerts[0].message == "A card payment is due today"
+    # The screen words it from `when`, never by taking the sentence apart (2026-10-12).
+    assert alerts[0].when == "today"
+    assert account_alerts(cards_due=[CardDue(account_id=9, due_in_days=3)])[0].when == "in 3 days"
 
 
 def test_a_card_bill_reminds_without_a_budget(session, owner):
@@ -76,3 +79,4 @@ def test_the_api_sends_alerts_when_there_is_no_budget(api):
     body = api.get("/budgets/current?today=2026-10-02").json()
     assert body["status"] is None
     assert [(a["kind"], a["account_id"]) for a in body["alerts"]] == [("card_due", card)]
+    assert body["alerts"][0]["when"] is not None

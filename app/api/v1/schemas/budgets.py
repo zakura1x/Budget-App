@@ -103,6 +103,7 @@ class AlertOut(BaseModel):
     category_id: Optional[int] = None
     account_id: Optional[int] = None
     rule_id: Optional[int] = None  # subscription_due (SUB-06)
+    when: Optional[str] = None  # "today" / "in 3 days" - card_due and the subscription alerts
 
 
 class ReminderOut(BaseModel):

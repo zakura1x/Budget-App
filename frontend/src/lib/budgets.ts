@@ -84,6 +84,8 @@ export interface Alert {
   account_id: number | null;
   /** subscription_due (SUB-06). */
   rule_id?: number | null;
+  /** "today" / "in 3 days" - card_due and the subscription alerts. Word it from this, never from `message`. */
+  when?: string | null;
 }
 
 export interface BudgetStatus {

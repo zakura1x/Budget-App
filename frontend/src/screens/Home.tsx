@@ -68,8 +68,7 @@ function alertText(alert: Alert, status: BudgetStatus | null, lookups: Lookups):
   if (alert.kind === 'card_due') {
     // ACC-20 - the amount still owed on the bill, not the whole card.
     const due = card?.credit && !isZero(card.credit.amount_due) ? `${formatPHP(card.credit.amount_due)} ` : '';
-    const when = alert.message.replace(/^A card payment is due /, '');
-    return `${name}: ${due}due ${when}.`;
+    return `${name}: ${due}due ${alert.when ?? 'soon'}.`;
   }
   if (alert.kind === 'card_limit_over') return `${name} is at your spending limit for this cycle.`;
   if (alert.kind === 'card_limit_approaching') {
